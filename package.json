@@ -1,0 +1,16 @@
+{
+  "name": "cuhzbot",
+  "version": "1.0.0",
+  "description": "Planet Cuhz Twitch Bot",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "tmi.js": "^1.8.5",
+    "node-fetch": "^2.6.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
