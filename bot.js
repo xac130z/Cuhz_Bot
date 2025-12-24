@@ -1,72 +1,117 @@
 const tmi = require("tmi.js");
 const fetch = require("node-fetch");
 
-// ---- Required env vars ----
-const REQUIRED = [
-  "BOT_USERNAME",
-  "BOT_OAUTH_TOKEN",
-  "BOT_CHANNELS",
-  "WEBHOOK_URL",
-  "WEBHOOK_TOKEN",
-];
+const BOT_USERNAME = (process.env.BOT_USERNAME || "").toLowerCase();
+const BOT_OAUTH_TOKEN = process.env.BOT_OAUTH_TOKEN; // oauth:xxxx
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
+const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN;
 
-for (const k of REQUIRED) {
-  if (!process.env[k] || String(process.env[k]).trim() === "") {
-    throw new Error(`Missing env var: ${k}`);
-  }
+if (!BOT_USERNAME || !BOT_OAUTH_TOKEN || !WEBHOOK_URL || !WEBHOOK_TOKEN) {
+  console.error(
+    "Missing env vars. Required: BOT_USERNAME, BOT_OAUTH_TOKEN, WEBHOOK_URL, WEBHOOK_TOKEN"
+  );
+  process.exit(1);
 }
 
-const BOT_USERNAME = process.env.BOT_USERNAME.trim();
-const BOT_OAUTH_TOKEN = process.env.BOT_OAUTH_TOKEN.trim(); // must be "oauth:xxxx"
-const WEBHOOK_URL = process.env.WEBHOOK_URL.trim();
-const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN.trim();
+// Optional: BOT_CHANNELS=channel1,channel2
+const channelsEnv = (process.env.BOT_CHANNELS || "").trim();
+const channels = channelsEnv
+  ? channelsEnv
+      .split(",")
+      .map((c) => c.trim().replace(/^#/, "").toLowerCase())
+      .filter(Boolean)
+  : [];
 
-const CHANNELS = process.env.BOT_CHANNELS.split(",")
-  .map((c) => c.trim().replace(/^#/, "").toLowerCase())
-  .filter(Boolean);
-
-// ---- Twitch client ----
 const client = new tmi.Client({
   identity: {
     username: BOT_USERNAME,
     password: BOT_OAUTH_TOKEN,
   },
-  channels: CHANNELS,
+  channels,
   connection: {
-    secure: true,
     reconnect: true,
+    secure: true,
   },
 });
 
-// ---- Cooldowns ----
 const cooldowns = new Map();
-const COOLDOWN_MS = 30_000; // 30 seconds per user per channel
+const COOLDOWN_MS = 30000;
 
-// ---- Send queue (prevents rate-limit drops) ----
-const sendQueue = [];
-let sending = false;
+client.connect().catch((err) => console.error("Connect error:", err));
 
-async function sayQueued(channel, text) {
-  // keep messages short-ish (Twitch max message length)
-  const msg = String(text).slice(0, 450);
+client.on("connected", (addr, port) => {
+  console.log(`✅ Connected to ${addr}:${port}`);
+  console.log(`🤖 Logged in as: ${BOT_USERNAME}`);
+  console.log(`📺 Channels: ${channels.length ? channels.join(", ") : "(none set)"} `);
+});
 
-  sendQueue.push([channel, msg]);
-  if (sending) return;
+client.on("message", async (channel, tags, message, self) => {
+  if (self) return;
 
-  sending = true;
-  while (sendQueue.length) {
-    const [ch, m] = sendQueue.shift();
-    try {
-      await client.say(ch, m);
-    } catch (e) {
-      console.error("client.say error:", e?.message || e);
-    }
-    // ~1 msg/sec global throttle
-    await new Promise((r) => setTimeout(r, 1100));
+  const username = tags.username;
+  const userId = tags["user-id"];
+  const channelName = channel.replace("#", "");
+  const lower = message.trim().toLowerCase();
+
+  if (!lower.startsWith("!chain ") && !lower.startsWith("!cuhz ")) return;
+
+  const prompt = message.trim().split(" ").slice(1).join(" ").trim();
+
+  if (!prompt || prompt.toLowerCase() === "help") {
+    client.say(
+      channel,
+      `@${username} Usage: !chain <prompt> | Example: !chain astronaut with CUHZ chain`
+    );
+    return;
   }
-  sending = false;
-}
 
-// ---- Connect ----
-client.connect().catch((err) => {
-console.error("Connection error:", err);
+  // cooldown per user per channel
+  const key = `${channelName}:${userId}`;
+  const now = Date.now();
+  const last = cooldowns.get(key) || 0;
+
+  if (now - last < COOLDOWN_MS) {
+    const remaining = Math.ceil((COOLDOWN_MS - (now - last)) / 1000);
+    client.say(channel, `@${username} Cooldown active! Try again in ${remaining}s.`);
+    return;
+  }
+  cooldowns.set(key, now);
+
+  try {
+    client.say(channel, `@${username} Generating...`);
+
+    const res = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: WEBHOOK_TOKEN,
+        channel: channelName,
+        user: { id: userId, name: username },
+        text: message,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.handled) {
+      const reply = data.reply || "Done!";
+      const url = data.imageUrl ? ` ${data.imageUrl}` : "";
+      client.say(channel, `@${username} ${reply}${url}`);
+    } else {
+      client.say(channel, `@${username} ${data.error || `Error (${res.status})`}`);
+    }
+  } catch (err) {
+    console.error("Webhook error:", err);
+    client.say(channel, `@${username} Bot error. Try again later.`);
+  }
+});
+
+client.on("disconnected", (reason) => {
+  console.log("❌ Disconnected:", reason);
+});
+
+process.on("SIGINT", () => {
+  console.log("Shutting down...");
+  client.disconnect();
+  process.exit(0);
+});
