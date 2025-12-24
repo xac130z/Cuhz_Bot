@@ -1,29 +1,26 @@
 // bot.js
 // Requires: tmi.js, node-fetch@2
-// This bot:
-// - Polls created.app for channels (pending + enabled) and joins them
-// - Handles !cuhz verify CODE (calls /api/bot/verify)
-// - Handles !chain <prompt> and !cuhz <prompt> (calls /api/bot/command)
-// - Adds safe/security mod commands (queue, next, cooldown, safe, lockdown, status)
-// - Advertises the dashboard in a non-spammy way (on join + rate-limited after success)
+// Updates in this version:
+// - Calls /api/bot/command with Authorization: Bearer BOT_API_SECRET (server-to-server auth)
+// - Does NOT require WEBHOOK_TOKEN for bot calls (safe to keep env var, but not needed)
+// - Everything else stays the same (poll/join/verify/security commands/dashboard promo)
 
 const tmi = require("tmi.js");
 const fetch = require("node-fetch");
 
 // -------------------- ENV (required) --------------------
-const BOT_USERNAME = process.env.BOT_USERNAME; // bot twitch login
-const BOT_OAUTH_TOKEN = process.env.BOT_OAUTH_TOKEN; // oauth:xxxx
-const API_BASE = process.env.API_BASE; // https://cuhz-bot-dashboard-846.created.app
-const BOT_API_SECRET = process.env.BOT_API_SECRET; // shared secret
-const WEBHOOK_URL = process.env.WEBHOOK_URL; // https://.../api/bot/command
-const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN; // shared secret for /api/bot/command
+const BOT_USERNAME = process.env.BOT_USERNAME;
+const BOT_OAUTH_TOKEN = process.env.BOT_OAUTH_TOKEN;
+const API_BASE = process.env.API_BASE;
+const BOT_API_SECRET = process.env.BOT_API_SECRET;
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
 // -------------------- ENV (optional) --------------------
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `${API_BASE}/dashboard`;
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 60000);
 const JOIN_DELAY_MS = Number(process.env.JOIN_DELAY_MS || 650);
 const DEFAULT_COOLDOWN_MS = Number(process.env.DEFAULT_COOLDOWN_MS || 30000);
-const PROMO_INTERVAL_MS = Number(process.env.PROMO_INTERVAL_MS || 30 * 60 * 1000); // 30m
+const PROMO_INTERVAL_MS = Number(process.env.PROMO_INTERVAL_MS || 30 * 60 * 1000);
 const MAX_PROMPT_LEN_DEFAULT = Number(process.env.MAX_PROMPT_LEN_DEFAULT || 220);
 
 function requireEnv(name, val) {
@@ -32,12 +29,12 @@ function requireEnv(name, val) {
     process.exit(1);
   }
 }
+
 requireEnv("BOT_USERNAME", BOT_USERNAME);
 requireEnv("BOT_OAUTH_TOKEN", BOT_OAUTH_TOKEN);
 requireEnv("API_BASE", API_BASE);
 requireEnv("BOT_API_SECRET", BOT_API_SECRET);
 requireEnv("WEBHOOK_URL", WEBHOOK_URL);
-requireEnv("WEBHOOK_TOKEN", WEBHOOK_TOKEN);
 
 if (!String(BOT_OAUTH_TOKEN).startsWith("oauth:")) {
   console.error("BOT_OAUTH_TOKEN must start with 'oauth:'");
@@ -81,13 +78,11 @@ const client = new tmi.Client({
 // -------------------- State --------------------
 const joinedChannels = new Set();
 const joinQueue = [];
-const joinAnnounced = new Set(); // per boot
-const promoLastByChannel = new Map(); // channel -> timestamp
-const cooldowns = new Map(); // key: channel:userId -> last timestamp
+const joinAnnounced = new Set();
+const promoLastByChannel = new Map();
+const cooldowns = new Map();
 
-// Per-channel settings (in-memory). You can persist later if you want.
 const channelSettings = new Map();
-// Per-channel queue
 const channelQueues = new Map();
 
 function getSettings(channel) {
@@ -139,6 +134,7 @@ async function apiVerifyChannel(channel, code) {
   return { ok: res.ok, status: res.status, data };
 }
 
+// IMPORTANT: bot-auth call (Authorization header). No per-user token needed here.
 async function callCommandWebhook(channel, tags, message) {
   const channelName = normChannel(channel);
   const username = tags.username;
@@ -146,13 +142,15 @@ async function callCommandWebhook(channel, tags, message) {
 
   const res = await fetch(WEBHOOK_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(), // <-- this is the key change
+    },
     body: JSON.stringify({
-      token: WEBHOOK_TOKEN,
       channel: channelName,
       user: { id: userId, name: username },
       text: message,
-      flags: getSettings(channelName), // pass settings so server can enforce safe mode if desired
+      flags: getSettings(channelName),
     }),
   });
 
@@ -178,7 +176,6 @@ function startJoinQueue() {
       await client.join(ch);
       joinedChannels.add(ch);
 
-      // One-time per boot announcement
       if (!joinAnnounced.has(ch)) {
         joinAnnounced.add(ch);
         try {
@@ -211,12 +208,10 @@ async function syncChannels() {
     res.data.channels.forEach((row) => wanted.add(normChannel(row.channel_login)));
   }
 
-  // Join wanted channels
   for (const ch of wanted) {
     if (!joinedChannels.has(ch)) queueJoin(ch);
   }
 
-  // Part channels that are no longer wanted
   for (const ch of Array.from(joinedChannels)) {
     if (!wanted.has(ch)) {
       try {
@@ -253,7 +248,6 @@ async function processGeneration(channel, tags, message) {
 
   const result = await callCommandWebhook(channel, tags, message);
 
-  // Expected success: { handled: true, reply, imageUrl? }
   if (result.ok && result.data && result.data.handled) {
     const reply = result.data.reply || "Done.";
     const url = result.data.imageUrl ? ` ${result.data.imageUrl}` : "";
@@ -297,7 +291,6 @@ client.on("message", async (channel, tags, message, self) => {
   const lower = text.toLowerCase();
   const { isMod } = perms(tags);
 
-  // Public help
   if (lower === "!cuhz help") {
     await client.say(
       channel,
@@ -306,7 +299,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Verify command (public, but server protected)
   if (lower.startsWith("!cuhz verify")) {
     const parts = text.split(/\s+/);
     const code = parts[2];
@@ -318,7 +310,6 @@ client.on("message", async (channel, tags, message, self) => {
     const res = await apiVerifyChannel(ch, code);
     if (res.ok && res.data && res.data.success) {
       await client.say(channel, `@${username} ${res.data.message || "Verified."}`);
-      // refresh quickly so the channel stays joined consistently
       syncChannels();
     } else {
       const msg = (res.data && (res.data.message || res.data.error)) || "Verification failed.";
@@ -327,7 +318,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Mod-only: status
   if (lower === "!cuhz status") {
     if (!isMod) return;
     const s = getSettings(ch);
@@ -339,7 +329,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Mod-only: queue on/off
   if (lower.startsWith("!cuhz queue")) {
     if (!isMod) return;
     const parts = text.split(/\s+/);
@@ -353,7 +342,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Mod-only: next
   if (lower === "!cuhz next") {
     if (!isMod) return;
     const ok = await processNextFromQueue(channel);
@@ -361,7 +349,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Mod-only: cooldown
   if (lower.startsWith("!cuhz cooldown")) {
     if (!isMod) return;
     const parts = text.split(/\s+/);
@@ -375,7 +362,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Mod-only: safe on/off
   if (lower.startsWith("!cuhz safe")) {
     if (!isMod) return;
     const parts = text.split(/\s+/);
@@ -389,7 +375,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Mod-only: lockdown on/off (restrict gens to mods only)
   if (lower.startsWith("!cuhz lockdown")) {
     if (!isMod) return;
     const parts = text.split(/\s+/);
@@ -403,19 +388,16 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Generation commands: !chain <prompt> OR !cuhz <prompt>
   const isGen = lower.startsWith("!chain ") || lower.startsWith("!cuhz ");
   if (!isGen) return;
 
   const s = getSettings(ch);
 
-  // Lockdown: only mods can run generations
   if (s.lockdown && !isMod) {
     await client.say(channel, `@${username} Commands are currently restricted to mods.`);
     return;
   }
 
-  // Extract prompt
   const parts = text.split(/\s+/);
   const prompt = parts.slice(1).join(" ").trim();
 
@@ -429,7 +411,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Cooldown (per user per channel)
   const cooldownKey = `${ch}:${userId}`;
   const now = Date.now();
   const last = cooldowns.get(cooldownKey) || 0;
@@ -440,7 +421,6 @@ client.on("message", async (channel, tags, message, self) => {
   }
   cooldowns.set(cooldownKey, now);
 
-  // Queue mode: queue viewers; mods bypass and run immediately
   if (s.queueEnabled && !isMod) {
     const q = getQueue(ch);
     q.push({ channel, tags, message: text, ts: Date.now() });
@@ -448,7 +428,6 @@ client.on("message", async (channel, tags, message, self) => {
     return;
   }
 
-  // Run immediately
   await processGeneration(channel, tags, text);
 });
 
