@@ -69,4 +69,4 @@ async function sayQueued(channel, text) {
 
 // ---- Connect ----
 client.connect().catch((err) => {
-  console.error("Con
+console.error("Connection error:", err);
