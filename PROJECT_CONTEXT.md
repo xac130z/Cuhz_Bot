@@ -12,20 +12,19 @@
 A Twitch bot built with `tmi.js` and `express`, fully integrated with the Planet CUHZ ecosystem. It serves as a community engagement tool, automated marketing assistant, and bridge to the Anything.com dashboard.
 
 ## Key Architectures & Decisions
-- **Non-Crypto First**: All crypto/token features have been explicitly removed. Focus is on Brand, Creator Tools, and Community.
-- **In-Memory Logic**: Core commands and timers are currently handled in `src/bot.js` for reliability.
-- **Rotational Timers**: Messages cycle every 12 minutes to avoid spam (Website -> Links -> Discord -> Whitepaper -> Chain Gen).
-- **Dashboard Integration**: Polling enabled for channel management, with local fallback configs.
+- **Non-Crypto First**: All crypto/token features have been explicitly removed.
+- **Smart Mode (Stream Aware)**: Bot automatically detects if the stream is Live via Twitch API (polling every 60s).
+- **Live-Only Timers**: Marketing timers (12m interval) ONLY fire when the channel is live.
+- **Dynamic Auth**: Client ID is fetched dynamically from the OAuth token to enable API calls without manual config.
 
 ## Current State
-- [x] **Non-Crypto Command Suite**: Implemented `!cuhz`, `!links`, `!discord`, `!uptime`, `!credits`, `!help` etc.
+- [x] **Smart Features**: `!uptime` shows real stream duration; Timers pause when offline.
+- [x] **Non-Crypto Command Suite**: `!cuhz`, `!links`, `!discord`, etc.
 - [x] **Moderator Tools**: `!announce`, `!raid`, `!so` (Shoutout).
-- [x] **Timers**: 12-minute rotational engagement messages.
-- [x] **Local Mock API**: Available for testing via `USE_MOCK_API=true`.
+- [x] **Local Mock API**: Enhanced to simulate Twitch Auth & Helix Streams APIs.
 
 ## Known Issues
 - **Dashboard API Verification**: `POST /api/bot/verify` returns 400 (investigation needed on server side), but this does not block bot connectivity.
 
 ## Future Roadmap
-1. **Deploy to Railway**: Push latest Non-Crypto V1 to production.
-2. **Dynamic Help**: Update `!help` to pull directly from a CMS or external config (optional future enhancement).
+1. **Dynamic Help**: Update `!help` to pull directly from a CMS or external config (optional future enhancement).

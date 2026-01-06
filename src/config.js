@@ -18,6 +18,11 @@ module.exports = {
     webhookToken: process.env.WEBHOOK_TOKEN,
     webhookUrl: process.env.WEBHOOK_URL,
 
+    // Testing / Mocking
+    useMockApi: process.env.USE_MOCK_API === 'true',
+    twitchApiBase: process.env.USE_MOCK_API === 'true' ? 'http://localhost:3001/helix' : 'https://api.twitch.tv/helix',
+    twitchAuthBase: process.env.USE_MOCK_API === 'true' ? 'http://localhost:3001/auth' : 'https://id.twitch.tv/oauth2',
+
     // Server config
     port: process.env.PORT || 3000
 };
