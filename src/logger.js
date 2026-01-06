@@ -9,6 +9,9 @@ const logger = {
     error: (msg, ...args) => {
         console.error(`[${formatTime()}] [ERROR] ${msg}`, ...args);
     },
+    warn: (msg, ...args) => {
+        console.warn(`[${formatTime()}] [WARN] ${msg}`, ...args);
+    },
     debug: (msg, ...args) => {
         if (process.env.DEBUG === 'true') {
             console.log(`[${formatTime()}] [DEBUG] ${msg}`, ...args);
