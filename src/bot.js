@@ -53,6 +53,50 @@ const TIMER_MESSAGES = [
     "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
 ];
 
+// --- Channel Personas ---
+const CHANNEL_CONFIGS = {
+    '#fourareason4': {
+        timers: TIMER_MESSAGES,
+        commands: {
+            '!reason': 'Reason (fourareason4) is the legend behind this bot! 🚀',
+            ...PUBLIC_COMMANDS
+        },
+        hype: HYPE_MESSAGES
+    },
+    '#planetcuhz': {
+        timers: [
+            "🌌 Official Planet CUHZ Channel 🌌",
+            "🚀 Elevate your brand: https://planetcuhz.com",
+            "📄 Read the docs: https://planetcuhz.com/whitepaper"
+        ],
+        commands: PUBLIC_COMMANDS,
+        hype: ["Planet CUHZ HYPE! 🌌", "The future is CUHZ! 🚀"]
+    },
+    '#rico_santanax': {
+        timers: [
+            "🔥 Welcome to Rico's stream! 💎",
+            "🔗 Follow Rico: https://twitter.com/rico_santanax",
+            "🚀 Powered by Planet CUHZ: https://planetcuhz.com"
+        ],
+        commands: {
+            '!twitter': 'Follow Rico: https://twitter.com/rico_santanax',
+            ...PUBLIC_COMMANDS
+        },
+        hype: ["Rico in the building! 🔥", "Stay CUHZ! 💎"]
+    }
+};
+
+const DEFAULT_CONFIG = {
+    timers: TIMER_MESSAGES,
+    commands: PUBLIC_COMMANDS,
+    hype: HYPE_MESSAGES
+};
+
+function getChannelConfig(channel) {
+    const cleanChannel = channel.toLowerCase();
+    return CHANNEL_CONFIGS[cleanChannel] || DEFAULT_CONFIG;
+}
+
 // --- Twitch API Helpers ---
 
 async function fetchClientId() {
@@ -229,6 +273,7 @@ async function updateStreamState(channel) {
 
 function startRotationalTimer(channel) {
     timerIndices.set(channel, 0);
+    const persona = getChannelConfig(channel);
 
     // 12-minute interval
     setInterval(() => {
@@ -242,12 +287,14 @@ function startRotationalTimer(channel) {
 
             if (shouldSend) {
                 const index = timerIndices.get(channel) || 0;
-                const message = TIMER_MESSAGES[index];
+                const message = persona.timers[index];
 
-                client.say(channel, message).catch(err => logger.error('Error sending timer msg:', err));
+                if (message) {
+                    client.say(channel, message).catch(err => logger.error('Error sending timer msg:', err));
+                }
 
                 // Rotate
-                const nextIndex = (index + 1) % TIMER_MESSAGES.length;
+                const nextIndex = (index + 1) % persona.timers.length;
                 timerIndices.set(channel, nextIndex);
             } else {
                 // logger.debug(`Skipping timer for ${channel} (Stream Offline)`);
@@ -255,16 +302,17 @@ function startRotationalTimer(channel) {
         }
     }, 12 * 60 * 1000);
 
-    logger.info(`Rotational timer initialized for ${channel} (Smart Mode: Live Only)`);
+    logger.info(`Rotational timer initialized for ${channel} (Smart Mode)`);
 }
 
 async function handleMessage(channel, tags, message, self) {
     if (self) return;
     const msg = message.toLowerCase();
+    const persona = getChannelConfig(channel);
 
-    // 1. Exact Match Public Commands
-    if (PUBLIC_COMMANDS[msg]) {
-        client.say(channel, PUBLIC_COMMANDS[msg]);
+    // 1. Exact Match Public Commands (Persona Specific)
+    if (persona.commands[msg]) {
+        client.say(channel, persona.commands[msg]);
         return;
     }
 
@@ -292,7 +340,8 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!hype') {
-        const randomHype = HYPE_MESSAGES[Math.floor(Math.random() * HYPE_MESSAGES.length)];
+        const messages = persona.hype || HYPE_MESSAGES;
+        const randomHype = messages[Math.floor(Math.random() * messages.length)];
         client.say(channel, randomHype);
         return;
     }
