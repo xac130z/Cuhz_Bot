@@ -28,5 +28,4 @@ A Twitch bot built with `tmi.js` and `express`, fully integrated with the Planet
 
 ## Future Roadmap
 1. **Deploy to Railway**: Push latest Non-Crypto V1 to production.
-2. **Database Cleanup**: Run `migrations/001_remove_crypto_commands.sql` on Supabase.
-3. **Dynamic Help**: Update `!help` to pull directly from database (optional future enhancement).
+2. **Dynamic Help**: Update `!help` to pull directly from a CMS or external config (optional future enhancement).
