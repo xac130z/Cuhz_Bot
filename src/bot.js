@@ -4,6 +4,15 @@ const axios = require('axios');
 const config = require('./config');
 const logger = require('./logger');
 
+// --- Global Error Handlers (Prevention) ---
+process.on('unhandledRejection', (reason, promise) => {
+    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    logger.error('Uncaught Exception thrown:', err.stack || err);
+});
+
 const startTime = new Date();
 
 // --- Twitch Setup ---
@@ -99,6 +108,12 @@ function getChannelConfig(channel) {
 
 // --- Twitch API Helpers ---
 
+function sanitizeChannel(name) {
+    if (!name) return null;
+    const clean = name.trim().toLowerCase();
+    return clean.startsWith('#') ? clean : `#${clean}`;
+}
+
 async function fetchClientId() {
     if (twitchClientId) return twitchClientId;
 
@@ -111,16 +126,19 @@ async function fetchClientId() {
         const response = await axios.get(`${authBase}/validate`, {
             headers: {
                 'Authorization': `OAuth ${token}`
-            }
+            },
+            timeout: 10000
         });
 
         if (response.data && response.data.client_id) {
             twitchClientId = response.data.client_id;
-            logger.info(`Client ID fetched successfully: ${twitchClientId}`);
+            logger.info(`Identity Validated: Bot is logged in as '${response.data.login}'`);
+            logger.info(`Client ID: ${twitchClientId}`);
             return twitchClientId;
         }
     } catch (error) {
-        logger.error('Error fetching Client ID from token validation:', error.message);
+        logger.error('Error fetching Client ID from token validation. Check your BOT_OAUTH_TOKEN.');
+        logger.error('Error details:', error.message);
         return null;
     }
 }
@@ -138,7 +156,8 @@ async function checkStreamStatus(channelName) {
             headers: {
                 'Client-ID': twitchClientId,
                 'Authorization': `Bearer ${token}`
-            }
+            },
+            timeout: 10000
         });
 
         const data = response.data.data;
@@ -173,11 +192,12 @@ async function initializeTwitchClient() {
         try {
             logger.info(`Attempting to connect to dashboard at: ${config.apiBase}`);
             const response = await axios.get(`${config.apiBase}/api/bot/channels`, {
-                headers: { 'Authorization': `Bearer ${config.botApiSecret}` }
+                headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+                timeout: 10000
             });
 
             if (response.data && response.data.channels && response.data.channels.length > 0) {
-                channelsToJoin = response.data.channels.map(ch => ch.name);
+                channelsToJoin = response.data.channels.map(ch => sanitizeChannel(ch.name)).filter(n => !!n);
                 logger.info(`Found ${channelsToJoin.length} channels to join from dashboard:`, channelsToJoin);
             } else {
                 logger.info('No channels returned from dashboard, checking config.');
@@ -189,7 +209,7 @@ async function initializeTwitchClient() {
 
     // Fallback to config if no dashboard channels
     if (channelsToJoin.length === 0 && config.channels && config.channels.length > 0) {
-        channelsToJoin = config.channels;
+        channelsToJoin = config.channels.map(ch => sanitizeChannel(ch)).filter(n => !!n);
         logger.info(`Using channels from config:`, channelsToJoin);
     }
 
@@ -201,10 +221,14 @@ async function initializeTwitchClient() {
     const oauthToken = config.oauthToken.startsWith('oauth:') ? config.oauthToken : `oauth:${config.oauthToken}`;
 
     logger.info(`Initializing Twitch Client for user: ${config.username}`);
-    logger.info(`Channels to join: ${channelsToJoin.join(', ')}`);
+    logger.info(`Final Channel List: ${channelsToJoin.join(', ')}`);
 
     client = new tmi.Client({
-        options: { debug: true },
+        options: { debug: true, connectionTimeout: 10000 },
+        connection: {
+            reconnect: true,
+            secure: true
+        },
         identity: {
             username: config.username,
             password: oauthToken
@@ -212,7 +236,11 @@ async function initializeTwitchClient() {
         channels: channelsToJoin
     });
 
-    client.connect().catch(err => logger.error('Twitch connection error:', err));
+    client.connect().then(() => {
+        logger.info('Successfully initiated connection to Twitch IRC.');
+    }).catch(err => {
+        logger.error('Twitch connection FAILED:', err);
+    });
     setupEventHandlers();
 }
 
@@ -244,7 +272,8 @@ async function verifyJoin(channel) {
                 channel: channel.replace('#', ''),
                 status: 'active'
             }, {
-                headers: { 'Authorization': `Bearer ${config.botApiSecret}` }
+                headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+                timeout: 10000
             });
         } catch (error) {
             logger.error('Error verifying channel join:', error.message);
@@ -309,6 +338,12 @@ async function handleMessage(channel, tags, message, self) {
     if (self) return;
     const msg = message.toLowerCase();
     const persona = getChannelConfig(channel);
+
+    // 0. Global Connectivity Test
+    if (msg === '!ping') {
+        client.say(channel, `Pong! 🏓 The bot is active in ${channel}.`);
+        return;
+    }
 
     // 1. Exact Match Public Commands (Persona Specific)
     if (persona.commands[msg]) {
@@ -386,7 +421,10 @@ async function handleMessage(channel, tags, message, self) {
                 user: tags.username,
                 message: message,
                 timestamp: new Date().toISOString()
-            }, { headers: { 'Authorization': `Bearer ${config.webhookToken}` } });
+            }, {
+                headers: { 'Authorization': `Bearer ${config.webhookToken}` },
+                timeout: 5000
+            });
         } catch (error) {
             logger.error('Webhook error:', error.message);
         }
