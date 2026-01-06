@@ -154,11 +154,16 @@ async function initializeTwitchClient() {
     }
 
     // 3. Create Client
+    const oauthToken = config.oauthToken.startsWith('oauth:') ? config.oauthToken : `oauth:${config.oauthToken}`;
+
+    logger.info(`Initializing Twitch Client for user: ${config.username}`);
+    logger.info(`Channels to join: ${channelsToJoin.join(', ')}`);
+
     client = new tmi.Client({
         options: { debug: true },
         identity: {
             username: config.username,
-            password: config.oauthToken
+            password: oauthToken
         },
         channels: channelsToJoin
     });

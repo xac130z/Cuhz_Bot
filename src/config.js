@@ -6,7 +6,10 @@ module.exports = {
     oauthToken: process.env.BOT_OAUTH_TOKEN,
     username: process.env.BOT_USERNAME,
     channels: process.env.TWITCH_CHANNEL_NAME
-        ? process.env.TWITCH_CHANNEL_NAME.split(',').map(ch => ch.trim()).filter(ch => ch.length > 0)
+        ? process.env.TWITCH_CHANNEL_NAME.split(',').map(ch => {
+            const clean = ch.trim().toLowerCase();
+            return clean.startsWith('#') ? clean : `#${clean}`;
+        }).filter(ch => ch.length > 1)
         : [],
 
     // Dashboard integration
