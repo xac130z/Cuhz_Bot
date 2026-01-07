@@ -16,6 +16,8 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     status TEXT DEFAULT 'active',
+    auto_welcome BOOLEAN DEFAULT 1,
+    auto_marketing BOOLEAN DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -52,7 +54,7 @@ const channelCount = db.prepare('SELECT COUNT(*) as count FROM channels').get();
 if (channelCount.count === 0) {
   const insertChannel = db.prepare('INSERT INTO channels (name) VALUES (?)');
   const insertCommand = db.prepare('INSERT INTO commands (channel_id, trigger, response) VALUES (?, ?, ?)');
-  const insertTimer = db.prepare('INSERT INTO timers (channel_id, message) VALUES (?, ?)');
+  const insertTimer = db.prepare('INSERT INTO timers (channel_id, message, interval_minutes) VALUES (?, ?, ?)');
 
   const channels = ['#fourareason4', '#planetcuhz', '#rico_santanax'];
 

@@ -64,6 +64,13 @@ const TIMER_MESSAGES = [
     "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
 ];
 
+const AI_WARRIORS = [
+    "🔥 Tier 11: Galactic Prime - The ultimate AI strategist.",
+    "⚡ Tier 10: System Overlord - Master of the 2K Protocol.",
+    "🛡️ Tier 9: Code Guardian - Defending the Cosmic Family.",
+    "🚀 Tier 1: Trainee Scout - Just beginning the journey."
+];
+
 // --- Channel Personas ---
 const DEFAULT_CONFIG = {
     timers: TIMER_MESSAGES,
@@ -81,12 +88,16 @@ async function fetchChannelPersona(channel) {
 
     try {
         logger.info(`Fetching configuration for ${channel}...`);
-        const [cmdRes, timerRes] = await Promise.all([
+        const [cmdRes, timerRes, setRes] = await Promise.all([
             axios.get(`${config.apiBase}/api/bot/commands/${cleanChannel}`, {
                 headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
                 timeout: 5000
             }),
             axios.get(`${config.apiBase}/api/bot/timers/${cleanChannel}`, {
+                headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+                timeout: 5000
+            }),
+            axios.get(`${config.apiBase}/api/bot/settings/${cleanChannel}`, {
                 headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
                 timeout: 5000
             })
@@ -95,7 +106,8 @@ async function fetchChannelPersona(channel) {
         const persona = {
             commands: { ...PUBLIC_COMMANDS, ...cmdRes.data.commands },
             timers: timerRes.data.timers && timerRes.data.timers.length > 0 ? timerRes.data.timers : TIMER_MESSAGES,
-            interval: timerRes.data.interval || 12,
+            interval: timerRes.data.interval || 60,
+            settings: setRes.data || { auto_welcome: 1, auto_marketing: 1 },
             hype: HYPE_MESSAGES
         };
 
@@ -318,6 +330,12 @@ function startRotationalTimer(channel) {
 
     setInterval(() => {
         if (client && client.readyState() === 'OPEN') {
+            const persona = getChannelConfig(channel);
+            // Check if Auto-Marketing is enabled
+            if (persona.settings && !persona.settings.auto_marketing) {
+                return;
+            }
+
             // Smart Check: Only send if stream is LIVE
             const state = streamStates.get(channel);
             const isLive = state ? state.isLive : false; // Default to false if unknown to avoid spam
@@ -366,8 +384,10 @@ async function handleMessage(channel, tags, message, self) {
         `);
         upsertUser.run(username);
 
-        // Welcome back message (if last seen > 24h ago or new user)
-        if (!user || user.last_seen < oneDayAgo) {
+        const persona = getChannelConfig(channel);
+        // Welcome back message (if last seen > 24h ago or new user AND settings allow it)
+        const canWelcome = !persona.settings || persona.settings.auto_welcome;
+        if (canWelcome && (!user || user.last_seen < oneDayAgo)) {
             client.say(channel, `Welcome to the Planet, @${tags.username}! 🌌`);
         }
     } catch (err) {
@@ -481,6 +501,24 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!slowoff' && isMod) {
         client.say(channel, '/slowoff');
+        return;
+    }
+
+    if (msg.startsWith('!unban ') && isMod) {
+        const target = message.split(' ')[1];
+        if (target) client.say(channel, `/unban ${target}`);
+        return;
+    }
+
+    if (msg.startsWith('!untimeout ') && isMod) {
+        const target = message.split(' ')[1];
+        if (target) client.say(channel, `/untimeout ${target}`);
+        return;
+    }
+
+    if (msg === '!warriors') {
+        const warrior = AI_WARRIORS[Math.floor(Math.random() * AI_WARRIORS.length)];
+        client.say(channel, `🌌 Planet CUHZ AI Warrior Highlight: ${warrior}`);
         return;
     }
 

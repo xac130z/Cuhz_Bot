@@ -51,6 +51,7 @@ The official Twitch engagement bot for the Planet CUHZ ecosystem. Built with `tm
 | `!help` | List available commands |
 | `!ping` | Connectivity check |
 | `!points` | Check your CUHZ points balance |
+| `!warriors`| Show a random Planet CUHZ AI Warrior |
 
 ### Moderator Commands
 | Command | Description |
@@ -59,7 +60,9 @@ The official Twitch engagement bot for the Planet CUHZ ecosystem. Built with `tm
 | `!so [user]` | Gives a shoutout to the specified user |
 | `!raid [user]` | Initiates a raid to another channel |
 | `!ban [user]` | Bans a user from chat |
+| `!unban [user]` | Unbans a user |
 | `!timeout [user] [sec]`| Times out a user (default 600s) |
+| `!untimeout [user]` | Removes a timeout |
 | `!clear` | Clears the chat history |
 | `!slow [sec]` | Enables slow mode |
 | `!slowoff` | Disables slow mode |

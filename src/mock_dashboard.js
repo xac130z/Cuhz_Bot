@@ -22,11 +22,23 @@ function verifySecret(req, res, next) {
 app.get('/api/bot/channels', verifySecret, (req, res) => {
     console.log('[API] GET /api/bot/channels called');
     try {
-        const channels = db.prepare("SELECT name FROM channels WHERE status = 'active'").all();
+        const channels = db.prepare("SELECT name, auto_welcome, auto_marketing FROM channels WHERE status = 'active'").all();
         res.json({
             channels: channels,
             channelLogins: channels.map(c => c.name.replace('#', ''))
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET settings for a channel
+app.get('/api/bot/settings/:channel', verifySecret, (req, res) => {
+    const channelName = req.params.channel.startsWith('#') ? req.params.channel : `#${req.params.channel}`;
+    console.log(`[API] GET /api/bot/settings for ${channelName}`);
+    try {
+        const settings = db.prepare('SELECT auto_welcome, auto_marketing FROM channels WHERE name = ?').get(channelName);
+        res.json(settings || { auto_welcome: 1, auto_marketing: 1 });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

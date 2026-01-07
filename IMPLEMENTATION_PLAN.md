@@ -14,10 +14,15 @@ Status: **80% Complete**
     *   Expanded moderation suite.
 
 ## 🔄 In Progress
-- **Real Dashboard Connectivity**:
-    - The dashboard is live at `https://cuhz-bot-dashboard-846.created.app/`.
-    - Local bot is currently using a mock API, but schema matches.
-    - Need to ensure `API_BASE` and `BOT_API_SECRET` are correctly configured for production.
+- **Production Verification**:
+    - [ ] Point `API_BASE` to `https://cuhz-bot-dashboard-846.created.app/` in `.env`.
+    - [ ] Secure `BOT_API_SECRET`.
+    - [ ] Test real-time command updates from the dashboard.
+- **Final Enhancements**:
+    - [ ] Add `!unban` and `!untimeout` mod commands.
+    - [ ] Add `!warriors` brand command to showcase AI Warriors.
+    - [ ] Create `.agent/workflows/deploy.md` for easy deployment.
+    - [ ] Integrate with the dashboard's "Auto-welcome" toggle.
 
 ## 📋 Next Steps
 1.  **Production Verification**:
