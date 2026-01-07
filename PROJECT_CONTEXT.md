@@ -22,9 +22,18 @@ A Twitch bot built with `tmi.js` and `express`, fully integrated with the Planet
 - [x] **Non-Crypto Command Suite**: `!cuhz`, `!links`, `!discord`, etc.
 - [x] **Moderator Tools**: `!announce`, `!raid`, `!so` (Shoutout).
 - [x] **Local Mock API**: Enhanced to simulate Twitch Auth & Helix Streams APIs.
+- [x] **Dashboard Integration**: 
+    - [x] SQLite database implemented (`data/bot.db`).
+    - [x] Dynamic API routes for channels, commands, and timers.
+    - [x] Bot successfully fetches channel-specific personas and **intervals** from API.
+    - [x] `#fourareason4` interval set to **45 minutes** with brand-specific social links.
+    - [x] Other channels set to **1 hour (60 minutes)**.
+- [x] **Community Features**:
+    - [x] **Point System**: `!points` command to track user engagement (💎 CUHZ points).
+    - [x] **Welcome Messages**: Automated greeting for returning users (>24h since last seen).
 
 ## Known Issues
-- **Dashboard API Verification**: `POST /api/bot/verify` returns 400 (investigation needed on server side), but this does not block bot connectivity.
+- **Dashboard API Verification**: `POST /api/bot/verify` returns success in local mock, but requires testing on production anything.com server.
 
 ## Future Roadmap
 1. **Dynamic Help**: Update `!help` to pull directly from a CMS or external config (optional future enhancement).

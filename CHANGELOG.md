@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-01-07
+### Added
+- **Dashboard Integration**: Bot now fetches channels, commands, and timers from the dashboard API.
+- **SQLite Persistence**: Local database implemented for storing channel configurations and user data.
+- **Dynamic Intervals**: Marketing timers can now have channel-specific intervals (e.g., `#fourareason4` set to 30 minutes).
+- **CUHZ Point System**: Community engagement tracking with `!points` command.
+- **Enhanced Moderation**: Added `!ban`, `!timeout`, `!clear`, `!slow`/`!slowoff` commands.
+- **Welcome System**: Automated greets for new or returning users (>24h since last seen).
+- **Brand Documentation**: Full capability inventory and brand analysis documented in `BRAND_AND_CAPABILITIES.md`.
+
+### Changed
+- **Architecture**: Move from hardcoded JSON configs to a hybrid DB + API model.
+- **Timers**: Updated `#fourareason4` timers to exciting "CUHZ" tone and added social links (Instagram, TikTok, X).
+
+
 ## [1.2.0] - 2026-01-05
 ### Added
 - **Smart Mode (Stream Awareness)**: Bot now polls Twitch API every 60s to check stream status.

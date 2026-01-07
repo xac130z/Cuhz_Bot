@@ -3,6 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const config = require('./config');
 const logger = require('./logger');
+const db = require('./database');
 
 // --- Global Error Handlers (Prevention) ---
 process.on('unhandledRejection', (reason, promise) => {
@@ -22,6 +23,7 @@ let connectedChannels = new Set();
 // State
 let timerIndices = new Map(); // channel -> index
 let streamStates = new Map(); // channel -> { isLive: boolean, startedAt: Date, title: string }
+let channelConfigs = new Map(); // channel -> { timers: [], commands: {}, hype: [] }
 let twitchClientId = null; // Fetched dynamically
 
 // --- Content Data (Non-Crypto) ---
@@ -63,47 +65,51 @@ const TIMER_MESSAGES = [
 ];
 
 // --- Channel Personas ---
-const CHANNEL_CONFIGS = {
-    '#fourareason4': {
-        timers: TIMER_MESSAGES,
-        commands: {
-            '!reason': 'Reason (fourareason4) is the legend behind this bot! 🚀',
-            ...PUBLIC_COMMANDS
-        },
-        hype: HYPE_MESSAGES
-    },
-    '#planetcuhz': {
-        timers: [
-            "🌌 Official Planet CUHZ Channel 🌌",
-            "🚀 Elevate your brand: https://planetcuhz.com",
-            "📄 Read the docs: https://planetcuhz.com/whitepaper"
-        ],
-        commands: PUBLIC_COMMANDS,
-        hype: ["Planet CUHZ HYPE! 🌌", "The future is CUHZ! 🚀"]
-    },
-    '#rico_santanax': {
-        timers: [
-            "🔥 Welcome to Rico's stream! 💎",
-            "🔗 Follow Rico: https://twitter.com/rico_santanax",
-            "🚀 Powered by Planet CUHZ: https://planetcuhz.com"
-        ],
-        commands: {
-            '!twitter': 'Follow Rico: https://twitter.com/rico_santanax',
-            ...PUBLIC_COMMANDS
-        },
-        hype: ["Rico in the building! 🔥", "Stay CUHZ! 💎"]
-    }
-};
-
 const DEFAULT_CONFIG = {
     timers: TIMER_MESSAGES,
     commands: PUBLIC_COMMANDS,
     hype: HYPE_MESSAGES
 };
 
+async function fetchChannelPersona(channel) {
+    const cleanChannel = channel.toLowerCase().replace('#', '');
+    if (!config.apiBase || !config.botApiSecret) {
+        logger.info(`No API config, using defaults for ${channel}`);
+        channelConfigs.set(channel.toLowerCase(), DEFAULT_CONFIG);
+        return;
+    }
+
+    try {
+        logger.info(`Fetching configuration for ${channel}...`);
+        const [cmdRes, timerRes] = await Promise.all([
+            axios.get(`${config.apiBase}/api/bot/commands/${cleanChannel}`, {
+                headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+                timeout: 5000
+            }),
+            axios.get(`${config.apiBase}/api/bot/timers/${cleanChannel}`, {
+                headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+                timeout: 5000
+            })
+        ]);
+
+        const persona = {
+            commands: { ...PUBLIC_COMMANDS, ...cmdRes.data.commands },
+            timers: timerRes.data.timers && timerRes.data.timers.length > 0 ? timerRes.data.timers : TIMER_MESSAGES,
+            interval: timerRes.data.interval || 12,
+            hype: HYPE_MESSAGES
+        };
+
+        channelConfigs.set(channel.toLowerCase(), persona);
+        logger.info(`Loaded ${Object.keys(persona.commands).length} commands, ${persona.timers.length} timers at ${persona.interval}min intervals for ${channel}`);
+    } catch (error) {
+        logger.error(`Error fetching persona for ${channel}:`, error.message);
+        channelConfigs.set(channel.toLowerCase(), DEFAULT_CONFIG);
+    }
+}
+
 function getChannelConfig(channel) {
     const cleanChannel = channel.toLowerCase();
-    return CHANNEL_CONFIGS[cleanChannel] || DEFAULT_CONFIG;
+    return channelConfigs.get(cleanChannel) || DEFAULT_CONFIG;
 }
 
 // --- Twitch API Helpers ---
@@ -254,6 +260,9 @@ function setupEventHandlers() {
             connectedChannels.add(channel);
             logger.info(`Joined channel: ${channel}`);
 
+            // Fetch persona from Dashboard
+            await fetchChannelPersona(channel);
+
             // Start Timers & Status Checks
             startRotationalTimer(channel);
             startStreamPoller(channel);
@@ -303,8 +312,10 @@ async function updateStreamState(channel) {
 function startRotationalTimer(channel) {
     timerIndices.set(channel, 0);
     const persona = getChannelConfig(channel);
+    const intervalMs = (persona.interval || 12) * 60 * 1000;
 
-    // 12-minute interval
+    logger.info(`Rotational timer initialized for ${channel} (Every ${persona.interval || 12}m, Smart Mode)`);
+
     setInterval(() => {
         if (client && client.readyState() === 'OPEN') {
             // Smart Check: Only send if stream is LIVE
@@ -336,6 +347,33 @@ function startRotationalTimer(channel) {
 
 async function handleMessage(channel, tags, message, self) {
     if (self) return;
+
+    // --- Track User Activity ---
+    try {
+        const username = tags.username.toLowerCase();
+        const now = new Date();
+        const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
+
+        const user = db.prepare('SELECT last_seen FROM users WHERE username = ?').get(username);
+
+        const upsertUser = db.prepare(`
+            INSERT INTO users (username, points, messages_sent, last_seen)
+            VALUES (?, 1, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(username) DO UPDATE SET
+                points = points + 1,
+                messages_sent = messages_sent + 1,
+                last_seen = CURRENT_TIMESTAMP
+        `);
+        upsertUser.run(username);
+
+        // Welcome back message (if last seen > 24h ago or new user)
+        if (!user || user.last_seen < oneDayAgo) {
+            client.say(channel, `Welcome to the Planet, @${tags.username}! 🌌`);
+        }
+    } catch (err) {
+        logger.error('Error tracking user points/welcome:', err.message);
+    }
+
     const msg = message.toLowerCase();
     const persona = getChannelConfig(channel);
 
@@ -381,6 +419,17 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    if (msg === '!points') {
+        try {
+            const user = db.prepare('SELECT points FROM users WHERE username = ?').get(tags.username.toLowerCase());
+            const userPoints = user ? user.points : 0;
+            client.say(channel, `@${tags.username}, you have ${userPoints} CUHZ points! 💎`);
+        } catch (err) {
+            logger.error('Error fetching points:', err.message);
+        }
+        return;
+    }
+
     // 3. Mod / Owner Commands
     const isMod = tags.mod || (tags.badges && tags.badges.broadcaster);
 
@@ -402,6 +451,36 @@ async function handleMessage(channel, tags, message, self) {
             const cleanTarget = target.replace('@', '');
             client.say(channel, `Big shoutout to @${cleanTarget}! Everyone check them out here: https://twitch.tv/${cleanTarget} 🚀`);
         }
+        return;
+    }
+
+    if (msg.startsWith('!ban ') && isMod) {
+        const target = message.split(' ')[1];
+        if (target) client.say(channel, `/ban ${target}`);
+        return;
+    }
+
+    if (msg.startsWith('!timeout ') && isMod) {
+        const parts = message.split(' ');
+        const target = parts[1];
+        const duration = parts[2] || 600;
+        if (target) client.say(channel, `/timeout ${target} ${duration}`);
+        return;
+    }
+
+    if (msg === '!clear' && isMod) {
+        client.say(channel, '/clear');
+        return;
+    }
+
+    if (msg.startsWith('!slow ') && isMod) {
+        const seconds = message.split(' ')[1] || 10;
+        client.say(channel, `/slow ${seconds}`);
+        return;
+    }
+
+    if (msg === '!slowoff' && isMod) {
+        client.say(channel, '/slowoff');
         return;
     }
 
