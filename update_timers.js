@@ -1,29 +1,58 @@
 const db = require('./src/database');
 
-const channel = '#fourareason4';
-const channelData = db.prepare('SELECT id FROM channels WHERE name = ?').get(channel);
+console.log('🎯 Setting up staggered timer intervals for smooth flow...\n');
 
-if (channelData) {
-    const channelId = channelData.id;
+// Define staggered intervals for each timer to avoid overwhelming chat
+const timerConfig = [
+    {
+        channel: '#fourareason4',
+        timers: [
+            { message: "YO CUHZ! 🚀 Lock in with the legend on Instagram! → instagram.com/Fourareason4", interval: 60 },
+            { message: "STAY CONNECTED CUHZ! 🌌 Catch the hottest vibes on TikTok! → tiktok.com/@Fourareason4", interval: 45 },
+            { message: "DON'T MISS A BEAT CUHZ! 🔥 Tap into the X/Twitter feed for all the updates! → x.com/fourareason4", interval: 75 }
+        ]
+    },
+    {
+        channel: '#planetcuhz',
+        timers: [
+            { message: "🌌 Planet CUHZ → https://planetcuhz.com", interval: 60 },
+            { message: "🔗 All links → https://linktr.ee/PlanetCUHZ", interval: 60 }
+        ]
+    },
+    {
+        channel: '#rico_santanax',
+        timers: [
+            { message: "🌌 Planet CUHZ → https://planetcuhz.com", interval: 60 },
+            { message: "🔗 All links → https://linktr.ee/PlanetCUHZ", interval: 60 }
+        ]
+    }
+];
 
-    // Delete existing timers for this channel if we want to reset to purely the new ones
-    // Or just add them. The user said "Add these", but also "set to 30 minute intervals".
-    // I will replace existing ones to ensure the 30-min vibe is consistent.
-    db.prepare('DELETE FROM timers WHERE channel_id = ?').run(channelId);
+timerConfig.forEach(config => {
+    const channelData = db.prepare('SELECT id FROM channels WHERE name = ?').get(config.channel);
 
-    const insertTimer = db.prepare('INSERT INTO timers (channel_id, message, interval_minutes) VALUES (?, ?, ?)');
+    if (channelData) {
+        const channelId = channelData.id;
 
-    const newTimers = [
-        "YO CUHZ! 🚀 Lock in with the legend on Instagram! → instagram.com/Fourareason4",
-        "STAY CONNECTED CUHZ! 🌌 Catch the hottest vibes on TikTok! → tiktok.com/@Fourareason4",
-        "DON'T MISS A BEAT CUHZ! 🔥 Tap into the X/Twitter feed for all the updates! → x.com/fourareason4"
-    ];
+        // Clear existing timers for this channel
+        db.prepare('DELETE FROM timers WHERE channel_id = ?').run(channelId);
 
-    newTimers.forEach(msg => {
-        insertTimer.run(channelId, msg, 30);
-    });
+        const insertTimer = db.prepare('INSERT INTO timers (channel_id, message, interval_minutes) VALUES (?, ?, ?)');
 
-    console.log(`Updated timers for ${channel} with 30-minute interval data.`);
-} else {
-    console.error(`Channel ${channel} not found in DB.`);
-}
+        console.log(`📝 ${config.channel}:`);
+        config.timers.forEach(timer => {
+            insertTimer.run(channelId, timer.message, timer.interval);
+            console.log(`   ✓ ${timer.interval}min - ${timer.message.substring(0, 50)}...`);
+        });
+        console.log('');
+    } else {
+        console.error(`❌ Channel ${config.channel} not found in database.`);
+    }
+});
+
+console.log('✅ Timer intervals updated successfully!');
+console.log('\n📊 Flow Pattern:');
+console.log('   #fourareason4: 60min → 45min → 75min (staggered)');
+console.log('   #planetcuhz: 60min → 60min (consistent)');
+console.log('   #rico_santanax: 60min → 60min (consistent)');
+console.log('\n💡 This creates a natural rhythm without overwhelming viewers.');

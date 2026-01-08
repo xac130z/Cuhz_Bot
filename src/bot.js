@@ -64,12 +64,7 @@ const TIMER_MESSAGES = [
     "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
 ];
 
-const AI_WARRIORS = [
-    "🔥 Tier 11: Galactic Prime - The ultimate AI strategist.",
-    "⚡ Tier 10: System Overlord - Master of the 2K Protocol.",
-    "🛡️ Tier 9: Code Guardian - Defending the Cosmic Family.",
-    "🚀 Tier 1: Trainee Scout - Just beginning the journey."
-];
+// AI Warriors removed per user request
 
 // --- Channel Personas ---
 const DEFAULT_CONFIG = {
@@ -324,9 +319,9 @@ async function updateStreamState(channel) {
 function startRotationalTimer(channel) {
     timerIndices.set(channel, 0);
     const persona = getChannelConfig(channel);
-    const intervalMs = (persona.interval || 12) * 60 * 1000;
+    const intervalMs = (persona.interval || 60) * 60 * 1000; // Default to 60 minutes if not specified
 
-    logger.info(`Rotational timer initialized for ${channel} (Every ${persona.interval || 12}m, Smart Mode)`);
+    logger.info(`Rotational timer initialized for ${channel} (Every ${persona.interval || 60}m, Smart Mode)`);
 
     setInterval(() => {
         if (client && client.readyState() === 'OPEN') {
@@ -358,9 +353,9 @@ function startRotationalTimer(channel) {
                 // logger.debug(`Skipping timer for ${channel} (Stream Offline)`);
             }
         }
-    }, 12 * 60 * 1000);
+    }, intervalMs); // FIXED: Now uses the calculated interval instead of hardcoded 12 minutes
 
-    logger.info(`Rotational timer initialized for ${channel} (Smart Mode)`);
+    logger.info(`Rotational timer started for ${channel} at ${persona.interval || 60} minute intervals`);
 }
 
 async function handleMessage(channel, tags, message, self) {
@@ -516,11 +511,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg === '!warriors') {
-        const warrior = AI_WARRIORS[Math.floor(Math.random() * AI_WARRIORS.length)];
-        client.say(channel, `🌌 Planet CUHZ AI Warrior Highlight: ${warrior}`);
-        return;
-    }
+    // Warriors command removed per user request
 
     if (msg === '!status' && tags.username === 'fourareason4') {
         const state = streamStates.get(channel);
