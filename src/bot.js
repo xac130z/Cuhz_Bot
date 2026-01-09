@@ -4,6 +4,9 @@ const axios = require('axios');
 const config = require('./config');
 const logger = require('./logger');
 const db = require('./database');
+const aiService = require('./ai_service');
+const moodTracker = require('./mood_tracker');
+const contextHandler = require('./context_handler');
 
 // --- Global Error Handlers (Prevention) ---
 process.on('unhandledRejection', (reason, promise) => {
@@ -45,7 +48,8 @@ const PUBLIC_COMMANDS = {
     '!gn': 'Good night CUHZ 🌙',
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
-    '!help': '🌌 Planet CUHZ Commands: !cuhz !links !discord !whatiscuhz !whitepaper !roadmap !rules !privacy !cuhzchain !store !schedule !giveaway !gm !gn !hype !uptime | Mods: !announce !so !raid'
+    '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
+    '!help': '🌌 Commands: !cuhz !links !discord !dashboard !whatiscuhz !whitepaper !roadmap !rules !store !hype !uptime !points | Mods: !mood !personality !announce !so !raid | Type your question naturally for AI help!'
 };
 
 const HYPE_MESSAGES = [
@@ -270,9 +274,18 @@ function setupEventHandlers() {
             // Fetch persona from Dashboard
             await fetchChannelPersona(channel);
 
+            // Initialize AI features
+            if (config.enableMoodDetection) {
+                moodTracker.initChannel(channel);
+            }
+            if (config.enableContextAware) {
+                contextHandler.initChannel(channel);
+            }
+
             // Start Timers & Status Checks
             startRotationalTimer(channel);
             startStreamPoller(channel);
+            startMoodAnalyzer(channel);
 
             verifyJoin(channel);
         }
@@ -314,6 +327,43 @@ async function updateStreamState(channel) {
         // Optional: log state change
         // logger.debug(`Stream state for ${channel}: ${status.isLive ? 'LIVE' : 'OFFLINE'}`);
     }
+}
+
+function startMoodAnalyzer(channel) {
+    if (!config.enableMoodDetection) return;
+
+    logger.info(`🤖 Mood analyzer initialized for ${channel}`);
+
+    // Analyze mood every 2 minutes
+    setInterval(async () => {
+        if (moodTracker.shouldAnalyzeMood(channel)) {
+            const messageBuffer = moodTracker.getMessageBuffer(channel);
+
+            if (messageBuffer.length >= 5) {
+                try {
+                    const sentiment = await aiService.analyzeSentiment(messageBuffer);
+                    const newPersonality = moodTracker.updateMood(channel, sentiment);
+
+                    // Check if hype injection is needed
+                    if (moodTracker.needsHypeInjection(channel) && client && client.readyState() === 'OPEN') {
+                        const persona = getChannelConfig(channel);
+                        const hypeMsg = persona.hype[Math.floor(Math.random() * persona.hype.length)];
+                        client.say(channel, `💫 ${hypeMsg}`);
+                        logger.info(`💉 Injected hype into ${channel} (low energy detected)`);
+                    }
+
+                    // Alert mods if toxicity is high
+                    if (sentiment.toxicity > 60 && client && client.readyState() === 'OPEN') {
+                        logger.warn(`⚠️ High toxicity detected in ${channel}: ${sentiment.toxicity}`);
+                        // Could send a private message to mods here
+                    }
+
+                } catch (error) {
+                    logger.error(`Failed to analyze mood for ${channel}:`, error.message);
+                }
+            }
+        }
+    }, config.moodAnalysisInterval * 1000);
 }
 
 function startRotationalTimer(channel) {
@@ -358,16 +408,70 @@ function startRotationalTimer(channel) {
     logger.info(`Rotational timer started for ${channel} at ${persona.interval || 60} minute intervals`);
 }
 
+/**
+ * Handle automatic shoutouts for fellow streamers
+ * @param {string} channel - Channel name
+ * @param {string} usernameLower - Username in lowercase
+ * @param {string} displayName - Display name for mention
+ */
+async function handleAutoShoutout(channel, usernameLower, displayName) {
+    try {
+        // Check if this user is in the auto-shoutout list
+        const streamer = db.prepare(`
+            SELECT * FROM streamer_shoutouts 
+            WHERE channel = ? AND streamer_username = ? AND is_active = 1
+        `).get(channel, usernameLower);
+
+        if (!streamer) {
+            return; // Not in the list, skip
+        }
+
+        // Check cooldown (24 hours since last shoutout)
+        if (streamer.last_shoutout) {
+            const lastShoutout = new Date(streamer.last_shoutout);
+            const hoursSinceLastShoutout = (Date.now() - lastShoutout.getTime()) / (1000 * 60 * 60);
+
+            if (hoursSinceLastShoutout < 24) {
+                return; // Too soon, skip
+            }
+        }
+
+        // Give the shoutout!
+        client.say(channel, `🎬 Big shoutout to fellow streamer @${displayName}! Check them out at https://twitch.tv/${usernameLower} 🚀`);
+
+        // Update database
+        db.prepare(`
+            UPDATE streamer_shoutouts 
+            SET last_shoutout = CURRENT_TIMESTAMP, shoutout_count = shoutout_count + 1 
+            WHERE channel = ? AND streamer_username = ?
+        `).run(channel, usernameLower);
+
+        logger.info(`🎬 Auto-shoutout sent for ${usernameLower} in ${channel}`);
+
+    } catch (err) {
+        logger.error('Error in handleAutoShoutout:', err.message);
+    }
+}
+
 async function handleMessage(channel, tags, message, self) {
     if (self) return;
 
+    // --- Add to AI Context & Mood Buffers ---
+    const username = tags.username;
+    if (config.enableMoodDetection) {
+        moodTracker.addMessage(channel, username, message);
+    }
+    if (config.enableContextAware) {
+        contextHandler.addToContext(channel, username, message);
+    }
+
     // --- Track User Activity ---
     try {
-        const username = tags.username.toLowerCase();
+        const usernameL = username.toLowerCase();
         const now = new Date();
         const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
 
-        const user = db.prepare('SELECT last_seen FROM users WHERE username = ?').get(username);
+        const user = db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
 
         const upsertUser = db.prepare(`
             INSERT INTO users (username, points, messages_sent, last_seen)
@@ -377,7 +481,7 @@ async function handleMessage(channel, tags, message, self) {
                 messages_sent = messages_sent + 1,
                 last_seen = CURRENT_TIMESTAMP
         `);
-        upsertUser.run(username);
+        upsertUser.run(usernameL);
 
         const persona = getChannelConfig(channel);
         // Welcome back message (if last seen > 24h ago or new user AND settings allow it)
@@ -385,6 +489,10 @@ async function handleMessage(channel, tags, message, self) {
         if (canWelcome && (!user || user.last_seen < oneDayAgo)) {
             client.say(channel, `Welcome to the Planet, @${tags.username}! 🌌`);
         }
+
+        // Auto-shoutout for fellow streamers (if not shouted out recently)
+        await handleAutoShoutout(channel, usernameL, tags.username);
+
     } catch (err) {
         logger.error('Error tracking user points/welcome:', err.message);
     }
@@ -396,6 +504,27 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!ping') {
         client.say(channel, `Pong! 🏓 The bot is active in ${channel}.`);
         return;
+    }
+
+    // 0.5. Context-Aware Response (AI)
+    if (config.enableContextAware && !msg.startsWith('!')) {
+        try {
+            const currentMood = moodTracker.getCurrentPersonality(channel);
+            const aiResponse = await contextHandler.handleContextAwareResponse(
+                channel,
+                tags.username,
+                message,
+                currentMood,
+                persona.commands
+            );
+
+            if (aiResponse) {
+                client.say(channel, aiResponse);
+                return;
+            }
+        } catch (error) {
+            logger.error('Context-aware response error:', error.message);
+        }
     }
 
     // 1. Exact Match Public Commands (Persona Specific)
@@ -448,6 +577,30 @@ async function handleMessage(channel, tags, message, self) {
     // 3. Mod / Owner Commands
     const isMod = tags.mod || (tags.badges && tags.badges.broadcaster);
 
+    // Mood Detection Commands
+    if (msg === '!mood' && isMod && config.enableMoodDetection) {
+        const moodState = moodTracker.getMoodState(channel);
+        client.say(channel, `📊 Current mood: ${moodState.currentMood} | Energy: ${moodState.energy}/100 | Toxicity: ${moodState.toxicity}/100 | Personality: ${moodState.currentPersonality}`);
+        return;
+    }
+
+    if (msg.startsWith('!personality ') && isMod && config.enableMoodDetection) {
+        const mode = message.split(' ')[1]?.toLowerCase();
+        if (moodTracker.setPersonality(channel, mode)) {
+            client.say(channel, `🎭 Personality set to: ${mode}`);
+        } else {
+            client.say(channel, `❌ Invalid personality. Options: hype, chill, supportive, moderated, neutral`);
+        }
+        return;
+    }
+
+    if (msg === '!aistats' && tags.username === 'fourareason4') {
+        const aiStats = aiService.getStats();
+        const cacheStats = contextHandler.getCacheStats();
+        client.say(channel, `🤖 AI: ${aiStats.requestsThisMinute}/${aiStats.maxRequestsPerMinute} req/min | Cache: ${cacheStats.active_entries} entries | Enabled: ${aiStats.aiEnabled}`);
+        return;
+    }
+
     if (msg.startsWith('!announce ') && isMod) {
         const announcement = message.substring(10);
         client.say(channel, `/announce ${announcement}`);
@@ -465,6 +618,64 @@ async function handleMessage(channel, tags, message, self) {
         if (target) {
             const cleanTarget = target.replace('@', '');
             client.say(channel, `Big shoutout to @${cleanTarget}! Everyone check them out here: https://twitch.tv/${cleanTarget} 🚀`);
+        }
+        return;
+    }
+
+    // Auto-shoutout management commands
+    if (msg.startsWith('!addstreamer ') && isMod) {
+        const streamerName = message.split(' ')[1]?.replace('@', '').toLowerCase();
+        if (streamerName) {
+            try {
+                db.prepare(`
+                    INSERT INTO streamer_shoutouts (channel, streamer_username, is_active)
+                    VALUES (?, ?, 1)
+                    ON CONFLICT(channel, streamer_username) DO UPDATE SET is_active = 1
+                `).run(channel, streamerName);
+                client.say(channel, `✅ @${streamerName} added to auto-shoutout list!`);
+                logger.info(`Added ${streamerName} to auto-shoutout list for ${channel}`);
+            } catch (err) {
+                logger.error('Error adding streamer:', err.message);
+            }
+        }
+        return;
+    }
+
+    if (msg.startsWith('!removestreamer ') && isMod) {
+        const streamerName = message.split(' ')[1]?.replace('@', '').toLowerCase();
+        if (streamerName) {
+            try {
+                db.prepare(`
+                    UPDATE streamer_shoutouts 
+                    SET is_active = 0 
+                    WHERE channel = ? AND streamer_username = ?
+                `).run(channel, streamerName);
+                client.say(channel, `❌ @${streamerName} removed from auto-shoutout list.`);
+                logger.info(`Removed ${streamerName} from auto-shoutout list for ${channel}`);
+            } catch (err) {
+                logger.error('Error removing streamer:', err.message);
+            }
+        }
+        return;
+    }
+
+    if (msg === '!liststreamers' && isMod) {
+        try {
+            const streamers = db.prepare(`
+                SELECT streamer_username, shoutout_count 
+                FROM streamer_shoutouts 
+                WHERE channel = ? AND is_active = 1
+                ORDER BY streamer_username
+            `).all(channel);
+
+            if (streamers.length === 0) {
+                client.say(channel, '📊 No streamers in auto-shoutout list.');
+            } else {
+                const list = streamers.map(s => `@${s.streamer_username} (${s.shoutout_count})`).join(', ');
+                client.say(channel, `🎬 Auto-shoutout list: ${list}`);
+            }
+        } catch (err) {
+            logger.error('Error listing streamers:', err.message);
         }
         return;
     }

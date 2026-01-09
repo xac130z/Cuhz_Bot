@@ -47,6 +47,40 @@ db.exec(`
     messages_sent INTEGER DEFAULT 0,
     last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS mood_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,
+    mood TEXT NOT NULL,
+    energy INTEGER DEFAULT 50,
+    toxicity INTEGER DEFAULT 0,
+    message_sample TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS context_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,
+    query TEXT NOT NULL,
+    response TEXT NOT NULL,
+    expires_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS streamer_shoutouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,
+    streamer_username TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT 1,
+    last_shoutout DATETIME,
+    shoutout_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(channel, streamer_username)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_mood_channel_time ON mood_history(channel, created_at);
+  CREATE INDEX IF NOT EXISTS idx_context_query ON context_cache(query);
+  CREATE INDEX IF NOT EXISTS idx_shoutout_channel ON streamer_shoutouts(channel, is_active);
 `);
 
 // Seed initial data if empty

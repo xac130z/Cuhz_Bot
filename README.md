@@ -37,6 +37,20 @@ To provide a welcoming, high-energy, and creator-focused experience embodying th
 - ✅ **CUHZ Points**: `!points` command to track user engagement (💎 CUHZ points).
 - ✅ **Welcome Messages**: Automated greeting for returning users (>24h since last seen).
 
+### AI Features (NEW! 🤖)
+- ✅ **Mood Detection**: Real-time sentiment analysis of chat messages (positive, negative, neutral, hype, toxic).
+- ✅ **Context-Aware Responses**: Understands natural language questions without exact command syntax.
+- ✅ **Personality Adjustment**: Bot tone automatically changes based on chat energy and mood.
+- ✅ **Auto-Hype Injection**: Triggered automatically when chat energy is low.
+- ✅ **Toxicity Detection**: Alerts moderators when chat toxicity levels are high.
+- ✅ **Smart Caching**: Reduces AI API calls through intelligent response caching.
+
+### Auto-Shoutout System (NEW! 🎬)
+- ✅ **Automatic Shoutouts**: Auto-shoutout fellow streamers when they join your chat.
+- ✅ **24-Hour Cooldown**: Prevents spam by only shouting out each streamer once per day.
+- ✅ **Whitelist Management**: Mods can add/remove streamers from the auto-shoutout list.
+- ✅ **Shoutout Tracking**: Counts total shoutouts given to each streamer.
+
 ### Infrastructure
 - ✅ **Database**: SQLite with `better-sqlite3` (`data/bot.db`).
 - ✅ **API Routes**: Express endpoints for dashboard communication.
@@ -70,6 +84,14 @@ Copy `.env.example` to `.env` and fill in your credentials:
 - `BOT_API_SECRET`: Shared secret for API authentication.
 - `USE_MOCK_API`: Set to `true` for local testing, `false` for production.
 
+**AI Features (Optional):**
+- `GEMINI_API_KEY`: Get your free API key at [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+- `ENABLE_MOOD_DETECTION`: Set to `true` to enable mood tracking (default: true)
+- `ENABLE_CONTEXT_AWARE`: Set to `true` to enable context-aware responses (default: true)
+- `MOOD_ANALYSIS_INTERVAL`: Seconds between mood analyses (default: 120)
+
+> **Note**: AI features work without a Gemini API key using fallback sentiment analysis, but context-aware responses require the API key.
+
 ### 3. Initialize Database
 ```bash
 node src/database.js
@@ -95,11 +117,20 @@ npm start
 | `!cuhz` | Main link to Planet CUHZ |
 | `!links` | Linktree for the ecosystem |
 | `!discord` | Official Discord invite |
+| `!dashboard` | Link to add CUHZ Bot to your channel |
 | `!uptime` | Show how long the stream has been live |
 | `!hype` | Random hype message |
 | `!help` | List available commands |
 | `!ping` | Connectivity check |
 | `!points` | Check your CUHZ points balance |
+
+### AI Commands (NEW! 🤖)
+| Command | Description | Access |
+| --- | --- | --- |
+| Natural questions | Ask questions naturally (e.g., "how do I join discord?") | Everyone |
+| `!mood` | Shows current chat sentiment analysis | Mods |
+| `!personality [mode]` | Manually set bot personality (hype, chill, supportive, neutral, moderated) | Mods |
+| `!aistats` | View AI usage statistics | Owner |
 
 ### Moderator Commands
 | Command | Description |
@@ -114,6 +145,13 @@ npm start
 | `!clear` | Clears the chat history |
 | `!slow [sec]` | Enables slow mode |
 | `!slowoff` | Disables slow mode |
+
+### Auto-Shoutout Commands (NEW! 🎬)
+| Command | Description | Access |
+| --- | --- | --- |
+| `!addstreamer [user]` | Add a streamer to auto-shoutout list | Mods |
+| `!removestreamer [user]` | Remove a streamer from auto-shoutout list | Mods |
+| `!liststreamers` | View all streamers on auto-shoutout list with counts | Mods |
 
 ### Owner Commands
 | Command | Description |

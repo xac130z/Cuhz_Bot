@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-01-08
+### Fixed
+- **Timer Interval Bug**: Bot now correctly respects per-timer database intervals instead of firing at a hardcoded 12-minute pace.
+- **Bot logic**: Updated `src/bot.js` to dynamically use the `intervalMs` value from the database.
+
+### Changed
+- **Messaging Flow**: Implemented a "Staggered Flow" for `#fourareason4` (60m -> 45m -> 75m) to create a more natural rhythm.
+- **Documentation**: Major reorganization. Consolidated `PROJECT_CONTEXT.md` into `README.md` and added `START_HERE.md`, `STATUS.md`, and `DOCUMENTATION.md`.
+
+### Removed
+- **AI Warriors Feature**: Removed all tiers, the `!warriors` command, and supporting code to focus on core engagement and utility.
+
+
 ## [1.3.0] - 2026-01-07
 ### Added
 - **Dashboard Integration**: Bot now fetches channels, commands, and timers from the dashboard API.
