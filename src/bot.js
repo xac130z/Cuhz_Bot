@@ -234,6 +234,8 @@ async function getFollowData(broadcasterId, userId) {
         const apiBase = config.twitchApiBase || 'https://api.twitch.tv/helix';
         const token = config.oauthToken.replace('oauth:', '');
 
+        logger.info(`🔍 Checking follow: broadcaster=${broadcasterId}, user=${userId}`);
+
         const response = await axios.get(`${apiBase}/channels/followers`, {
             params: {
                 broadcaster_id: broadcasterId,
@@ -246,12 +248,22 @@ async function getFollowData(broadcasterId, userId) {
             timeout: 5000
         });
 
+        logger.info(`📊 Follow API response: ${JSON.stringify(response.data)}`);
+
         if (response.data && response.data.data && response.data.data.length > 0) {
             return response.data.data[0]; // Returns { user_id, user_name, followed_at }
         }
         return null; // Not following
     } catch (error) {
-        // 404 or empty usually implies not following or error
+        // Log the actual error for debugging
+        if (error.response) {
+            logger.error(`❌ Follow API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+            if (error.response.status === 401) {
+                logger.error('⚠️ OAuth token missing "moderator:read:followers" scope. Regenerate token with this scope.');
+            }
+        } else {
+            logger.error(`❌ Follow API error: ${error.message}`);
+        }
         return null;
     }
 }
