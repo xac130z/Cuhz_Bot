@@ -107,9 +107,10 @@ function matchExistingCommand(message, availableCommands) {
  * @param {string} message
  * @param {string} currentMood
  * @param {Object} availableCommands
+ * @param {Object} personalityConfig - Personality configuration (optional)
  * @returns {Promise<string|null>}
  */
-async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands) {
+async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands, personalityConfig = null) {
     // First check if it's even a question/request
     if (!isQuestionOrRequest(message)) {
         return null;
@@ -137,7 +138,8 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
             message,
             context,
             currentMood,
-            availableCommands
+            availableCommands,
+            personalityConfig
         );
 
         if (aiResponse) {

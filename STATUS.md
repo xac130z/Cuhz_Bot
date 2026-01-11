@@ -60,7 +60,10 @@ None.
 
 ### Immediate (This Session)
 1. ✅ ~~Fix Timer Interval Bug~~ - **COMPLETED**
-2. ✅ ~~Update Changelog~~ - **COMPLETED** (v1.4.0 entry added)
+2. ✅ ~~Update Changelog~~ - **COMPLETED** (v1.5.0 added)
+3. ✅ ~~AI Personality Integration Fix~~ - **COMPLETED**
+4. ✅ ~~Implement !followage Command~~ - **COMPLETED**
+5. ✅ ~~Add Test/Lint Scripts~~ - **COMPLETED**
 
 ### Short Term (This Week)
 1. **Deploy to Railway** - Push updated code to production

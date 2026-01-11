@@ -95,9 +95,10 @@ Guidelines:
  * @param {Array<string>} recentMessages - Recent chat context
  * @param {string} currentMood - Current chat mood
  * @param {Object} availableCommands - Bot commands that can be suggested
+ * @param {Object} personalityConfig - Personality configuration (optional)
  * @returns {Promise<string|null>} - Response or null if not a query
  */
-async function generateContextAwareResponse(userMessage, recentMessages = [], currentMood = 'neutral', availableCommands = {}) {
+async function generateContextAwareResponse(userMessage, recentMessages = [], currentMood = 'neutral', availableCommands = {}, personalityConfig = null) {
     if (!model) {
         return null;
     }
@@ -124,9 +125,23 @@ async function generateContextAwareResponse(userMessage, recentMessages = [], cu
             .map(([cmd, desc]) => `${cmd}: ${desc}`)
             .join('\n');
 
+        // Build personality instructions
+        let personalityInstructions = '';
+        if (personalityConfig) {
+            personalityInstructions = `
+Personality Mode: ${currentMood}
+- Tone: ${personalityConfig.tone}
+- Use Emojis: ${personalityConfig.useEmojis ? 'YES' : 'NO'}
+- Use CAPS: ${personalityConfig.useCaps ? 'YES (for emphasis)' : 'NO'}
+- Enthusiasm Level: ${personalityConfig.enthusiasmLevel}
+- Examples of this personality: ${personalityConfig.examples.join(' | ')}`;
+        }
+
         const prompt = `You are the Antigravity Agent, a Twitch chat bot for Planet CUHZ - a cosmic creator community.
 
 Current chat mood: ${currentMood}
+${personalityInstructions}
+
 Recent messages:
 ${context}
 
@@ -139,7 +154,7 @@ Instructions:
 1. If this is a QUESTION or REQUEST for information (how to join, what is, when, where, etc.), provide a helpful, friendly response
 2. If it's just regular chat/reaction (hype, emotes, casual talk), respond with: NO_RESPONSE
 3. Keep responses under 200 characters
-4. Match the current mood (${currentMood}): use emojis and energy if "hype", be supportive if negative, casual if neutral
+4. IMPORTANT: Match the personality mode ${currentMood} exactly - follow the tone, emoji usage, caps usage, and enthusiasm level specified above
 5. Include relevant links/commands when appropriate
 6. Use Planet CUHZ brand voice: welcoming, cosmic theme, "cuhz" instead of "cousin"
 

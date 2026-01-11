@@ -196,6 +196,66 @@ async function checkStreamStatus(channelName) {
     }
 }
 
+// --- Twitch ID & Follow Helpers ---
+
+async function getTwitchUser(username) {
+    if (!twitchClientId) await fetchClientId();
+    if (!twitchClientId) return null;
+
+    try {
+        const apiBase = config.twitchApiBase || 'https://api.twitch.tv/helix';
+        const token = config.oauthToken.replace('oauth:', '');
+        const cleanName = username.replace('#', '').replace('@', '');
+
+        const response = await axios.get(`${apiBase}/users`, {
+            params: { login: cleanName },
+            headers: {
+                'Client-ID': twitchClientId,
+                'Authorization': `Bearer ${token}`
+            },
+            timeout: 5000
+        });
+
+        if (response.data && response.data.data.length > 0) {
+            return response.data.data[0];
+        }
+        return null;
+    } catch (error) {
+        logger.error(`Error resolving user ${username}:`, error.message);
+        return null;
+    }
+}
+
+async function getFollowData(broadcasterId, userId) {
+    if (!twitchClientId) await fetchClientId();
+    if (!twitchClientId) return null;
+
+    try {
+        const apiBase = config.twitchApiBase || 'https://api.twitch.tv/helix';
+        const token = config.oauthToken.replace('oauth:', '');
+
+        const response = await axios.get(`${apiBase}/channels/followers`, {
+            params: {
+                broadcaster_id: broadcasterId,
+                user_id: userId
+            },
+            headers: {
+                'Client-ID': twitchClientId,
+                'Authorization': `Bearer ${token}`
+            },
+            timeout: 5000
+        });
+
+        if (response.data && response.data.data && response.data.data.length > 0) {
+            return response.data.data[0]; // Returns { user_id, user_name, followed_at }
+        }
+        return null; // Not following
+    } catch (error) {
+        // 404 or empty usually implies not following or error
+        return null;
+    }
+}
+
 // --- Bot Logic ---
 
 async function initializeTwitchClient() {
@@ -509,13 +569,16 @@ async function handleMessage(channel, tags, message, self) {
     // 0.5. Context-Aware Response (AI)
     if (config.enableContextAware && !msg.startsWith('!')) {
         try {
-            const currentMood = moodTracker.getCurrentPersonality(channel);
+            const currentPersonality = moodTracker.getCurrentPersonality(channel);
+            const personalityConfig = moodTracker.getPersonalityConfig(currentPersonality);
+
             const aiResponse = await contextHandler.handleContextAwareResponse(
                 channel,
                 tags.username,
                 message,
-                currentMood,
-                persona.commands
+                currentPersonality,
+                persona.commands,
+                personalityConfig
             );
 
             if (aiResponse) {
@@ -534,6 +597,52 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 2. Dynamic Commands
+    if (msg.startsWith('!followage') || msg.startsWith('!following')) {
+        try {
+            // 1. Determine target user (sender or specified user)
+            const args = message.split(' ');
+            const targetUsername = args[1] ? args[1].replace('@', '') : tags.username;
+
+            // 2. Get IDs for Channel and Target User
+            const channelUser = await getTwitchUser(channel.replace('#', ''));
+            const targetUser = await getTwitchUser(targetUsername);
+
+            if (!channelUser || !targetUser) {
+                logger.warn(`Could not resolve IDs for followage check: Ch=${channel} User=${targetUsername}`);
+                // Only reply if it was a specific request that failed
+                if (args[1]) client.say(channel, `Could not find user @${targetUsername}`);
+                return;
+            }
+
+            // 3. Check follow status
+            const followData = await getFollowData(channelUser.id, targetUser.id);
+
+            if (followData) {
+                const start = new Date(followData.followed_at);
+                const now = new Date();
+                const diffTime = Math.abs(now - start);
+
+                const years = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365));
+                const months = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24 * 30));
+                const days = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 30)) / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+                let timeStr = "";
+                if (years > 0) timeStr += `${years}y `;
+                if (months > 0) timeStr += `${months}m `;
+                if (days > 0) timeStr += `${days}d `;
+                if (timeStr === "") timeStr = `${hours}h`; // Fallback for very new follows
+
+                client.say(channel, `@${targetUsername} has been following for ${timeStr.trim()}! 📅`);
+            } else {
+                client.say(channel, `@${targetUsername} is not following ${channel} (yet)!`);
+            }
+        } catch (err) {
+            logger.error('Error in !followage:', err.message);
+        }
+        return;
+    }
+
     if (msg === '!uptime') {
         const state = streamStates.get(channel);
 

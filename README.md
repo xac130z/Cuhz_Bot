@@ -121,6 +121,7 @@ npm start
 | `!uptime` | Show how long the stream has been live |
 | `!hype` | Random hype message |
 | `!help` | List available commands |
+| `!followage` | Check how long you've been following the channel |
 | `!ping` | Connectivity check |
 | `!points` | Check your CUHZ points balance |
 

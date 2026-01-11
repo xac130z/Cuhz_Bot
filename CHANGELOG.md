@@ -2,7 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0] - 2026-01-08
+## [1.5.0] - 2026-01-11
+### Added
+- **Followage Command**: Added `!followage` (and `!following`) to check how long a user has been following the channel.
+- **Code Quality**: Added `npm test` and `npm run lint` scripts for better development workflow.
+
+### Fixed
+- **AI Personality Integration**: Fixed critical bug where personality configuration (tone, emojis, caps) was not being passed to the AI service, causing the bot to ignore the current personality mode.
+
+
 ### Fixed
 - **Timer Interval Bug**: Bot now correctly respects per-timer database intervals instead of firing at a hardcoded 12-minute pace.
 - **Bot logic**: Updated `src/bot.js` to dynamically use the `intervalMs` value from the database.
