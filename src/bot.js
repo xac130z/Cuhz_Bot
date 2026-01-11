@@ -1034,7 +1034,8 @@ app.get('/health', (req, res) => {
         connected: client ? client.readyState() === 'OPEN' : false,
         channels: Array.from(connectedChannels),
         streamStates: Object.fromEntries(streamStates),
-        startTime: startTime.toISOString()
+        startTime: startTime.toISOString(),
+        logs: logger.getLogs()
     });
 });
 

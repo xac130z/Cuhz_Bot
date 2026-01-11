@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,7 +34,10 @@
 
         .stars {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
             z-index: 0;
             background: url('https://www.transparenttextures.com/patterns/stardust.png');
@@ -54,6 +58,8 @@
             font-weight: 700;
             letter-spacing: 2px;
             background: linear-gradient(to right, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             text-transform: uppercase;
@@ -81,9 +87,20 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.5); opacity: 0.5; }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.5);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         main {
@@ -171,9 +188,20 @@
             padding-left: 0.8rem;
         }
 
-        .log-info { border-color: var(--cyan); color: #fff; }
-        .log-error { border-color: #ff4d4d; color: #ff4d4d; }
-        .log-warn { border-color: #ffcc00; color: #ffcc00; }
+        .log-info {
+            border-color: var(--cyan);
+            color: #fff;
+        }
+
+        .log-error {
+            border-color: #ff4d4d;
+            color: #ff4d4d;
+        }
+
+        .log-warn {
+            border-color: #ffcc00;
+            color: #ffcc00;
+        }
 
         footer {
             text-align: center;
@@ -183,6 +211,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="stars"></div>
     <nav>
@@ -241,7 +270,7 @@
                 const data = await res.json();
 
                 document.getElementById('active-channels').innerText = data.channels.length;
-                
+
                 const liveCount = Object.values(data.streamStates).filter(s => s.isLive).length;
                 document.getElementById('live-count').innerText = liveCount;
 
@@ -260,6 +289,18 @@
                 const minutes = Math.floor(uptimeMs / 60000);
                 document.getElementById('uptime').innerText = minutes + 'm';
 
+                // Update logs
+                const logContainer = document.getElementById('log-container');
+                if (data.logs && data.logs.length > 0) {
+                    logContainer.innerHTML = data.logs.map(log => `
+                        <div class="log-entry log-${log.level.toLowerCase()}">
+                            [${new Date(log.timestamp).toLocaleTimeString()}] [${log.level}] ${log.message}
+                        </div>
+                    `).join('');
+                    // Auto scroll to bottom
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+
             } catch (err) {
                 console.error('Dashboard sync failed:', err);
             }
@@ -269,4 +310,5 @@
         updateDashboard();
     </script>
 </body>
+
 </html>
