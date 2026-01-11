@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Agent | Cosmic Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cyan: #00f2ff;
+            --blue: #0072ff;
+            --purple: #8a2be2;
+            --bg: #05050f;
+            --card-bg: rgba(255, 255, 255, 0.05);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: white;
+            overflow-x: hidden;
+            background: radial-gradient(circle at 50% 50%, #101030 0%, #05050f 100%);
+            min-height: 100vh;
+        }
+
+        .stars {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background: url('https://www.transparenttextures.com/patterns/stardust.png');
+            opacity: 0.3;
+        }
+
+        nav {
+            padding: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 10;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            background: linear-gradient(to right, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+        }
+
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            background: rgba(0, 242, 255, 0.1);
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--cyan);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--cyan);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        main {
+            padding: 2rem;
+            position: relative;
+            z-index: 10;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2rem;
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: var(--cyan);
+        }
+
+        .card h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            color: var(--cyan);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-val {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.6;
+            text-transform: uppercase;
+        }
+
+        .channels-list {
+            list-style: none;
+        }
+
+        .channels-list li {
+            padding: 0.8rem;
+            background: rgba(0, 0, 0, 0.3);
+            margin-bottom: 0.5rem;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .shoutout {
+            color: var(--purple);
+            font-size: 0.8rem;
+        }
+
+        .logs {
+            grid-column: 1 / -1;
+            background: #000;
+            padding: 1.5rem;
+            border-radius: 15px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .log-entry {
+            margin-bottom: 0.4rem;
+            border-left: 3px solid transparent;
+            padding-left: 0.8rem;
+        }
+
+        .log-info { border-color: var(--cyan); color: #fff; }
+        .log-error { border-color: #ff4d4d; color: #ff4d4d; }
+        .log-warn { border-color: #ffcc00; color: #ffcc00; }
+
+        footer {
+            text-align: center;
+            padding: 4rem 2rem;
+            opacity: 0.4;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="stars"></div>
+    <nav>
+        <div class="logo">Antigravity Agent</div>
+        <div class="status-badge">
+            <div class="dot"></div>
+            SYSTEM OPERATIONAL
+        </div>
+    </nav>
+
+    <main>
+        <div class="grid">
+            <div class="card">
+                <h2>Bot Essence</h2>
+                <div class="stat-val" id="active-channels">0</div>
+                <div class="stat-label">Connected Channels</div>
+            </div>
+
+            <div class="card">
+                <h2>Uptime</h2>
+                <div class="stat-val" id="uptime">0m</div>
+                <div class="stat-label">Engine Running</div>
+            </div>
+
+            <div class="card" id="active-streams-card">
+                <h2>Active Missions</h2>
+                <div class="stat-val" id="live-count">0</div>
+                <div class="stat-label">Streams Live</div>
+            </div>
+
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>Connected Channels</h2>
+                <ul class="channels-list" id="channel-list">
+                    <!-- Channels injected here -->
+                </ul>
+            </div>
+
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>Mission Logs</h2>
+                <div class="logs" id="log-container">
+                    <div class="log-entry log-info">[INFO] Dashboard initialized...</div>
+                    <div class="log-entry log-info">[INFO] Connecting to Twitch Galaxy...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        &copy; 2026 Planet CUHZ | Built for the Cosmic Family
+    </footer>
+
+    <script>
+        async function updateDashboard() {
+            try {
+                const res = await fetch('/health');
+                const data = await res.json();
+
+                document.getElementById('active-channels').innerText = data.channels.length;
+                
+                const liveCount = Object.values(data.streamStates).filter(s => s.isLive).length;
+                document.getElementById('live-count').innerText = liveCount;
+
+                const list = document.getElementById('channel-list');
+                list.innerHTML = data.channels.map(ch => `
+                    <li>
+                        <span>${ch}</span>
+                        <span class="status-badge" style="border:none; background:none;">
+                            ${data.streamStates[ch]?.isLive ? '🔴 LIVE' : '⚪ OFFLINE'}
+                        </span>
+                    </li>
+                `).join('');
+
+                // Uptime calc
+                const uptimeMs = Date.now() - new Date(data.startTime).getTime();
+                const minutes = Math.floor(uptimeMs / 60000);
+                document.getElementById('uptime').innerText = minutes + 'm';
+
+            } catch (err) {
+                console.error('Dashboard sync failed:', err);
+            }
+        }
+
+        setInterval(updateDashboard, 5000);
+        updateDashboard();
+    </script>
+</body>
+</html>

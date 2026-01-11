@@ -7,6 +7,8 @@ const db = require('./database');
 const aiService = require('./ai_service');
 const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
+const fs = require('fs');
+const path = require('path');
 
 // --- Global Error Handlers (Prevention) ---
 process.on('unhandledRejection', (reason, promise) => {
@@ -264,6 +266,68 @@ async function getFollowData(broadcasterId, userId) {
         } else {
             logger.error(`❌ Follow API error: ${error.message}`);
         }
+        return null;
+    }
+}
+
+async function updateChannelInfo(broadcasterId, data) {
+    if (!twitchClientId) await fetchClientId();
+    if (!twitchClientId) return false;
+
+    try {
+        const apiBase = config.twitchApiBase || 'https://api.twitch.tv/helix';
+        const token = config.oauthToken.replace('oauth:', '');
+
+        await axios.patch(`${apiBase}/channels?broadcaster_id=${broadcasterId}`, data, {
+            headers: {
+                'Client-ID': twitchClientId,
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 5000
+        });
+        return true;
+    } catch (error) {
+        logger.error(`Error updating channel info: ${error.message}`);
+        if (error.response) {
+            logger.error(`API Error: ${JSON.stringify(error.response.data)}`);
+        }
+        return false;
+    }
+}
+
+async function getGameId(gameName) {
+    if (!twitchClientId) await fetchClientId();
+    if (!twitchClientId) return null;
+
+    try {
+        const apiBase = config.twitchApiBase || 'https://api.twitch.tv/helix';
+        const token = config.oauthToken.replace('oauth:', '');
+        const response = await axios.get(`${apiBase}/games?name=${encodeURIComponent(gameName)}`, {
+            headers: {
+                'Client-ID': twitchClientId,
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.data && response.data.data.length > 0) {
+            return response.data.data[0].id;
+        }
+        return null;
+    } catch (error) {
+        return null;
+    }
+}
+
+async function validateToken() {
+    try {
+        const authBase = config.twitchAuthBase || 'https://id.twitch.tv/oauth2';
+        const token = config.oauthToken.replace('oauth:', '');
+        const response = await axios.get(`${authBase}/validate`, {
+            headers: { 'Authorization': `OAuth ${token}` }
+        });
+        return response.data;
+    } catch (error) {
         return null;
     }
 }
@@ -743,6 +807,50 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    if (msg.startsWith('!title ') && isMod) {
+        const newTitle = message.substring(7).trim();
+        const user = await getTwitchUser(channel.replace('#', ''));
+        if (user && newTitle) {
+            const success = await updateChannelInfo(user.id, { title: newTitle });
+            if (success) client.say(channel, `✅ Stream title updated to: ${newTitle}`);
+            else client.say(channel, `❌ Failed to update title. Check bot perks.`);
+        }
+        return;
+    }
+
+    if (msg.startsWith('!game ') && isMod) {
+        const gameName = message.substring(6).trim();
+        const user = await getTwitchUser(channel.replace('#', ''));
+        const gameId = await getGameId(gameName);
+        if (user && gameId) {
+            const success = await updateChannelInfo(user.id, { game_id: gameId });
+            if (success) client.say(channel, `🎮 Category updated to: ${gameName}`);
+            else client.say(channel, `❌ Failed to update category.`);
+        } else if (gameName && !gameId) {
+            client.say(channel, `❌ Could not find game: ${gameName}`);
+        }
+        return;
+    }
+
+    if (msg === '!botcheck' && isMod) {
+        const validation = await validateToken();
+        if (validation) {
+            const hasFollowerScope = (validation.scopes || []).includes('moderator:read:followers');
+            const hasBroadcastScope = (validation.scopes || []).includes('channel:manage:broadcast');
+            client.say(channel, `🤖 Status: LIVE | Scopes: ${validation.scopes.length} | Followage Fix: ${hasFollowerScope ? '✅' : '❌'} | Title/Game: ${hasBroadcastScope ? '✅' : '❌'}`);
+        } else {
+            client.say(channel, `❌ Token invalid or expired.`);
+        }
+        return;
+    }
+
+    if (msg === '!refresh' && isMod) {
+        client.say(channel, `🔄 Refreshing persona from dashboard...`);
+        await fetchChannelPersona(channel);
+        client.say(channel, `✅ Persona reloaded!`);
+        return;
+    }
+
     // Auto-shoutout management commands
     if (msg.startsWith('!addstreamer ') && isMod) {
         const streamerName = message.split(' ')[1]?.replace('@', '').toLowerCase();
@@ -925,8 +1033,19 @@ app.get('/health', (req, res) => {
         status: 'ok',
         connected: client ? client.readyState() === 'OPEN' : false,
         channels: Array.from(connectedChannels),
-        streamStates: Object.fromEntries(streamStates)
+        streamStates: Object.fromEntries(streamStates),
+        startTime: startTime.toISOString()
     });
+});
+
+app.get('/', (req, res) => {
+    try {
+        const templatePath = path.join(__dirname, 'dashboard.html');
+        const html = fs.readFileSync(templatePath, 'utf8');
+        res.send(html);
+    } catch (err) {
+        res.status(500).send('Dashboard template missing.');
+    }
 });
 
 app.listen(config.port, () => {

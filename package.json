@@ -1,6 +1,6 @@
 {
   "name": "antigravity-agent",
-  "version": "1.0.0",
+  "version": "1.6.0",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",

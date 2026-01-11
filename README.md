@@ -138,6 +138,13 @@ npm start
 | --- | --- |
 | `!announce [msg]` | Sends a beautiful announcement |
 | `!so [user]` | Gives a shoutout to the specified user |
+| `!title [text]` | Changes the stream title |
+| `!game [name]` | Changes the stream category/game |
+| `!botcheck` | Verifies bot status and token permissions |
+| `!refresh` | Forces a reload of persona data from the dashboard |
+| `!addstreamer` | Add user to auto-shoutout whitelist |
+| `!removestreamer`| Remove user from auto-shoutout whitelist |
+| `!liststreamers`| List all whitelisted auto-shoutout streamers |
 | `!raid [user]` | Initiates a raid to another channel |
 | `!ban [user]` | Bans a user from chat |
 | `!unban [user]` | Unbans a user |

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-01-11
+### Added
+- **Cosmic Dashboard**: A premium HTML health dashboard accessible via the bot's root URL. Features pulsing glows, cosmic aesthetic, and real-time status.
+- **Broadcaster Management**: Added `!title` and `!game` commands for real-time stream updates.
+- **Diagnostic Tools**: Added `!botcheck` to verify token permissions and `!refresh` to force persona reloads.
+- **Improved Monitoring**: Enhanced `/health` endpoint to support the dashboard UI.
+
 ## [1.5.0] - 2026-01-11
 ### Added
 - **Followage Command**: Added `!followage` (and `!following`) to check how long a user has been following the channel.
