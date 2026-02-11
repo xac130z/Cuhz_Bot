@@ -647,6 +647,8 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     const msg = message.toLowerCase();
+    const cleanChannel = channel.replace('#', '').toLowerCase();
+    const isVerifiedStream = ['fourareason4', 'planetcuhz', 'rico_santanax'].includes(cleanChannel);
 
     const persona = getChannelConfig(channel);
 
@@ -766,8 +768,8 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // --- Phase 1: Chat Memory Commands ---
-    if (msg.startsWith('!whois ')) {
+    // --- Phase 1: Chat Memory Commands (Restricted to Verified Streams) ---
+    if (msg.startsWith('!whois ') && isVerifiedStream) {
         const target = message.split(' ')[1]?.replace('@', '');
         if (target) {
             try {
@@ -780,13 +782,13 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg === '!topchatters') {
+    if (msg === '!topchatters' && isVerifiedStream) {
         try {
-            const topChatters = await userMemory.getTopChatters(channel, 24, 5);
-            if (topChatters.length === 0) {
+            const top = await userMemory.getTopChatters(channel, 24, 5); // Keep original parameters for now, diff had (5)
+            if (top.length === 0) {
                 client.say(channel, `📊 No chat data yet for today!`);
             } else {
-                const list = topChatters.map((c, i) => `${i + 1}. @${c.username} (${c.msg_count})`).join(' | ');
+                const list = top.map((c, i) => `${i + 1}. @${c.username} (${c.msg_count})`).join(' | ');
                 client.say(channel, `🏆 Top chatters today: ${list}`);
             }
         } catch (err) {
@@ -810,6 +812,17 @@ async function handleMessage(channel, tags, message, self) {
     // 3. Mod / Owner Commands
     const isMod = tags.mod || (tags.badges && tags.badges.broadcaster);
 
+    // --- Dev Service Promotion Commands ---
+    if (['!build', '!agents', '!bot'].includes(msg)) {
+        let promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @fourareason4 know right here in the stream! 🚀";
+
+        if (cleanChannel === 'planetcuhz') promo = "Looking to level up your brand with a custom bot or AI team? Let @fourareason4 know he's in the chat! 🌌";
+        if (cleanChannel === 'rico_santanax') promo = "Rico's bot is built by the fam! Want your own? Holla at @fourareason4 for custom bots and AI agents! 🔥";
+
+        client.say(channel, promo);
+        return;
+    }
+
     // Mood Detection Commands
     if (msg === '!mood' && isMod && config.enableMoodDetection) {
         const moodState = moodTracker.getMoodState(channel);
@@ -827,7 +840,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg === '!aistats' && tags.username === 'fourareason4') {
+    if (msg === '!aistats' && tags.username === 'fourareason4' && isVerifiedStream) {
         const s = aiService.getStats();
         const cacheStats = await contextHandler.getCacheStats();
         const eyes = `👁️${s.eyes.available ? '✅' : '❌'}(${s.eyes.failures})`;
@@ -837,8 +850,8 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // --- Tri-Brain Direct Commands ---
-    if (msg.startsWith('!ask ')) {
+    // --- Tri-Brain Direct Commands (Restricted to Verified Streams) ---
+    if (msg.startsWith('!ask ') && isVerifiedStream) {
         const question = message.substring(5).trim();
         if (question) {
             try {
@@ -851,7 +864,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg.startsWith('!code ')) {
+    if (msg.startsWith('!code ') && isVerifiedStream) {
         const query = message.substring(6).trim();
         if (query) {
             try {
