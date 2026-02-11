@@ -9,6 +9,8 @@ const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
 const userMemory = require('./user_memory');
 const pointsService = require('./points_service');
+const loyaltySystem = require('./loyalty');
+const modIntel = require('./mod_intel');
 const fs = require('fs');
 const path = require('path');
 
@@ -458,14 +460,36 @@ function startStreamPoller(channel) {
     }, 60000);
 }
 
+// ... imports
+const streamIntel = require('./stream_intel');
+
+// ... existing code ...
+
 async function updateStreamState(channel) {
     const status = await checkStreamStatus(channel);
+    const current = streamStates.get(channel);
+    const wasLive = current && current.isLive;
+
+    // 1. Stream is LIVE
     if (status) {
         streamStates.set(channel, status);
-        // Optional: log state change
-        // logger.debug(`Stream state for ${channel}: ${status.isLive ? 'LIVE' : 'OFFLINE'}`);
+        await streamIntel.updateStreamStatus(channel, status);
+
+        if (!wasLive) {
+            logger.info(`🔴 STREAM LIVE: ${channel} playing ${status.game}`);
+            client.say(channel, `🔴 WE ARE LIVE! playing ${status.game}! Get in here cuhz! 🚀`);
+        }
+    }
+    // 2. Stream went OFFLINE
+    else if (wasLive) {
+        streamStates.set(channel, { isLive: false });
+        await streamIntel.updateStreamStatus(channel, { isLive: false });
+        logger.info(`⚫ STREAM ENDED: ${channel}`);
     }
 }
+
+
+
 
 function startMoodAnalyzer(channel) {
     if (!config.enableMoodDetection) return;
@@ -639,7 +663,7 @@ async function handleMessage(channel, tags, message, self) {
         // 2. Earn Active Point (+1 per message)
         await pointsService.addPoints(usernameL, 1, 'chat_message');
 
-        // 3. Update User Stats (Last Seen, Msg Count) - distinct from points now
+        // 3. Update User Stats (Last Seen, Msg Count)
         const upsertUser = db.prepare(`
             INSERT INTO users (username, points, messages_sent, last_seen)
             VALUES (?, 1, 1, CURRENT_TIMESTAMP)
@@ -648,6 +672,29 @@ async function handleMessage(channel, tags, message, self) {
                 last_seen = CURRENT_TIMESTAMP
         `);
         await upsertUser.run(usernameL);
+
+        // 4. Check Achievements (Async)
+        loyaltySystem.checkAchievements(usernameL).then(newAchievements => {
+            if (newAchievements && newAchievements.length > 0) {
+                newAchievements.forEach(ach => {
+                    client.say(channel, `🏆 ACHIEVEMENT UNLOCKED: @${tags.username} earned '${ach}'!`);
+                });
+            }
+        });
+
+        // ... commands ...
+
+        if (msg === '!achievements') {
+            const achievements = await loyaltySystem.getAchievements(tags.username);
+            if (achievements.length === 0) {
+                client.say(channel, `📜 @${tags.username} has no achievements yet. Keep chatting!`);
+            } else {
+                const list = achievements.map(a => a.achievement_name).join(', ');
+                client.say(channel, `🏆 @${tags.username}'s Achievements: ${list}`);
+            }
+            return;
+        }
+
 
         const persona = getChannelConfig(channel);
         // Welcome back message (if last seen > 24h ago or new user AND settings allow it)
@@ -790,6 +837,18 @@ async function handleMessage(channel, tags, message, self) {
     }
 
 
+    if (msg === '!streamstats') {
+        const stats = await streamIntel.getStats(channel);
+        if (!stats) {
+            client.say(channel, "📊 No stream data available yet.");
+        } else if (stats.isLive) {
+            client.say(channel, `🔴 LIVE | Viewers: ${stats.viewers} (Peak: ${stats.peak_viewers || stats.viewers}) | Started: ${new Date(stats.started_at).toLocaleTimeString()}`);
+        } else {
+            client.say(channel, `⚫ OFFLINE | Last Stream: ${new Date(stats.started_at).toLocaleDateString()} | Duration: ${stats.ended_at ? Math.round((new Date(stats.ended_at) - new Date(stats.started_at)) / 60000) + 'm' : 'Unknown'}`);
+        }
+        return;
+    }
+
     if (msg === '!uptime') {
         const state = streamStates.get(channel);
 
@@ -849,19 +908,36 @@ async function handleMessage(channel, tags, message, self) {
     }
 
 
-    if (msg === '!points') {
-        try {
-            const user = await db.prepare('SELECT points FROM users WHERE username = ?').get(tags.username.toLowerCase());
-            const userPoints = user ? user.points : 0;
-            client.say(channel, `@${tags.username}, you have ${userPoints} CUHZ points! 💎`);
-        } catch (err) {
-            logger.error('Error fetching points:', err.message);
+
+
+    // 3. Mod / Owner Commands
+    const isMod = tags.mod || (tags.badges && tags.badges.broadcaster);
+
+    // --- Mod Intelligence Commands ---
+
+    if (msg === '!chatreport' && isMod) {
+        const health = await modIntel.getChatHealth(channel);
+        if (health) {
+            client.say(channel, `🛡️ Chat Report: Mood=${health.mood} (${health.energy}% Energy, ${health.toxicity}% Toxicity) | Activity=${health.messagesLastHour} msgs by ${health.activeChatters} users (Last Hour)`);
+        } else {
+            client.say(channel, `⚠️ Failed to generate report.`);
         }
         return;
     }
 
-    // 3. Mod / Owner Commands
-    const isMod = tags.mod || (tags.badges && tags.badges.broadcaster);
+    if (msg.startsWith('!userreport ') && isMod) {
+        const target = message.split(' ')[1]?.replace('@', '');
+        if (target) {
+            client.say(channel, `🔍 Analyzing ${target}... specific report generating... standby...`);
+            const report = await modIntel.generateUserReport(target);
+            // It might be long, so maybe split or categorize
+            // For Twitch limit comfort, maybe keep it short in prompt or split here
+            // But prompt asked for "brief", so likely okay.
+            client.say(channel, `📋 Report on @${target}: ${report}`);
+        }
+        return;
+    }
+
 
     // --- Dev Service Promotion Commands ---
     if (['!build', '!agents', '!bot'].includes(msg)) {
