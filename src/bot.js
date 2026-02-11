@@ -756,6 +756,40 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    if (msg === '!claim') {
+        try {
+            // 1. Get IDs
+            const channelUser = await getTwitchUser(channel.replace('#', ''));
+            const targetUser = await getTwitchUser(tags.username);
+
+            if (!channelUser || !targetUser) {
+                client.say(channel, `⚠️ API Error: Could not verify follower status. Try again later.`);
+                return;
+            }
+
+            // 2. Verify Follow
+            const followData = await getFollowData(channelUser.id, targetUser.id);
+            if (!followData) {
+                client.say(channel, `🚫 You must be following the channel to claim your 300 point bonus!`);
+                return;
+            }
+
+            // 3. Attempt to Claim (Logic in pointsService handles "one time only" check)
+            const success = await pointsService.claimBonus(tags.username, 'follower_bonus', 300);
+
+            if (success) {
+                const balance = await pointsService.getBalance(tags.username);
+                client.say(channel, `🎉 FOLLOW BONUS CLAIMED! @${tags.username} received 300 points! Balance: ${balance} 💎`);
+            } else {
+                client.say(channel, `🚫 Nice try cuhz! You already claimed your follower bonus.`);
+            }
+        } catch (err) {
+            logger.error('Error in !claim:', err.message);
+        }
+        return;
+    }
+
+
     if (msg === '!uptime') {
         const state = streamStates.get(channel);
 

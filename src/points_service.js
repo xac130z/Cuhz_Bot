@@ -96,6 +96,29 @@ class PointsService {
             return [];
         }
     }
+
+    /**
+     * Claim a one-time bonus (like follower bonus)
+     * Checks ledger to ensuring no prior claim of this type
+     */
+    async claimBonus(username, bonusType, amount) {
+        try {
+            const safeUser = username.toLowerCase().replace('@', '');
+
+            // 1. Check if already claimed
+            const existingClaim = await db.prepare('SELECT id FROM points_ledger WHERE username = ? AND reason = ?').get(safeUser, bonusType);
+
+            if (existingClaim) {
+                return false; // Already claimed
+            }
+
+            // 2. Award points
+            return await this.addPoints(safeUser, amount, bonusType);
+        } catch (err) {
+            logger.error(`❌ Failed to claim bonus for ${username}: ${err.message}`);
+            return false;
+        }
+    }
 }
 
 module.exports = new PointsService();
