@@ -6,6 +6,9 @@ const db = require('./database');
 const contextBuffers = new Map();
 const CONTEXT_BUFFER_SIZE = 20;
 
+// Bot identity for mention detection
+const BOT_USERNAME = (process.env.BOT_USERNAME || 'cuhz_bot').toLowerCase();
+
 /**
  * Initialize context tracking for a channel
  * @param {string} channel
@@ -36,34 +39,45 @@ function addToContext(channel, username, message) {
 }
 
 /**
- * Check if message is a question or request
+ * Check if message is a question or request worth responding to
+ * Improved to reduce false positives from casual chat
  * @param {string} message
  * @returns {boolean}
  */
 function isQuestionOrRequest(message) {
-    const lowerMsg = message.toLowerCase();
+    const lowerMsg = message.toLowerCase().trim();
 
-    // Question words
-    const questionWords = ['how', 'what', 'when', 'where', 'why', 'who', 'which', 'can', 'could', 'would', 'should', 'is', 'are', 'do', 'does'];
-    const hasQuestionWord = questionWords.some(word => lowerMsg.startsWith(word) || lowerMsg.includes(` ${word} `));
+    // Skip very short messages — too ambiguous to determine intent
+    if (lowerMsg.length < 12) {
+        return false;
+    }
 
-    // Question mark
+    // Skip if it looks like an emote or reaction (all caps, single words, emote-like patterns)
+    if (/^[A-Z!?]+$/.test(message.trim()) || message.trim().split(' ').length <= 2) {
+        // Allow if it ends with ? even if short
+        if (!message.includes('?')) return false;
+    }
+
+    // Direct question mark is a strong signal
     const hasQuestionMark = message.includes('?');
 
-    // Request patterns
+    // Question words — only count if they START the sentence
+    const questionStarters = ['how ', 'what ', 'when ', 'where ', 'why ', 'who ', 'which ', 'can i ', 'can you ', 'could you ', 'would you ', 'should i ', 'does anyone ', 'do you ', 'is there '];
+    const startsWithQuestion = questionStarters.some(word => lowerMsg.startsWith(word));
+
+    // Request patterns — strong intent signals
     const requestPatterns = [
-        'tell me',
-        'show me',
-        'i want',
-        'i need',
-        'help with',
-        'link to',
-        'where can',
-        'how do i'
+        'tell me', 'show me', 'i want to know', 'i need help',
+        'help with', 'link to', 'where can i', 'how do i',
+        'what is', 'explain', 'looking for'
     ];
     const hasRequestPattern = requestPatterns.some(pattern => lowerMsg.includes(pattern));
 
-    return hasQuestionWord || hasQuestionMark || hasRequestPattern;
+    // Direct bot mention is always worth responding to
+    const mentionsBot = lowerMsg.includes(`@${BOT_USERNAME}`) || lowerMsg.includes('cuhz bot') || lowerMsg.includes('cuhzbot');
+
+    // Must have at least one strong signal
+    return mentionsBot || hasRequestPattern || (startsWithQuestion && hasQuestionMark) || (hasQuestionMark && lowerMsg.length > 20);
 }
 
 /**
@@ -108,9 +122,10 @@ function matchExistingCommand(message, availableCommands) {
  * @param {string} currentMood
  * @param {Object} availableCommands
  * @param {Object} personalityConfig - Personality configuration (optional)
+ * @param {Object} userProfile - User profile data for personalization (optional)
  * @returns {Promise<string|null>}
  */
-async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands, personalityConfig = null) {
+async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands, personalityConfig = null, userProfile = null) {
     // First check if it's even a question/request
     if (!isQuestionOrRequest(message)) {
         return null;
@@ -139,7 +154,8 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
             context,
             currentMood,
             availableCommands,
-            personalityConfig
+            personalityConfig,
+            userProfile  // Pass user profile for personalization
         );
 
         if (aiResponse) {
@@ -163,14 +179,15 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
 async function getCachedResponse(query) {
     try {
         const normalizedQuery = query.toLowerCase().trim();
+        const now = new Date().toISOString();
 
-        const result = db.prepare(`
+        const result = await db.prepare(`
             SELECT response 
             FROM context_cache 
             WHERE LOWER(query) = ? 
-            AND (expires_at IS NULL OR expires_at > datetime('now'))
+            AND (expires_at IS NULL OR expires_at > ?)
             LIMIT 1
-        `).get(normalizedQuery);
+        `).get(normalizedQuery, now);
 
         return result ? result.response : null;
     } catch (error) {
@@ -190,8 +207,13 @@ async function cacheResponse(query, response, ttlHours = 24) {
         const normalizedQuery = query.toLowerCase().trim();
         const expiresAt = new Date(Date.now() + ttlHours * 3600000).toISOString();
 
-        db.prepare(`
-            INSERT OR REPLACE INTO context_cache (channel, query, response, expires_at)
+        // Delete existing cache entry for this query first to avoid duplicates
+        await db.prepare(`
+            DELETE FROM context_cache WHERE LOWER(query) = ?
+        `).run(normalizedQuery);
+
+        await db.prepare(`
+            INSERT INTO context_cache (channel, query, response, expires_at)
             VALUES ('*', ?, ?, ?)
         `).run(normalizedQuery, response, expiresAt);
 
@@ -204,12 +226,13 @@ async function cacheResponse(query, response, ttlHours = 24) {
 /**
  * Clear expired cache entries
  */
-function cleanExpiredCache() {
+async function cleanExpiredCache() {
     try {
-        const result = db.prepare(`
+        const now = new Date().toISOString();
+        const result = await db.prepare(`
             DELETE FROM context_cache 
-            WHERE expires_at IS NOT NULL AND expires_at < datetime('now')
-        `).run();
+            WHERE expires_at IS NOT NULL AND expires_at < ?
+        `).run(now);
 
         if (result.changes > 0) {
             logger.info(`🧹 Cleaned ${result.changes} expired cache entries`);
@@ -242,17 +265,18 @@ function clearContext(channel) {
 
 /**
  * Get cache statistics
- * @returns {Object}
+ * @returns {Promise<Object>}
  */
-function getCacheStats() {
+async function getCacheStats() {
     try {
-        const stats = db.prepare(`
+        const now = new Date().toISOString();
+        const stats = await db.prepare(`
             SELECT 
                 COUNT(*) as total_entries,
-                COUNT(CASE WHEN expires_at > datetime('now') THEN 1 END) as active_entries,
-                COUNT(CASE WHEN expires_at <= datetime('now') THEN 1 END) as expired_entries
+                COUNT(CASE WHEN expires_at > ? THEN 1 END) as active_entries,
+                COUNT(CASE WHEN expires_at <= ? THEN 1 END) as expired_entries
             FROM context_cache
-        `).get();
+        `).get(now, now);
 
         return stats;
     } catch (error) {

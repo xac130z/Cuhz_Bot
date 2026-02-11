@@ -28,6 +28,7 @@ module.exports = {
 
     // AI Settings
     geminiApiKey: process.env.GEMINI_API_KEY,
+    qwenApiKey: process.env.QWEN_API_KEY,
     enableMoodDetection: process.env.ENABLE_MOOD_DETECTION !== 'false',
     enableContextAware: process.env.ENABLE_CONTEXT_AWARE !== 'false',
     moodAnalysisInterval: parseInt(process.env.MOOD_ANALYSIS_INTERVAL) || 120, // seconds

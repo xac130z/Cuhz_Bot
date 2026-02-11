@@ -7,6 +7,7 @@ const db = require('./database');
 const aiService = require('./ai_service');
 const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
+const userMemory = require('./user_memory');
 const fs = require('fs');
 const path = require('path');
 
@@ -480,11 +481,19 @@ function startMoodAnalyzer(channel) {
                     const sentiment = await aiService.analyzeSentiment(messageBuffer);
                     const newPersonality = moodTracker.updateMood(channel, sentiment);
 
-                    // Check if hype injection is needed
+                    // Check if hype injection is needed (with cooldown)
                     if (moodTracker.needsHypeInjection(channel) && client && client.readyState() === 'OPEN') {
-                        const persona = getChannelConfig(channel);
-                        const hypeMsg = persona.hype[Math.floor(Math.random() * persona.hype.length)];
+                        // Try AI-generated proactive message first, fall back to static hype
+                        const recentContext = contextHandler.getContext(channel);
+                        let hypeMsg = await aiService.generateProactiveMessage(channel, recentContext, sentiment.mood);
+
+                        if (!hypeMsg) {
+                            const persona = getChannelConfig(channel);
+                            hypeMsg = persona.hype[Math.floor(Math.random() * persona.hype.length)];
+                        }
+
                         client.say(channel, `💫 ${hypeMsg}`);
+                        moodTracker.recordHypeInjection(channel);
                         logger.info(`💉 Injected hype into ${channel} (low energy detected)`);
                     }
 
@@ -553,7 +562,7 @@ function startRotationalTimer(channel) {
 async function handleAutoShoutout(channel, usernameLower, displayName) {
     try {
         // Check if this user is in the auto-shoutout list
-        const streamer = db.prepare(`
+        const streamer = await db.prepare(`
             SELECT * FROM streamer_shoutouts 
             WHERE channel = ? AND streamer_username = ? AND is_active = 1
         `).get(channel, usernameLower);
@@ -576,7 +585,7 @@ async function handleAutoShoutout(channel, usernameLower, displayName) {
         client.say(channel, `🎬 Big shoutout to fellow streamer @${displayName}! Check them out at https://twitch.tv/${usernameLower} 🚀`);
 
         // Update database
-        db.prepare(`
+        await db.prepare(`
             UPDATE streamer_shoutouts 
             SET last_shoutout = CURRENT_TIMESTAMP, shoutout_count = shoutout_count + 1 
             WHERE channel = ? AND streamer_username = ?
@@ -601,13 +610,17 @@ async function handleMessage(channel, tags, message, self) {
         contextHandler.addToContext(channel, username, message);
     }
 
+    // --- Record to Chat Memory ---
+    const isCommand = message.startsWith('!');
+    userMemory.recordMessage(channel, username, message, isCommand);
+
     // --- Track User Activity ---
     try {
         const usernameL = username.toLowerCase();
         const now = new Date();
         const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
 
-        const user = db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
+        const user = await db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
 
         const upsertUser = db.prepare(`
             INSERT INTO users (username, points, messages_sent, last_seen)
@@ -617,7 +630,7 @@ async function handleMessage(channel, tags, message, self) {
                 messages_sent = messages_sent + 1,
                 last_seen = CURRENT_TIMESTAMP
         `);
-        upsertUser.run(usernameL);
+        await upsertUser.run(usernameL);
 
         const persona = getChannelConfig(channel);
         // Welcome back message (if last seen > 24h ago or new user AND settings allow it)
@@ -634,6 +647,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     const msg = message.toLowerCase();
+
     const persona = getChannelConfig(channel);
 
     // 0. Global Connectivity Test
@@ -648,13 +662,17 @@ async function handleMessage(channel, tags, message, self) {
             const currentPersonality = moodTracker.getCurrentPersonality(channel);
             const personalityConfig = moodTracker.getPersonalityConfig(currentPersonality);
 
+            // Get user profile for personalization
+            const userProfile = await userMemory.getProfile(tags.username);
+
             const aiResponse = await contextHandler.handleContextAwareResponse(
                 channel,
                 tags.username,
                 message,
                 currentPersonality,
                 persona.commands,
-                personalityConfig
+                personalityConfig,
+                userProfile   // Pass user profile for AI personalization
             );
 
             if (aiResponse) {
@@ -748,9 +766,39 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // --- Phase 1: Chat Memory Commands ---
+    if (msg.startsWith('!whois ')) {
+        const target = message.split(' ')[1]?.replace('@', '');
+        if (target) {
+            try {
+                const summary = await userMemory.generateUserSummary(target);
+                client.say(channel, `📋 @${target}: ${summary}`);
+            } catch (err) {
+                logger.error('Error in !whois:', err.message);
+            }
+        }
+        return;
+    }
+
+    if (msg === '!topchatters') {
+        try {
+            const topChatters = await userMemory.getTopChatters(channel, 24, 5);
+            if (topChatters.length === 0) {
+                client.say(channel, `📊 No chat data yet for today!`);
+            } else {
+                const list = topChatters.map((c, i) => `${i + 1}. @${c.username} (${c.msg_count})`).join(' | ');
+                client.say(channel, `🏆 Top chatters today: ${list}`);
+            }
+        } catch (err) {
+            logger.error('Error in !topchatters:', err.message);
+        }
+        return;
+    }
+
+
     if (msg === '!points') {
         try {
-            const user = db.prepare('SELECT points FROM users WHERE username = ?').get(tags.username.toLowerCase());
+            const user = await db.prepare('SELECT points FROM users WHERE username = ?').get(tags.username.toLowerCase());
             const userPoints = user ? user.points : 0;
             client.say(channel, `@${tags.username}, you have ${userPoints} CUHZ points! 💎`);
         } catch (err) {
@@ -781,10 +829,12 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!aistats' && tags.username === 'fourareason4') {
         const aiStats = aiService.getStats();
-        const cacheStats = contextHandler.getCacheStats();
-        client.say(channel, `🤖 AI: ${aiStats.requestsThisMinute}/${aiStats.maxRequestsPerMinute} req/min | Cache: ${cacheStats.active_entries} entries | Enabled: ${aiStats.aiEnabled}`);
+        const cacheStats = await contextHandler.getCacheStats();
+        const modelStatus = `Active: ${aiStats.activeModel.toUpperCase()} | Gemini: ${aiStats.geminiAvailable ? '✅' : '❌'} | Qwen: ${aiStats.qwenAvailable ? '✅' : '❌'}`;
+        client.say(channel, `🤖 ${modelStatus} | ${aiStats.requestsThisMinute}/${aiStats.maxRequestsPerMinute} req/min | Cache: ${cacheStats.active_entries} | Fails: ${aiStats.geminiFailures}`);
         return;
     }
+
 
     if (msg.startsWith('!announce ') && isMod) {
         const announcement = message.substring(10);
@@ -856,7 +906,7 @@ async function handleMessage(channel, tags, message, self) {
         const streamerName = message.split(' ')[1]?.replace('@', '').toLowerCase();
         if (streamerName) {
             try {
-                db.prepare(`
+                await db.prepare(`
                     INSERT INTO streamer_shoutouts (channel, streamer_username, is_active)
                     VALUES (?, ?, 1)
                     ON CONFLICT(channel, streamer_username) DO UPDATE SET is_active = 1
@@ -874,7 +924,7 @@ async function handleMessage(channel, tags, message, self) {
         const streamerName = message.split(' ')[1]?.replace('@', '').toLowerCase();
         if (streamerName) {
             try {
-                db.prepare(`
+                await db.prepare(`
                     UPDATE streamer_shoutouts 
                     SET is_active = 0 
                     WHERE channel = ? AND streamer_username = ?
@@ -890,7 +940,7 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!liststreamers' && isMod) {
         try {
-            const streamers = db.prepare(`
+            const streamers = await db.prepare(`
                 SELECT streamer_username, shoutout_count 
                 FROM streamer_shoutouts 
                 WHERE channel = ? AND is_active = 1

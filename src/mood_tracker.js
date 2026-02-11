@@ -13,6 +13,9 @@ const MOOD_THRESHOLDS = {
     NEUTRAL: {} // Default
 };
 
+// Hype injection cooldown (minimum 10 minutes between injections per channel)
+const HYPE_COOLDOWN_MS = 10 * 60 * 1000;
+
 // Personality modes
 const PERSONALITIES = {
     hype: {
@@ -65,6 +68,7 @@ function initChannel(channel) {
             toxicity: 0,
             messageBuffer: [], // Rolling window of recent messages
             lastAnalysis: Date.now(),
+            lastHypeInjection: 0, // Timestamp of last hype injection
             moodHistory: []
         });
         logger.info(`📊 Mood tracker initialized for ${channel}`);
@@ -94,7 +98,7 @@ function addMessage(channel, username, message) {
  * @param {string} channel
  * @param {Object} sentimentData - {mood, energy, toxicity, summary}
  */
-function updateMood(channel, sentimentData) {
+async function updateMood(channel, sentimentData) {
     initChannel(channel);
 
     const state = channelMoodState.get(channel);
@@ -125,7 +129,7 @@ function updateMood(channel, sentimentData) {
     }
 
     // Save to database
-    saveMoodToDatabase(channel, sentimentData);
+    await saveMoodToDatabase(channel, sentimentData);
 
     return newPersonality;
 }
@@ -248,14 +252,14 @@ function clearMessageBuffer(channel) {
  * @param {string} channel
  * @param {Object} sentiment
  */
-function saveMoodToDatabase(channel, sentiment) {
+async function saveMoodToDatabase(channel, sentiment) {
     try {
         const messageSample = channelMoodState.get(channel)?.messageBuffer
             .slice(-5)
             .map(m => `${m.username}: ${m.message}`)
             .join(' | ') || '';
 
-        db.prepare(`
+        await db.prepare(`
             INSERT INTO mood_history (channel, mood, energy, toxicity, message_sample)
             VALUES (?, ?, ?, ?, ?)
         `).run(channel, sentiment.mood, sentiment.energy, sentiment.toxicity, messageSample);
@@ -269,13 +273,13 @@ function saveMoodToDatabase(channel, sentiment) {
  * Get mood statistics for a channel
  * @param {string} channel
  * @param {number} hours - Hours to look back
- * @returns {Object}
+ * @returns {Promise<Object>}
  */
-function getMoodStats(channel, hours = 24) {
+async function getMoodStats(channel, hours = 24) {
     try {
         const since = new Date(Date.now() - hours * 3600000).toISOString();
 
-        const stats = db.prepare(`
+        const stats = await db.prepare(`
             SELECT 
                 mood,
                 AVG(energy) as avg_energy,
@@ -294,12 +298,49 @@ function getMoodStats(channel, hours = 24) {
 }
 
 /**
- * Check if hype injection is needed (low energy for extended period)
+ * Get mood trend: is chat energy improving, declining, or stable?
+ * Compares last 3 mood readings.
+ * @param {string} channel
+ * @returns {{ trend: 'improving'|'declining'|'stable', avgEnergy: number, avgToxicity: number }}
+ */
+function getMoodTrend(channel) {
+    const state = getMoodState(channel);
+    const recent = state.moodHistory.slice(-3);
+
+    if (recent.length < 3) {
+        return { trend: 'stable', avgEnergy: state.energy, avgToxicity: state.toxicity };
+    }
+
+    const first = recent[0];
+    const last = recent[recent.length - 1];
+    const avgEnergy = recent.reduce((sum, m) => sum + m.energy, 0) / recent.length;
+    const avgToxicity = recent.reduce((sum, m) => sum + m.toxicity, 0) / recent.length;
+
+    const energyDelta = last.energy - first.energy;
+
+    let trend = 'stable';
+    if (energyDelta > 15) {
+        trend = 'improving';
+    } else if (energyDelta < -15) {
+        trend = 'declining';
+    }
+
+    return { trend, avgEnergy: Math.round(avgEnergy), avgToxicity: Math.round(avgToxicity) };
+}
+
+/**
+ * Check if hype injection is needed AND allowed (respects cooldown)
  * @param {string} channel
  * @returns {boolean}
  */
 function needsHypeInjection(channel) {
     const state = getMoodState(channel);
+
+    // Check cooldown first — minimum 10 minutes between injections
+    const timeSinceLastHype = Date.now() - (state.lastHypeInjection || 0);
+    if (timeSinceLastHype < HYPE_COOLDOWN_MS) {
+        return false;
+    }
 
     // Check recent mood history
     const recentMoods = state.moodHistory.slice(-5);
@@ -307,8 +348,20 @@ function needsHypeInjection(channel) {
 
     const avgEnergy = recentMoods.reduce((sum, m) => sum + m.energy, 0) / recentMoods.length;
 
-    // If energy has been below 40 for last few analyses, inject hype
-    return avgEnergy < 40 && state.currentMood !== 'toxic';
+    // If energy has been below 40 for last few analyses AND mood is declining, inject hype
+    const trend = getMoodTrend(channel);
+    return avgEnergy < 40 && state.currentMood !== 'toxic' && trend.trend !== 'improving';
+}
+
+/**
+ * Record that a hype injection was sent (resets cooldown timer)
+ * @param {string} channel
+ */
+function recordHypeInjection(channel) {
+    const state = getMoodState(channel);
+    if (state) {
+        state.lastHypeInjection = Date.now();
+    }
 }
 
 module.exports = {
@@ -323,6 +376,8 @@ module.exports = {
     shouldAnalyzeMood,
     clearMessageBuffer,
     getMoodStats,
+    getMoodTrend,
     needsHypeInjection,
+    recordHypeInjection,
     PERSONALITIES
 };
