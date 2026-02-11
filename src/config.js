@@ -26,9 +26,11 @@ module.exports = {
     twitchApiBase: process.env.USE_MOCK_API === 'true' ? 'http://localhost:3001/helix' : 'https://api.twitch.tv/helix',
     twitchAuthBase: process.env.USE_MOCK_API === 'true' ? 'http://localhost:3001/auth' : 'https://id.twitch.tv/oauth2',
 
-    // AI Settings
-    geminiApiKey: process.env.GEMINI_API_KEY,
-    qwenApiKey: process.env.QWEN_API_KEY,
+    // AI Settings — Tri-Brain Architecture
+    geminiApiKey: process.env.GEMINI_API_KEY,        // The Eyes (speed, chat, sentiment)
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,  // The Brain (complex decisions, moderation)
+    groqApiKey: process.env.GROQ_API_KEY,            // The Hands (Qwen via Groq — code, logic)
+    qwenApiKey: process.env.QWEN_API_KEY,            // Legacy Qwen direct (DashScope fallback)
     enableMoodDetection: process.env.ENABLE_MOOD_DETECTION !== 'false',
     enableContextAware: process.env.ENABLE_CONTEXT_AWARE !== 'false',
     moodAnalysisInterval: parseInt(process.env.MOOD_ANALYSIS_INTERVAL) || 120, // seconds

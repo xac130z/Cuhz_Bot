@@ -1,14 +1,77 @@
 const { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } = require('@google/generative-ai');
+const Anthropic = require('@anthropic-ai/sdk');
 const logger = require('./logger');
 const config = require('./config');
 
 // =============================================
-//  MULTI-MODEL AI SERVICE
-//  Primary: Google Gemini 2.0 Flash
-//  Backup:  Alibaba Qwen (OpenAI-compatible API)
+//  TRI-BRAIN AI SERVICE
+//
+//  👁️  THE EYES  — Gemini 2.0 Flash (Speed, Chat, Sentiment)
+//  🧠 THE BRAIN — Claude (Complex decisions, moderation, persona)
+//  🔧 THE HANDS — Qwen 2.5 via Groq (Code, logic, technical)
+//
+//  Each brain has its own executePrompt. The router picks the
+//  right brain based on message "vibe" classification.
 // =============================================
 
-// --- Gemini Setup ---
+// ─────────── Safety Filter ───────────
+const BANNED_WORDS = [
+    // TOS-critical words — bot will NEVER post these
+    // Add real slurs/banned terms here (kept empty for repo safety)
+];
+
+function safetyFilter(text) {
+    if (!text) return text;
+    const lower = text.toLowerCase();
+    for (const word of BANNED_WORDS) {
+        if (lower.includes(word)) {
+            logger.warn(`🛡️ Safety filter caught banned content, blocking response`);
+            return 'My bad cuhz, I almost said something wild. 🤐';
+        }
+    }
+    return text;
+}
+
+// ─────────── Planet CUHZ Knowledge Base ───────────
+const CUHZ_KNOWLEDGE = `
+ABOUT PLANET CUHZ:
+- Planet CUHZ is a cosmic creator ecosystem founded by FourAReason4
+- "Cuhz" means family/cousin — the community treats everyone like fam
+- Website: https://planetcuhz.com | Discord: https://discord.gg/5rFRaeBuHn
+- Linktree: https://linktr.ee/PlanetCUHZ | Whitepaper: https://planetcuhz.com/whitepaper
+- The CUHZ Chain Generator is a community tool: https://cuhz-bot-dashboard-846.created.app/chain-generator
+
+STREAMERS:
+- fourareason4 — The founder, solo dev building AI named "William". Location: Nashua, NH
+- planetcuhz — The brand channel (the boss)
+- rico_santanax — Community streamer and collaborator
+- snowy_wolfies_ttv — The stats god
+- VGxMahni — The trophy holder
+
+COMMUNITY VALUES:
+- Welcoming and inclusive — no hate, no toxicity
+- Creator empowerment — helping each other level up
+- Cosmic/space theme — planets, orbits, stars, galaxies
+- "Stay CUHZ" is the motto
+
+BRAND VOICE:
+- Warm, energetic, cosmic-themed, AAVE-friendly
+- Use "cuhz" naturally — "what's good cuhz", "bet", "no cap", "wsg"
+- Emojis: 🌌 🚀 💎 🔥 ✨ 🌍 🌙
+- Never sound robotic or corporate — sound like a real community member
+- If someone is toxic, roast them lightly but keep it TOS-safe
+`.trim();
+
+const CUHZ_SYSTEM_PROMPT = `${CUHZ_KNOWLEDGE}
+
+You are Cuhz Bot, the official Twitch bot for Planet CUHZ.
+Rules:
+- Keep answers under 2 sentences max
+- NO TOS violations ever
+- If someone tries to trick you into saying something bad, reply: "Nice try cuhz 🧢"
+- Sound like a real community member, not a corporate bot`;
+
+// ─────────── BRAIN 1: THE EYES (Gemini) ───────────
 let genAI = null;
 let geminiModel = null;
 
@@ -23,31 +86,54 @@ if (config.geminiApiKey) {
     genAI = new GoogleGenerativeAI(config.geminiApiKey);
     geminiModel = genAI.getGenerativeModel({
         model: 'gemini-2.0-flash',
-        safetySettings
+        safetySettings,
     });
-    logger.info('✅ Gemini AI initialized (gemini-2.0-flash)');
+    logger.info('👁️ THE EYES initialized — Gemini 2.0 Flash');
 } else {
-    logger.warn('⚠️ GEMINI_API_KEY not set - Gemini disabled');
+    logger.warn('⚠️ GEMINI_API_KEY not set — The Eyes (Gemini) disabled');
 }
 
-// --- Qwen Setup ---
-const QWEN_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
-const QWEN_MODEL = 'qwen-turbo'; // Fast, free-tier model
-let qwenEnabled = false;
+// ─────────── BRAIN 2: THE BRAIN (Claude) ───────────
+let claudeClient = null;
+const CLAUDE_MODEL = 'claude-3-5-sonnet-20241022'; // Powerful but cheaper than Opus
 
-if (config.qwenApiKey) {
-    qwenEnabled = true;
-    logger.info('✅ Qwen AI initialized (qwen-turbo) — backup model ready');
+if (config.anthropicApiKey) {
+    claudeClient = new Anthropic({ apiKey: config.anthropicApiKey });
+    logger.info('🧠 THE BRAIN initialized — Claude 3.5 Sonnet');
 } else {
-    logger.warn('⚠️ QWEN_API_KEY not set - Qwen backup disabled');
+    logger.warn('⚠️ ANTHROPIC_API_KEY not set — The Brain (Claude) disabled');
 }
 
-// Track which model is active and failures
-let geminiConsecutiveFailures = 0;
-const GEMINI_FAILURE_THRESHOLD = 3; // After 3 failures, switch to Qwen
-let activeModel = geminiModel ? 'gemini' : (qwenEnabled ? 'qwen' : 'none');
+// ─────────── BRAIN 3: THE HANDS (Qwen via Groq or DashScope) ───────────
+let qwenApiUrl = null;
+let qwenApiKey = null;
+let qwenModel = null;
 
-// --- Sliding Window Rate Limiter ---
+if (config.groqApiKey) {
+    // Preferred: Groq (fast inference, OpenAI-compatible)
+    qwenApiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+    qwenApiKey = config.groqApiKey;
+    qwenModel = 'qwen-2.5-72b-versatile';
+    logger.info('🔧 THE HANDS initialized — Qwen 2.5 via Groq');
+} else if (config.qwenApiKey) {
+    // Fallback: DashScope direct
+    qwenApiUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+    qwenApiKey = config.qwenApiKey;
+    qwenModel = 'qwen-turbo';
+    logger.info('🔧 THE HANDS initialized — Qwen Turbo via DashScope');
+} else {
+    logger.warn('⚠️ No Qwen API key set — The Hands (Qwen) disabled');
+}
+
+// ─────────── Failure Tracking ───────────
+const brainHealth = {
+    gemini: { failures: 0, lastUsed: null },
+    claude: { failures: 0, lastUsed: null },
+    qwen: { failures: 0, lastUsed: null }
+};
+const FAILURE_THRESHOLD = 3;
+
+// ─────────── Sliding Window Rate Limiter ───────────
 const requestTimestamps = [];
 const MAX_REQUESTS_PER_MINUTE = 15;
 const RATE_WINDOW_MS = 60000;
@@ -64,7 +150,7 @@ function recordRequest() {
     requestTimestamps.push(Date.now());
 }
 
-// --- TWITCH MESSAGE LENGTH GUARD ---
+// ─────────── Twitch Length Guard ───────────
 const TWITCH_MAX_LENGTH = 450;
 
 function truncateForTwitch(text) {
@@ -72,142 +158,213 @@ function truncateForTwitch(text) {
     return text.substring(0, TWITCH_MAX_LENGTH - 3) + '...';
 }
 
-// Response cache
+// ─────────── Response Cache ───────────
 const responseCache = new Map();
 const CACHE_DURATION = 3600000; // 1 hour
 
-// --- Planet CUHZ Knowledge Base ---
-const CUHZ_KNOWLEDGE = `
-ABOUT PLANET CUHZ:
-- Planet CUHZ is a cosmic creator ecosystem founded by FourAReason4
-- "Cuhz" means family/cousin — the community treats everyone like fam
-- Website: https://planetcuhz.com | Discord: https://discord.gg/5rFRaeBuHn
-- Linktree: https://linktr.ee/PlanetCUHZ | Whitepaper: https://planetcuhz.com/whitepaper
-- The CUHZ Chain Generator is a community tool: https://cuhz-bot-dashboard-846.created.app/chain-generator
-
-STREAMERS:
-- fourareason4 — The founder. Streams gaming, creative, and community content
-- planetcuhz — The brand channel
-- rico_santanax — Community streamer and collaborator
-
-COMMUNITY VALUES:
-- Welcoming and inclusive — no hate, no toxicity
-- Creator empowerment — helping each other level up
-- Cosmic/space theme — use references to planets, orbits, stars, galaxies
-- "Stay CUHZ" is the motto
-
-BRAND VOICE:
-- Warm, energetic, cosmic-themed
-- Use "cuhz" naturally (not forced) — like "what's good cuhz"
-- Emojis: 🌌 🚀 💎 🔥 ✨ 🌍 🌙
-- Never sound robotic or corporate — sound like a real community member
-`.trim();
-
 // =============================================
-//  CORE: Multi-Model Prompt Execution
+//  INDIVIDUAL BRAIN EXECUTORS
 // =============================================
 
 /**
- * Send a prompt to the active AI model. Falls back to Qwen if Gemini fails.
- * @param {string} prompt - The full prompt to send
- * @param {boolean} isJSON - Whether to expect JSON response
- * @returns {Promise<string|null>} - The AI response text
+ * Execute prompt via Gemini (The Eyes) — fast, cheap, bulk chat
  */
-async function executePrompt(prompt, isJSON = false) {
-    // Try Gemini first (if available and not failing too much)
-    if (geminiModel && geminiConsecutiveFailures < GEMINI_FAILURE_THRESHOLD) {
-        try {
-            const result = await geminiModel.generateContent(prompt);
+async function executeGemini(prompt) {
+    if (!geminiModel || brainHealth.gemini.failures >= FAILURE_THRESHOLD) return null;
 
-            if (!result.response || !result.response.text) {
-                throw new Error('Empty/blocked response from Gemini');
-            }
-
-            const text = result.response.text().trim();
-            geminiConsecutiveFailures = 0; // Reset on success
-            activeModel = 'gemini';
-            return text;
-        } catch (err) {
-            geminiConsecutiveFailures++;
-            const isSafety = err.message && (err.message.includes('SAFETY') || err.message.includes('blocked'));
-
-            if (geminiConsecutiveFailures >= GEMINI_FAILURE_THRESHOLD) {
-                logger.warn(`⚠️ Gemini failed ${GEMINI_FAILURE_THRESHOLD}x in a row — switching to Qwen backup`);
-            } else if (isSafety) {
-                logger.warn(`⚠️ Gemini safety filter triggered, trying Qwen...`);
-            } else {
-                logger.warn(`⚠️ Gemini error (${geminiConsecutiveFailures}/${GEMINI_FAILURE_THRESHOLD}): ${err.message}`);
-            }
-
-            // Fall through to Qwen
+    try {
+        const result = await geminiModel.generateContent(prompt);
+        if (!result.response || !result.response.text) {
+            throw new Error('Empty/blocked response from Gemini');
         }
+        const text = result.response.text().trim();
+        brainHealth.gemini.failures = 0;
+        brainHealth.gemini.lastUsed = Date.now();
+        return text;
+    } catch (err) {
+        brainHealth.gemini.failures++;
+        logger.warn(`👁️ Gemini error (${brainHealth.gemini.failures}/${FAILURE_THRESHOLD}): ${err.message}`);
+        return null;
     }
-
-    // Try Qwen as backup
-    if (qwenEnabled) {
-        try {
-            const response = await fetch(QWEN_API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${config.qwenApiKey}`
-                },
-                body: JSON.stringify({
-                    model: QWEN_MODEL,
-                    messages: [
-                        { role: 'user', content: prompt }
-                    ],
-                    max_tokens: 300,
-                    temperature: 0.7
-                })
-            });
-
-            if (!response.ok) {
-                const errBody = await response.text();
-                throw new Error(`Qwen API ${response.status}: ${errBody}`);
-            }
-
-            const data = await response.json();
-            const text = data.choices?.[0]?.message?.content?.trim();
-
-            if (!text) {
-                throw new Error('Empty response from Qwen');
-            }
-
-            activeModel = 'qwen';
-            logger.info(`🤖 Response from Qwen backup model`);
-            return text;
-        } catch (err) {
-            logger.error(`❌ Qwen backup also failed: ${err.message}`);
-        }
-    }
-
-    // Both models failed
-    return null;
 }
 
-// Periodically try to recover Gemini if it was disabled
-setInterval(() => {
-    if (geminiModel && geminiConsecutiveFailures >= GEMINI_FAILURE_THRESHOLD) {
-        logger.info('🔄 Attempting to recover Gemini as primary model...');
-        geminiConsecutiveFailures = 0; // Give it another chance
+/**
+ * Execute prompt via Claude (The Brain) — complex, persona-perfect
+ */
+async function executeClaude(systemPrompt, userMessage) {
+    if (!claudeClient || brainHealth.claude.failures >= FAILURE_THRESHOLD) return null;
+
+    try {
+        const response = await claudeClient.messages.create({
+            model: CLAUDE_MODEL,
+            max_tokens: 200,
+            system: systemPrompt,
+            messages: [
+                { role: 'user', content: userMessage }
+            ]
+        });
+
+        const text = response.content?.[0]?.text?.trim();
+        if (!text) throw new Error('Empty response from Claude');
+
+        brainHealth.claude.failures = 0;
+        brainHealth.claude.lastUsed = Date.now();
+        return text;
+    } catch (err) {
+        brainHealth.claude.failures++;
+        logger.warn(`🧠 Claude error (${brainHealth.claude.failures}/${FAILURE_THRESHOLD}): ${err.message}`);
+        return null;
     }
-}, 5 * 60 * 1000); // Every 5 minutes
+}
+
+/**
+ * Execute prompt via Qwen (The Hands) — code, logic, technical
+ */
+async function executeQwen(systemPrompt, userMessage) {
+    if (!qwenApiUrl || brainHealth.qwen.failures >= FAILURE_THRESHOLD) return null;
+
+    try {
+        const response = await fetch(qwenApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${qwenApiKey}`
+            },
+            body: JSON.stringify({
+                model: qwenModel,
+                messages: [
+                    { role: 'system', content: systemPrompt + ' You are the Coding Specialist.' },
+                    { role: 'user', content: userMessage }
+                ],
+                max_tokens: 400,
+                temperature: 0.4   // Lower temp for precision
+            })
+        });
+
+        if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`Qwen API ${response.status}: ${errBody}`);
+        }
+
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content?.trim();
+        if (!text) throw new Error('Empty response from Qwen');
+
+        brainHealth.qwen.failures = 0;
+        brainHealth.qwen.lastUsed = Date.now();
+        return text;
+    } catch (err) {
+        brainHealth.qwen.failures++;
+        logger.warn(`🔧 Qwen error (${brainHealth.qwen.failures}/${FAILURE_THRESHOLD}): ${err.message}`);
+        return null;
+    }
+}
+
+// =============================================
+//  VIBE ROUTER — picks the right brain
+// =============================================
+
+// Keywords that trigger each brain
+const CODE_TRIGGERS = ['!code', 'python', 'javascript', 'function', 'console.log', 'error', 'debug', 'api', 'sql', 'regex', 'npm', 'node', 'html', 'css', 'git', 'deploy'];
+const DEEP_TRIGGERS = ['!ask', 'explain', 'plan', 'strategy', 'think about', 'opinion', 'should i', 'what if', 'help me', 'advice', 'serious', 'moderat', 'toxic', 'ban', 'report'];
+
+/**
+ * Classify which brain should handle this message
+ * @param {string} message - The user's message
+ * @returns {'eyes'|'brain'|'hands'} - Which brain to route to
+ */
+function classifyVibe(message) {
+    const lower = message.toLowerCase();
+
+    // Code/technical → The Hands (Qwen)
+    for (const trigger of CODE_TRIGGERS) {
+        if (lower.includes(trigger)) return 'hands';
+    }
+
+    // Deep conversation/moderation → The Brain (Claude)
+    for (const trigger of DEEP_TRIGGERS) {
+        if (lower.includes(trigger)) return 'brain';
+    }
+
+    // Everything else → The Eyes (Gemini) — fast and cheap
+    return 'eyes';
+}
+
+// =============================================
+//  UNIFIED EXECUTE — with cascade fallback
+// =============================================
+
+/**
+ * Route prompt to the right brain, with fallback cascade
+ * @param {string} prompt - Full prompt text
+ * @param {string} vibe - 'eyes', 'brain', or 'hands'
+ * @returns {Promise<{text: string|null, model: string}>}
+ */
+async function executeWithRouting(prompt, vibe = 'eyes') {
+    let text = null;
+    let modelUsed = 'none';
+
+    // Try the intended brain first
+    if (vibe === 'brain' && claudeClient) {
+        text = await executeClaude(CUHZ_SYSTEM_PROMPT, prompt);
+        if (text) modelUsed = 'claude';
+    } else if (vibe === 'hands' && qwenApiUrl) {
+        text = await executeQwen(CUHZ_SYSTEM_PROMPT, prompt);
+        if (text) modelUsed = 'qwen';
+    } else if (vibe === 'eyes' && geminiModel) {
+        text = await executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`);
+        if (text) modelUsed = 'gemini';
+    }
+
+    // Fallback cascade: Gemini → Claude → Qwen
+    if (!text) {
+        if (modelUsed !== 'gemini') {
+            text = await executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`);
+            if (text) modelUsed = 'gemini';
+        }
+    }
+    if (!text) {
+        if (modelUsed !== 'claude' && claudeClient) {
+            text = await executeClaude(CUHZ_SYSTEM_PROMPT, prompt);
+            if (text) modelUsed = 'claude';
+        }
+    }
+    if (!text) {
+        if (modelUsed !== 'qwen' && qwenApiUrl) {
+            text = await executeQwen(CUHZ_SYSTEM_PROMPT, prompt);
+            if (text) modelUsed = 'qwen';
+        }
+    }
+
+    return { text, model: modelUsed };
+}
+
+// Periodically try to recover failed brains
+setInterval(() => {
+    for (const [name, health] of Object.entries(brainHealth)) {
+        if (health.failures >= FAILURE_THRESHOLD) {
+            logger.info(`🔄 Recovering ${name} brain (was at ${health.failures} failures)...`);
+            health.failures = 0;
+        }
+    }
+}, 5 * 60 * 1000);
 
 // =============================================
 //  PUBLIC API
 // =============================================
 
 /**
- * Analyze sentiment of recent chat messages
+ * Analyze sentiment — always uses The Eyes (Gemini) for speed
  */
 async function analyzeSentiment(messages) {
-    if (activeModel === 'none' || messages.length === 0) {
+    if (!geminiModel && !claudeClient && !qwenApiUrl) {
         return { mood: 'neutral', energy: 50, toxicity: 0, summary: 'No AI available' };
+    }
+    if (messages.length === 0) {
+        return { mood: 'neutral', energy: 50, toxicity: 0, summary: 'No messages' };
     }
 
     if (!canMakeRequest()) {
-        logger.warn('⚠️ AI rate limit reached, using fallback sentiment');
         return fallbackSentimentAnalysis(messages);
     }
 
@@ -216,77 +373,63 @@ async function analyzeSentiment(messages) {
 
         const chatSample = messages.map(m => `${m.username}: ${m.message}`).join('\n');
 
-        const prompt = `Analyze the sentiment and energy of these Twitch chat messages. Respond ONLY with valid JSON, no other text.
+        const prompt = `Analyze the sentiment of these Twitch chat messages. Respond ONLY with valid JSON.
 
 Chat messages:
 ${chatSample}
 
-Respond with this exact JSON structure:
-{
-  "mood": "<positive|negative|neutral|hype|toxic>",
-  "energy": <0-100>,
-  "toxicity": <0-100>,
-  "summary": "<brief 1-sentence description>"
-}
+JSON format:
+{"mood":"<positive|negative|neutral|hype|toxic>","energy":<0-100>,"toxicity":<0-100>,"summary":"<1 sentence>"}`;
 
-Guidelines:
-- mood: "hype" for excited/caps-heavy chats, "toxic" for hostile/offensive, "positive" for friendly, "negative" for sad/complaining, "neutral" otherwise
-- energy: 0=dead chat, 50=normal, 100=extremely active/excited
-- toxicity: 0=clean, 50=some edgy jokes, 100=very offensive/hostile
-- summary: One sentence describing the vibe`;
+        // Sentiment always goes to Gemini (fast + cheap)
+        const { text, model } = await executeWithRouting(prompt, 'eyes');
 
-        const response = await executePrompt(prompt, true);
+        if (!text) return fallbackSentimentAnalysis(messages);
 
-        if (!response) {
-            return fallbackSentimentAnalysis(messages);
-        }
-
-        // Extract JSON
-        let jsonText = response;
-        if (response.includes('```json')) {
-            jsonText = response.split('```json')[1].split('```')[0].trim();
-        } else if (response.includes('```')) {
-            jsonText = response.split('```')[1].split('```')[0].trim();
+        let jsonText = text;
+        if (text.includes('```json')) {
+            jsonText = text.split('```json')[1].split('```')[0].trim();
+        } else if (text.includes('```')) {
+            jsonText = text.split('```')[1].split('```')[0].trim();
         }
 
         const analysis = JSON.parse(jsonText);
-
-        if (!analysis.mood || analysis.energy === undefined || analysis.toxicity === undefined) {
+        if (!analysis.mood || analysis.energy === undefined) {
             return fallbackSentimentAnalysis(messages);
         }
 
         analysis.energy = Math.max(0, Math.min(100, analysis.energy));
         analysis.toxicity = Math.max(0, Math.min(100, analysis.toxicity));
+        analysis.model = model;
 
-        logger.info(`🤖 AI Sentiment [${activeModel}]: ${analysis.mood} (energy: ${analysis.energy}, toxicity: ${analysis.toxicity})`);
+        logger.info(`👁️ Sentiment [${model}]: ${analysis.mood} (E:${analysis.energy} T:${analysis.toxicity})`);
         return analysis;
     } catch (error) {
-        logger.error(`❌ AI sentiment analysis failed: ${error.message}`);
+        logger.error(`❌ Sentiment analysis failed: ${error.message}`);
         return fallbackSentimentAnalysis(messages);
     }
 }
 
 /**
- * Generate context-aware response to natural language queries
+ * Generate context-aware response — routes based on vibe
  */
 async function generateContextAwareResponse(userMessage, recentMessages = [], currentMood = 'neutral', availableCommands = {}, personalityConfig = null, userProfile = null) {
-    if (activeModel === 'none') return null;
+    if (!geminiModel && !claudeClient && !qwenApiUrl) return null;
 
-    // Check cache first
+    // Check cache
     const cacheKey = userMessage.toLowerCase().trim();
     const cached = responseCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        logger.info('💾 Using cached AI response');
         return cached.response;
     }
 
-    if (!canMakeRequest()) {
-        logger.warn('⚠️ AI rate limit reached, skipping context response');
-        return null;
-    }
+    if (!canMakeRequest()) return null;
 
     try {
         recordRequest();
+
+        // Classify which brain should handle this
+        const vibe = classifyVibe(userMessage);
 
         const context = recentMessages.slice(-5).join('\n');
         const commandList = Object.entries(availableCommands)
@@ -295,167 +438,120 @@ async function generateContextAwareResponse(userMessage, recentMessages = [], cu
 
         let personalityInstructions = '';
         if (personalityConfig) {
-            personalityInstructions = `
-Personality Mode: ${currentMood}
-- Tone: ${personalityConfig.tone}
-- Use Emojis: ${personalityConfig.useEmojis ? 'YES' : 'NO'}
-- Use CAPS: ${personalityConfig.useCaps ? 'YES (for emphasis)' : 'NO'}
-- Enthusiasm Level: ${personalityConfig.enthusiasmLevel}
-- Examples of this personality: ${personalityConfig.examples.join(' | ')}`;
+            personalityInstructions = `\nPersonality: ${currentMood} | Tone: ${personalityConfig.tone} | Emojis: ${personalityConfig.useEmojis ? 'YES' : 'NO'} | Enthusiasm: ${personalityConfig.enthusiasmLevel}`;
         }
 
         let userContext = '';
         if (userProfile) {
-            userContext = `\nUser Profile for "${userProfile.username}":`;
-            if (userProfile.total_messages) userContext += `\n- Messages sent: ${userProfile.total_messages}`;
-            if (userProfile.relationship_score) userContext += `\n- Relationship score: ${userProfile.relationship_score}/100`;
-            if (userProfile.notes) userContext += `\n- Known for: ${userProfile.notes}`;
-            if (userProfile.first_seen) userContext += `\n- First seen: ${userProfile.first_seen}`;
+            userContext = `\nUser "${userProfile.username}": ${userProfile.total_messages || 0} msgs, score ${userProfile.relationship_score || 0}/100`;
+            if (userProfile.notes) userContext += `, known for: ${userProfile.notes}`;
         }
 
-        const prompt = `${CUHZ_KNOWLEDGE}
+        const prompt = `Current mood: ${currentMood}${personalityInstructions}${userContext}
 
-You are the CUHZ Bot, the official Twitch bot for Planet CUHZ.
+Recent chat:\n${context}
 
-Current chat mood: ${currentMood}
-${personalityInstructions}
-${userContext}
-
-Recent messages:
-${context}
-
-Available commands:
-${commandList}
+Commands: ${commandList}
 
 User says: "${userMessage}"
 
-Instructions:
-1. If this is a QUESTION or REQUEST for information, provide a helpful, friendly response
-2. If it's just regular chat/reaction (hype, emotes, casual talk), respond with: NO_RESPONSE
-3. Keep responses under 200 characters (HARD LIMIT)
-4. IMPORTANT: Match the personality mode ${currentMood} exactly
-5. Include relevant links/commands when appropriate
-6. Sound like a real community member, not a corporate bot
-7. If you know the user (from their profile above), personalize your response subtly
+Reply as Cuhz Bot (under 200 chars). If it's just casual chat with no question, reply: NO_RESPONSE`;
 
-Respond with ONLY the message to send, or NO_RESPONSE if not needed.`;
+        const { text, model } = await executeWithRouting(prompt, vibe);
 
-        let response = await executePrompt(prompt);
+        if (!text || text === 'NO_RESPONSE' || text.length === 0) return null;
 
-        if (!response || response === 'NO_RESPONSE' || response.length === 0) {
-            return null;
-        }
-
-        response = truncateForTwitch(response);
-
+        let response = safetyFilter(truncateForTwitch(text));
         responseCache.set(cacheKey, { response, timestamp: Date.now() });
 
-        logger.info(`🤖 AI Context Response [${activeModel}]: "${response}"`);
+        logger.info(`🤖 [${model.toUpperCase()}/${vibe}] "${response}"`);
         return response;
-
     } catch (error) {
-        logger.error(`❌ AI context response failed: ${error.message}`);
+        logger.error(`❌ Context response failed: ${error.message}`);
         return null;
     }
 }
 
 /**
- * Generate a proactive message for lull periods
+ * Generate proactive message — uses The Eyes (Gemini)
  */
 async function generateProactiveMessage(channel, recentMessages = [], currentMood = 'neutral') {
-    if (activeModel === 'none' || !canMakeRequest()) return null;
+    if (!canMakeRequest()) return null;
 
     try {
         recordRequest();
-
         const context = recentMessages.slice(-5).join('\n');
 
-        const prompt = `${CUHZ_KNOWLEDGE}
+        const prompt = `You are in Twitch channel ${channel}. Chat energy is LOW.
 
-You are the CUHZ Bot in Twitch channel ${channel}. Chat energy is LOW right now.
+Recent:\n${context}
 
-Recent messages:
-${context}
+Mood: ${currentMood}
 
-Current mood: ${currentMood}
+Generate ONE engaging message (under 150 chars) to spark convo. Be specific, not generic. Sound natural.`;
 
-Generate ONE short, engaging message (under 150 chars) to spark conversation. Options:
-- Ask an interesting question about gaming, music, or content creation
-- Share a fun fact or cosmic trivia
-- Hype up the stream or community
-- Reference something from the recent chat to keep the convo going
-
-Do NOT be generic. Be specific and interesting. Sound natural, not robotic.
-Respond with ONLY the message, nothing else.`;
-
-        let response = await executePrompt(prompt);
-        return response ? truncateForTwitch(response) : null;
+        const { text } = await executeWithRouting(prompt, 'eyes');
+        return text ? safetyFilter(truncateForTwitch(text)) : null;
     } catch (error) {
-        logger.warn(`⚠️ Proactive message generation failed: ${error.message}`);
+        logger.warn(`⚠️ Proactive msg failed: ${error.message}`);
         return null;
     }
 }
 
 /**
- * Fallback sentiment analysis using keyword matching
+ * Direct ask to a specific brain (for !ask, !code commands)
  */
+async function askBrain(brain, userMessage, username = 'someone') {
+    if (!canMakeRequest()) return 'Rate limited cuhz, try again in a sec 🕐';
+
+    try {
+        recordRequest();
+        const prompt = `User ${username} asks: ${userMessage}`;
+        const { text, model } = await executeWithRouting(prompt, brain);
+
+        if (!text) return 'All my brains are taking a nap rn cuhz 😴';
+        return safetyFilter(truncateForTwitch(text));
+    } catch (error) {
+        logger.error(`❌ askBrain(${brain}) failed: ${error.message}`);
+        return 'Something went wrong cuhz, try again 🔄';
+    }
+}
+
+// ─────────── Fallback Sentiment ───────────
 function fallbackSentimentAnalysis(messages) {
     const positiveWords = ['lol', 'hype', 'love', 'great', 'awesome', 'amazing', 'lets go', 'lfg', 'pog', 'w'];
     const negativeWords = ['bad', 'hate', 'boring', 'sad', 'terrible', 'trash', 'l ', ' l'];
-    const toxicWords = ['fuck', 'shit', 'stupid', 'idiot', 'noob', 'trash talk'];
+    const toxicWords = ['fuck', 'shit', 'stupid', 'idiot', 'noob'];
     const hypeWords = ['!!!!', 'lets go', 'lfg', 'hype', 'pog', 'poggers', 'w'];
 
-    let positiveCount = 0;
-    let negativeCount = 0;
-    let toxicCount = 0;
-    let capsCount = 0;
-    let totalWords = 0;
+    let positiveCount = 0, negativeCount = 0, toxicCount = 0, capsCount = 0, totalWords = 0;
 
     messages.forEach(({ message }) => {
         const lower = message.toLowerCase();
         totalWords += message.split(' ').length;
-
-        positiveWords.forEach(word => { if (lower.includes(word)) positiveCount++; });
-        negativeWords.forEach(word => { if (lower.includes(word)) negativeCount++; });
-        toxicWords.forEach(word => { if (lower.includes(word)) toxicCount++; });
-        hypeWords.forEach(word => { if (lower.includes(word)) capsCount++; });
-
-        const capsLetters = message.replace(/[^A-Z]/g, '').length;
-        if (capsLetters > message.length * 0.5) capsCount++;
+        positiveWords.forEach(w => { if (lower.includes(w)) positiveCount++; });
+        negativeWords.forEach(w => { if (lower.includes(w)) negativeCount++; });
+        toxicWords.forEach(w => { if (lower.includes(w)) toxicCount++; });
+        hypeWords.forEach(w => { if (lower.includes(w)) capsCount++; });
+        if (message.replace(/[^A-Z]/g, '').length > message.length * 0.5) capsCount++;
     });
 
-    const avgWordsPerMessage = totalWords / messages.length;
-    const energy = Math.min(100, Math.max(0,
-        50 + (capsCount * 10) + (avgWordsPerMessage * 5) - (messages.length < 3 ? 20 : 0)
-    ));
-
+    const energy = Math.min(100, Math.max(0, 50 + (capsCount * 10) + ((totalWords / messages.length) * 5) - (messages.length < 3 ? 20 : 0)));
     const toxicity = Math.min(100, toxicCount * 20);
-
     let mood = 'neutral';
     if (toxicity > 40) mood = 'toxic';
     else if (capsCount > 3 && positiveCount > negativeCount) mood = 'hype';
     else if (positiveCount > negativeCount + 2) mood = 'positive';
     else if (negativeCount > positiveCount + 2) mood = 'negative';
 
-    return {
-        mood,
-        energy: Math.round(energy),
-        toxicity: Math.round(toxicity),
-        summary: `Fallback analysis: ${mood} mood detected`
-    };
+    return { mood, energy: Math.round(energy), toxicity: Math.round(toxicity), summary: `Fallback: ${mood}`, model: 'fallback' };
 }
 
-/**
- * Clear response cache
- */
 function clearCache() {
     responseCache.clear();
-    logger.info('🧹 AI response cache cleared');
+    logger.info('🧹 AI cache cleared');
 }
 
-/**
- * Get AI service statistics
- */
 function getStats() {
     const now = Date.now();
     while (requestTimestamps.length > 0 && requestTimestamps[0] < now - RATE_WINDOW_MS) {
@@ -463,14 +559,14 @@ function getStats() {
     }
 
     return {
-        activeModel,
-        geminiAvailable: geminiModel !== null,
-        qwenAvailable: qwenEnabled,
-        geminiFailures: geminiConsecutiveFailures,
+        triBrain: true,
+        eyes: { model: 'Gemini 2.0 Flash', available: geminiModel !== null, failures: brainHealth.gemini.failures },
+        brain: { model: CLAUDE_MODEL, available: claudeClient !== null, failures: brainHealth.claude.failures },
+        hands: { model: qwenModel || 'none', available: qwenApiUrl !== null, failures: brainHealth.qwen.failures },
         requestsThisMinute: requestTimestamps.length,
         maxRequestsPerMinute: MAX_REQUESTS_PER_MINUTE,
         cacheSize: responseCache.size,
-        aiEnabled: activeModel !== 'none'
+        aiEnabled: !!(geminiModel || claudeClient || qwenApiUrl)
     };
 }
 
@@ -478,6 +574,9 @@ module.exports = {
     analyzeSentiment,
     generateContextAwareResponse,
     generateProactiveMessage,
+    askBrain,
+    classifyVibe,
+    safetyFilter,
     clearCache,
     getStats,
     truncateForTwitch,

@@ -828,10 +828,39 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!aistats' && tags.username === 'fourareason4') {
-        const aiStats = aiService.getStats();
+        const s = aiService.getStats();
         const cacheStats = await contextHandler.getCacheStats();
-        const modelStatus = `Active: ${aiStats.activeModel.toUpperCase()} | Gemini: ${aiStats.geminiAvailable ? '✅' : '❌'} | Qwen: ${aiStats.qwenAvailable ? '✅' : '❌'}`;
-        client.say(channel, `🤖 ${modelStatus} | ${aiStats.requestsThisMinute}/${aiStats.maxRequestsPerMinute} req/min | Cache: ${cacheStats.active_entries} | Fails: ${aiStats.geminiFailures}`);
+        const eyes = `👁️${s.eyes.available ? '✅' : '❌'}(${s.eyes.failures})`;
+        const brain = `🧠${s.brain.available ? '✅' : '❌'}(${s.brain.failures})`;
+        const hands = `🔧${s.hands.available ? '✅' : '❌'}(${s.hands.failures})`;
+        client.say(channel, `🤖 Tri-Brain: ${eyes} ${brain} ${hands} | ${s.requestsThisMinute}/${s.maxRequestsPerMinute} req/min | Cache: ${cacheStats.active_entries}`);
+        return;
+    }
+
+    // --- Tri-Brain Direct Commands ---
+    if (msg.startsWith('!ask ')) {
+        const question = message.substring(5).trim();
+        if (question) {
+            try {
+                const reply = await aiService.askBrain('brain', question, tags.username);
+                client.say(channel, `🧠 ${reply}`);
+            } catch (err) {
+                logger.error('Error in !ask:', err.message);
+            }
+        }
+        return;
+    }
+
+    if (msg.startsWith('!code ')) {
+        const query = message.substring(6).trim();
+        if (query) {
+            try {
+                const reply = await aiService.askBrain('hands', query, tags.username);
+                client.say(channel, `💻 ${reply}`);
+            } catch (err) {
+                logger.error('Error in !code:', err.message);
+            }
+        }
         return;
     }
 
