@@ -214,6 +214,16 @@ class DBAdapter {
         UNIQUE(channel, streamer_username)
       )`,
 
+      // ===== Phase 2: Cuhz Economy =====
+      `CREATE TABLE IF NOT EXISTS points_ledger (
+        id ${SERIAL} ${PK},
+        username TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+
       // ===== Phase 1: Chat Memory & User Profiles =====
       `CREATE TABLE IF NOT EXISTS user_profiles (
         id ${SERIAL} ${PK},

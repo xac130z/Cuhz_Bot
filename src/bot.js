@@ -8,6 +8,7 @@ const aiService = require('./ai_service');
 const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
 const userMemory = require('./user_memory');
+const pointsService = require('./points_service');
 const fs = require('fs');
 const path = require('path');
 
@@ -620,13 +621,29 @@ async function handleMessage(channel, tags, message, self) {
         const now = new Date();
         const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
 
+        // 1. Check Passive Paycheck (Active for 10 mins -> +10 points)
+        // We check last_seen before updating it to see how long since last active
         const user = await db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
 
+        if (user) {
+            const lastSeenTime = new Date(user.last_seen).getTime();
+            const timeDiff = now.getTime() - lastSeenTime;
+
+            // If they've been chatting actively (last msg was within 10-20 mins ago)
+            // AND it's been at least 10 minutes since last activity logged
+            if (timeDiff > 10 * 60 * 1000 && timeDiff < 30 * 60 * 1000) {
+                await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
+            }
+        }
+
+        // 2. Earn Active Point (+1 per message)
+        await pointsService.addPoints(usernameL, 1, 'chat_message');
+
+        // 3. Update User Stats (Last Seen, Msg Count) - distinct from points now
         const upsertUser = db.prepare(`
             INSERT INTO users (username, points, messages_sent, last_seen)
             VALUES (?, 1, 1, CURRENT_TIMESTAMP)
             ON CONFLICT(username) DO UPDATE SET
-                points = points + 1,
                 messages_sent = messages_sent + 1,
                 last_seen = CURRENT_TIMESTAMP
         `);
@@ -850,15 +867,93 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // --- Tri-Brain Direct Commands (Restricted to Verified Streams) ---
+    // --- Points & Economy Commands ---
+    if (msg === '!points' || msg === '!balance') {
+        const balance = await pointsService.getBalance(tags.username);
+        client.say(channel, `💎 @${tags.username}, you have ${balance} Cuhz Points!`);
+        return;
+    }
+
+    if (msg === '!richlist' || msg === '!top') {
+        const richList = await pointsService.getRichList(5);
+        if (richList.length === 0) {
+            client.say(channel, "📉 The economy is in shambles! (No data yet)");
+        } else {
+            const list = richList.map((u, i) => `${i + 1}. ${u.username} (${u.points})`).join(' | ');
+            client.say(channel, `👑 Cuhz Rich List: ${list}`);
+        }
+        return;
+    }
+
+    if (msg.startsWith('!give ') && isMod) {
+        const args = message.split(' ');
+        const target = args[1]?.replace('@', '');
+        const amount = parseInt(args[2]);
+
+        if (target && !isNaN(amount)) {
+            await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`);
+            client.say(channel, `💸 @${tags.username} gave ${amount} points to @${target}!`);
+        }
+        return;
+    }
+
+    if (msg.startsWith('!gamble ')) {
+        const args = message.split(' ');
+        const amount = parseInt(args[1]);
+
+        if (isNaN(amount) || amount <= 0) {
+            client.say(channel, `Usage: !gamble <amount>`);
+            return;
+        }
+
+        const balance = await pointsService.getBalance(tags.username);
+        if (balance < amount) {
+            client.say(channel, `🚫 You're broke cuhz! You only have ${balance} points.`);
+            return;
+        }
+
+        const win = Math.random() < 0.5;
+        if (win) {
+            await pointsService.addPoints(tags.username, amount, 'gamble_win');
+            client.say(channel, `🎰 WINNER! @${tags.username} doubled up to ${balance + amount} points! 🟢`);
+        } else {
+            await pointsService.deductPoints(tags.username, amount, 'gamble_loss');
+            client.say(channel, `🎰 RIP @${tags.username}... you lost ${amount} points. 🔴`);
+        }
+        return;
+    }
+
+    // --- Tri-Brain Direct Commands (Gated by Economy) ---
+    // !ask generic -> Gemini (10 pts)
+    // !ask -brain -> Claude (50 pts)
     if (msg.startsWith('!ask ') && isVerifiedStream) {
-        const question = message.substring(5).trim();
+        let question = message.substring(5).trim();
+        let cost = 10;
+        let brain = 'eyes'; // Default Gemini
+        let brainName = 'The Eyes (Gemini)';
+
+        if (question.startsWith('-brain')) {
+            brain = 'brain'; // Claude
+            brainName = 'The Brain (Claude)';
+            cost = 50;
+            question = question.substring(6).trim();
+        }
+
         if (question) {
+            const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}`);
+            if (!success) {
+                const balance = await pointsService.getBalance(tags.username);
+                client.say(channel, `🚫 Broke User Alert: You need ${cost} points for ${brainName} but only have ${balance}. Chat more to earn!`);
+                return;
+            }
+
             try {
-                const reply = await aiService.askBrain('brain', question, tags.username);
-                client.say(channel, `🧠 ${reply}`);
+                const reply = await aiService.askBrain(brain, question, tags.username);
+                const prefix = brain === 'brain' ? '🧠' : '👁️';
+                client.say(channel, `${prefix} ${reply}`);
             } catch (err) {
                 logger.error('Error in !ask:', err.message);
+                // Refund on error? Maybe later.
             }
         }
         return;
@@ -866,7 +961,16 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg.startsWith('!code ') && isVerifiedStream) {
         const query = message.substring(6).trim();
+        const cost = 25;
+
         if (query) {
+            const success = await pointsService.deductPoints(tags.username, cost, 'ask_hands');
+            if (!success) {
+                const balance = await pointsService.getBalance(tags.username);
+                client.say(channel, `🚫 You need ${cost} points for The Hands (Code) but only have ${balance}.`);
+                return;
+            }
+
             try {
                 const reply = await aiService.askBrain('hands', query, tags.username);
                 client.say(channel, `💻 ${reply}`);
