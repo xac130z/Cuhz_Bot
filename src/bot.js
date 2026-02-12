@@ -70,7 +70,6 @@ const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
     "💬 Join the Discord → https://discord.gg/5rFRaeBuHn",
-    "📄 Whitepaper → https://planetcuhz.com/whitepaper",
     "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
 ];
 

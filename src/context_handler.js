@@ -6,6 +6,10 @@ const db = require('./database');
 const contextBuffers = new Map();
 const CONTEXT_BUFFER_SIZE = 20;
 
+// Response cooldown: prevents bot from spamming same user
+const userResponseCooldowns = new Map(); // username -> last response timestamp
+const RESPONSE_COOLDOWN_MS = 45000; // 45 seconds between responses to same user
+
 // Bot identity for mention detection
 const BOT_USERNAME = (process.env.BOT_USERNAME || 'cuhz_bot').toLowerCase();
 
@@ -39,6 +43,37 @@ function addToContext(channel, username, message) {
 }
 
 /**
+ * Check if bot can respond to a user (cooldown check)
+ * @param {string} username
+ * @returns {boolean}
+ */
+function canRespondToUser(username) {
+    const lastResponse = userResponseCooldowns.get(username.toLowerCase());
+    if (!lastResponse) return true;
+    return (Date.now() - lastResponse) > RESPONSE_COOLDOWN_MS;
+}
+
+/**
+ * Record that bot responded to user (for cooldown)
+ * @param {string} username
+ */
+function recordResponse(username) {
+    userResponseCooldowns.set(username.toLowerCase(), Date.now());
+}
+
+/**
+ * Check if message contains CUHZ-related keywords
+ * @param {string} message
+ * @returns {boolean}
+ */
+function isCuhzRelated(message) {
+    const lowerMsg = message.toLowerCase();
+    return lowerMsg.includes('cuhz') ||
+        lowerMsg.includes('planet') ||
+        lowerMsg.includes('chain');
+}
+
+/**
  * Check if message is a question or request worth responding to
  * Improved to reduce false positives from casual chat
  * @param {string} message
@@ -47,15 +82,19 @@ function addToContext(channel, username, message) {
 function isQuestionOrRequest(message) {
     const lowerMsg = message.toLowerCase().trim();
 
+    // CUHZ keyword boost — lower threshold for CUHZ-related messages
+    const hasCuhzKeyword = isCuhzRelated(message);
+    const minLength = hasCuhzKeyword ? 8 : 15; // More lenient for CUHZ mentions
+
     // Skip very short messages — too ambiguous to determine intent
-    if (lowerMsg.length < 12) {
+    if (lowerMsg.length < minLength) {
         return false;
     }
 
     // Skip if it looks like an emote or reaction (all caps, single words, emote-like patterns)
     if (/^[A-Z!?]+$/.test(message.trim()) || message.trim().split(' ').length <= 2) {
-        // Allow if it ends with ? even if short
-        if (!message.includes('?')) return false;
+        // Allow if it ends with ? even if short, OR if CUHZ-related
+        if (!message.includes('?') && !hasCuhzKeyword) return false;
     }
 
     // Direct question mark is a strong signal
@@ -131,6 +170,12 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
         return null;
     }
 
+    // Check cooldown to prevent spam
+    if (!canRespondToUser(username)) {
+        logger.debug(`⏱️ Cooldown active for ${username}, skipping response`);
+        return null;
+    }
+
     // Try to match with existing commands first (faster, no API call)
     const commandMatch = matchExistingCommand(message, availableCommands);
     if (commandMatch) {
@@ -161,6 +206,8 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
         if (aiResponse) {
             // Save to cache
             await cacheResponse(message, aiResponse);
+            // Record response for cooldown tracking
+            recordResponse(username);
             return `@${username} ${aiResponse}`;
         }
 
@@ -297,5 +344,8 @@ module.exports = {
     getContext,
     clearContext,
     getCacheStats,
-    cleanExpiredCache
+    cleanExpiredCache,
+    canRespondToUser,
+    recordResponse,
+    isCuhzRelated
 };
