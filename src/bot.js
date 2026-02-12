@@ -106,7 +106,11 @@ async function fetchChannelPersona(channel) {
     const cleanChannel = channel.toLowerCase().replace('#', '');
     if (!config.apiBase || !config.botApiSecret) {
         logger.info(`No API config, using defaults for ${channel}`);
-        channelConfigs.set(channel.toLowerCase(), DEFAULT_CONFIG);
+        const persona = { ...DEFAULT_CONFIG, timers: [...TIMER_MESSAGES] };
+        if (cleanChannel === 'fourareason4') {
+            persona.timers.push("📱 Follow Four A Reason on YouTube and TikTok! 🚀");
+        }
+        channelConfigs.set(channel.toLowerCase(), persona);
         return;
     }
 
@@ -129,17 +133,30 @@ async function fetchChannelPersona(channel) {
 
         const persona = {
             commands: { ...PUBLIC_COMMANDS, ...cmdRes.data.commands },
-            timers: timerRes.data.timers && timerRes.data.timers.length > 0 ? timerRes.data.timers : TIMER_MESSAGES,
+            timers: timerRes.data.timers && timerRes.data.timers.length > 0 ? [...timerRes.data.timers] : [...TIMER_MESSAGES],
             interval: timerRes.data.interval || 60,
             settings: setRes.data || { auto_welcome: 1, auto_marketing: 1 },
             hype: HYPE_MESSAGES
         };
 
+        // Add fourareason4 specific timer
+        if (cleanChannel === 'fourareason4') {
+            const promoMsg = "📱 Follow Four A Reason on YouTube and TikTok! 🚀";
+            if (!persona.timers.includes(promoMsg)) {
+                persona.timers.push(promoMsg);
+            }
+        }
+
         channelConfigs.set(channel.toLowerCase(), persona);
         logger.info(`Loaded ${Object.keys(persona.commands).length} commands, ${persona.timers.length} timers at ${persona.interval}min intervals for ${channel}`);
     } catch (error) {
         logger.error(`Error fetching persona for ${channel}:`, error.message);
-        channelConfigs.set(channel.toLowerCase(), DEFAULT_CONFIG);
+
+        const fallbackPersona = { ...DEFAULT_CONFIG, timers: [...TIMER_MESSAGES] };
+        if (cleanChannel === 'fourareason4') {
+            fallbackPersona.timers.push("📱 Follow Four A Reason on YouTube and TikTok! 🚀");
+        }
+        channelConfigs.set(channel.toLowerCase(), fallbackPersona);
     }
 }
 
