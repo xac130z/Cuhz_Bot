@@ -55,7 +55,7 @@ const PUBLIC_COMMANDS = {
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
     '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!',
-    '!help': '🌌 Commands: !cuhz !shoutouts !links !discord !rules !pointsinfo !points !top !claim !gamble !quote !4 !followage | AI: !ask !code | Ask a question naturally for AI help!'
+    '!help': '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | AI: !ask !code | Mods: !chatreport !mood !personality !so !raid | Ask a question naturally for AI help!'
 };
 
 const USER_COMMANDS = {
@@ -580,7 +580,7 @@ async function updateStreamState(channel) {
     const wasLive = current && current.isLive;
 
     // 1. Stream is LIVE
-    if (status) {
+    if (status && status.isLive) {
         streamStates.set(channel, status);
         await streamIntel.updateStreamStatus(channel, status);
 
