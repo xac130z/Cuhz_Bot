@@ -34,6 +34,7 @@ let timerIndices = new Map(); // channel -> index
 let streamStates = new Map(); // channel -> { isLive: boolean, startedAt: Date, title: string }
 let channelConfigs = new Map(); // channel -> { timers: [], commands: {}, hype: [] }
 let twitchClientId = null; // Fetched dynamically
+let botUserId = null; // Captured during validation
 
 // --- Content Data (Non-Crypto) ---
 const PUBLIC_COMMANDS = {
@@ -44,18 +45,17 @@ const PUBLIC_COMMANDS = {
     '!faq': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!whitepaper': '📄 https://planetcuhz.com/whitepaper',
     '!roadmap': '🧭 https://planetcuhz.com/whitepaper#roadmap',
-    '!rules': '📌 Be respectful. No hate. No spam. Stay CUHZ. Full rules → https://planetcuhz.com/rules',
+    '!rules': '📌 Be respectful. No hate. No spam. Stay CUHZ.',
     '!privacy': '🔒 Privacy & security → https://planetcuhz.com/privacy',
     '!cuhzchain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
     '!chain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
-    '!store': '🛒 Official CUHZ drops → https://planetcuhz.com/store',
-    '!merch': '🛒 Official CUHZ drops → https://planetcuhz.com/store',
     '!gm': 'Good morning CUHZ ☀️',
     '!gn': 'Good night CUHZ 🌙',
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!help': '🌌 Commands: !cuhz !shoutouts !links !discord !dashboard !rules !store !hype !uptime !points !claim !gamble !followage | AI: !ask !code | Mods: !mood !personality !chatreport !so !raid | Ask a question naturally for AI help!'
+    '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!',
+    '!help': '🌌 Commands: !cuhz !shoutouts !links !discord !rules !pointsinfo !points !top !claim !gamble !quote !4 !followage | AI: !ask !code | Ask a question naturally for AI help!'
 };
 
 const USER_COMMANDS = {
@@ -85,6 +85,76 @@ const HYPE_MESSAGES = [
     "Hype! Hype! Hype! 🔥",
     "Level up your content game! 💎",
     "Welcome to the Planet! 🌍"
+];
+
+const MOTIVATIONAL_QUOTES = [
+    "Everything negative - pressure, challenges - is all an opportunity for me to rise. — Kobe Bryant 🐍",
+    "Dedication sees dreams come true. — Kobe Bryant 🐍",
+    "The most important thing is to try and inspire people so that they can be great in whatever they want to do. — Kobe Bryant 🐍",
+    "I create my own path. It was straight and narrow. I looked at it this way: you were either in my way, or out of it. — Kobe Bryant 🐍",
+    "If you do not believe in yourself, no one will do it for you. — Kobe Bryant 🐍",
+    "A grateful heart is a magnet for miracles. ✨",
+    "Happiness is not by chance, but by choice. ☀️",
+    "The expert in anything was once a beginner. 🌱",
+    "Your vibe attracts your tribe. 🫂",
+    "Consistency is key. Keep showing up. 🔑",
+    "Dream big. Work hard. Stay humble. 💪",
+    "Focus on the step in front of you, not the whole staircase. 🪜",
+    "Success is the sum of small efforts repeated day in and day out. 📈",
+    "Believe you can and you're halfway there. 🚀",
+    "Don't watch the clock; do what it does. Keep going. ⏰",
+    "Your only limit is your mind. 🧠",
+    "Great things never came from comfort zones. 🌊",
+    "Discipline is doing what needs to be done, even if you don't want to do it. ⚔️",
+    "Gratitude changes everything. 🙏",
+    "Start where you are. Use what you have. Do what you can. 🛠️",
+    "Every day is a second chance. 🌅",
+    "Positive mind. Positive vibes. Positive life. ☮️",
+    "Fall down seven times, stand up eight. 🥊",
+    "Make today so awesome yesterday gets jealous. 😎"
+];
+
+const LUCKY_4_QUOTES = [
+    "Luck is what happens when preparation meets opportunity. 🍀",
+    "The harder you work, the luckier you get. 💪",
+    "4 a reason, 4 a season, 4 a lifetime. You're here for it all. 💎",
+    "Positive mind = Positive life. Keep glowing. ✨",
+    "Your breakthrough is just around the corner. Keep pushing. 🚀",
+    "Believe in the magic of new beginnings. 🌅",
+    "Good things take time. Great things take patience. ⏳",
+    "Manifesting abundance for you today. 💰",
+    "You are exactly where you need to be. Trust the process. 🗺️",
+    "Every setback is a setup for a comeback. 🏹",
+    "Radiate positivity and the world will reflect it back. ☀️",
+    "Luck follows the brave. Be fearless. 🦁",
+    "Small steps every day add up to big results. 👣",
+    "Your energy introduces you before you even speak. Make it good. ⚡",
+    "Focus on the solution, not the problem. 🧩",
+    "Today is a great day to have a great day. 🌈",
+    "Success is not final, failure is not fatal: it is the courage to continue that counts. 🛡️",
+    "You are capable of amazing things. 🌟",
+    "Don't stop until you're proud. 🏆",
+    "Work hard in silence, let your success be your noise. 📢",
+    "The best way to predict the future is to create it. 🔮",
+    "Your potential is endless. Go do what you were created to do. 🎨",
+    "Stay patient and trust your journey. 🛤️",
+    "Good energy is contagious. Pass it on. 🔄",
+    "Limitations live only in our minds. 🧠",
+    "Push yourself, because no one else is going to do it for you. 🫵",
+    "Great things never come from comfort zones. 🌊",
+    "Dream it. Wish it. Do it. ✅",
+    "Success doesn’t come to you, you go to it. 🏃‍♂️",
+    "Work hard, be kind, and amazing things will happen. 💖",
+    "The only bad workout is the one that didn't happen. 🏋️‍♂️",
+    "Your life is as good as your mindset. 💭",
+    "Do something today that your future self will thank you for. 📅",
+    "It always seems impossible until it's done. 🏁",
+    "Don't wait for opportunity. Create it. 🔨",
+    "Every day brings new choices. Choose wisely. 🤔",
+    "Be the energy you want to attract. 🧲",
+    "Keep going. Everything you need will come to you at the perfect time. ⏱️",
+    "You are stronger than you think. 💪",
+    "4 the culture. 4 the community. 4 the win. 🌐"
 ];
 
 const TIMER_MESSAGES = [
@@ -175,7 +245,7 @@ function sanitizeChannel(name) {
 }
 
 async function fetchClientId() {
-    if (twitchClientId) return twitchClientId;
+    if (twitchClientId && botUserId) return twitchClientId;
 
     try {
         logger.info('Fetching Client ID validation...');
@@ -192,7 +262,8 @@ async function fetchClientId() {
 
         if (response.data && response.data.client_id) {
             twitchClientId = response.data.client_id;
-            logger.info(`Identity Validated: Bot is logged in as '${response.data.login}'`);
+            botUserId = response.data.user_id;
+            logger.info(`Identity Validated: Bot is logged in as '${response.data.login}' (ID: ${botUserId})`);
             logger.info(`Client ID: ${twitchClientId}`);
             return twitchClientId;
         }
@@ -282,7 +353,8 @@ async function getFollowData(broadcasterId, userId) {
         const response = await axios.get(`${apiBase}/channels/followers`, {
             params: {
                 broadcaster_id: broadcasterId,
-                user_id: userId
+                user_id: userId,
+                moderator_id: botUserId // Required for this endpoint
             },
             headers: {
                 'Client-ID': twitchClientId,
@@ -942,6 +1014,18 @@ async function handleMessage(channel, tags, message, self) {
         const messages = persona.hype || HYPE_MESSAGES;
         const randomHype = messages[Math.floor(Math.random() * messages.length)];
         client.say(channel, randomHype);
+        return;
+    }
+
+    if (msg === '!quote' || msg === '!motivation') {
+        const randomQuote = MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)];
+        client.say(channel, `🦁 ${randomQuote}`);
+        return;
+    }
+
+    if (msg === '!4') {
+        const randomLucky = LUCKY_4_QUOTES[Math.floor(Math.random() * LUCKY_4_QUOTES.length)];
+        client.say(channel, `🍀 ${randomLucky}`);
         return;
     }
 
