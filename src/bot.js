@@ -55,7 +55,7 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!help': '🌌 Commands: !cuhz !links !discord !dashboard !whatiscuhz !whitepaper !roadmap !rules !store !hype !uptime !points | Mods: !mood !personality !announce !so !raid | Type your question naturally for AI help!'
+    '!help': '🌌 Commands: !cuhz !shoutouts !links !discord !dashboard !rules !store !hype !uptime !points !claim !gamble !followage | AI: !ask !code | Mods: !mood !personality !chatreport !so !raid | Ask a question naturally for AI help!'
 };
 
 const USER_COMMANDS = {
@@ -75,7 +75,8 @@ const USER_COMMANDS = {
     '!four': 'The Captain is here. 🫡',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
     '!balen': 'Style has entered the chat. 💎',
-    '!bot': 'Just a bot doing bot things. 🤖 Want to change a command message? Email SUPPORT@PLANETCUHZ.COM'
+    '!bot': 'Just a bot doing bot things. 🤖 Want to change a command message? Email SUPPORT@PLANETCUHZ.COM',
+    '!shoutouts': 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM'
 };
 
 const HYPE_MESSAGES = [
@@ -795,6 +796,17 @@ async function handleMessage(channel, tags, message, self) {
     // 1.5. Master User Commands
     if (USER_COMMANDS[msg]) {
         client.say(channel, USER_COMMANDS[msg]);
+        return;
+    }
+
+    // 1.6. Support & Command Help
+    if (msg.includes('how do i get a command') || msg.includes('how to get a custom command')) {
+        client.say(channel, `Custom commands are for regulars! If you're on the list and want an update, email SUPPORT@PLANETCUHZ.COM`);
+        return;
+    }
+
+    if (msg.includes('how to change my message') || msg.includes('how do i change my message') || msg.includes('change my command')) {
+        client.say(channel, `If you want to change your custom command message, please email SUPPORT@PLANETCUHZ.COM`);
         return;
     }
 
