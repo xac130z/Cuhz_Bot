@@ -58,6 +58,26 @@ const PUBLIC_COMMANDS = {
     '!help': '🌌 Commands: !cuhz !links !discord !dashboard !whatiscuhz !whitepaper !roadmap !rules !store !hype !uptime !points | Mods: !mood !personality !announce !so !raid | Type your question naturally for AI help!'
 };
 
+const USER_COMMANDS = {
+    '!ac': 'cuhz welcome back!',
+    '!snow': 'can’t ban the snow man ☃️',
+    '!mahni': '🏆',
+    '!pnx': '✌️',
+    '!rico': 'The heavy hitter is in the building! 💸',
+    '!ec': 'Edward in the chat! Let’s get it. ⚡',
+    '!rell': 'Rell is here, the vibes are up! 🔥',
+    '!shock': 'Warning: High Voltage in the chat! ⚡',
+    '!kay': 'Big Mula in the building! 💰',
+    '!thorn': 'Watch out for the thorns! 🌹',
+    '!limit': 'Taking it to the limit! 🚀',
+    '!reacts': 'Reactions are LIVE! 👀',
+    '!rock': 'Solid as a rock. 🪨',
+    '!four': 'The Captain is here. 🫡',
+    '!yoo': 'Yoo! Welcome to the stream. 👋',
+    '!balen': 'Style has entered the chat. 💎',
+    '!bot': 'Just a bot doing bot things. 🤖 Want to change a command message? Email SUPPORT@PLANETCUHZ.COM'
+};
+
 const HYPE_MESSAGES = [
     "Let's go CUHZ! 🚀",
     "Planet CUHZ in the building! 🌌",
@@ -755,6 +775,25 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // 1.5. Master User Commands
+    if (USER_COMMANDS[msg]) {
+        client.say(channel, USER_COMMANDS[msg]);
+        return;
+    }
+
+    // 1.6. Directory Command
+    if (msg === '!shoutouts') {
+        client.say(channel, 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM');
+        return;
+    }
+
+    // 1.7. Support Query Detection ("How do I get a command?")
+    const helpPattern = /how (do|can) i (get|have|make) a (command|custom command)/i;
+    if (helpPattern.test(message)) {
+        client.say(channel, "Custom commands are for regulars! If you're on the list and want an update, email SUPPORT@PLANETCUHZ.COM");
+        return;
+    }
+
     // 2. Dynamic Commands
     if (msg.startsWith('!followage') || msg.startsWith('!following')) {
         try {
@@ -939,7 +978,7 @@ async function handleMessage(channel, tags, message, self) {
 
 
     // --- Dev Service Promotion Commands ---
-    if (['!build', '!agents', '!bot'].includes(msg)) {
+    if (['!build', '!agents'].includes(msg)) {
         let promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @fourareason4 know right here in the stream! 🚀";
 
         if (cleanChannel === 'planetcuhz') promo = "Looking to level up your brand with a custom bot or AI team? Let @fourareason4 know he's in the chat! 🌌";
