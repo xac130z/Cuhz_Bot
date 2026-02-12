@@ -62,7 +62,7 @@ const USER_COMMANDS = {
     '!ac': 'cuhz welcome back!',
     '!snow': 'can’t ban the snow man ☃️',
     '!mahni': '🏆',
-    '!pnx': '✌️',
+    '!pnx': '☮️',
     '!rico': 'The heavy hitter is in the building! 💸',
     '!ec': 'Edward in the chat! Let’s get it. ⚡',
     '!rell': 'Rell is here, the vibes are up! 🔥',
@@ -574,24 +574,81 @@ const streamIntel = require('./stream_intel');
 
 // ... existing code ...
 
+// --- Persistence Helper ---
+const STATE_FILE = path.join(__dirname, 'stream_states.json');
+
+function loadStreamStates() {
+    try {
+        if (fs.existsSync(STATE_FILE)) {
+            const data = fs.readFileSync(STATE_FILE, 'utf8');
+            const parsed = JSON.parse(data);
+            // Convert strings back to dates/maps
+            for (const [key, val] of Object.entries(parsed)) {
+                if (val.startedAt) val.startedAt = new Date(val.startedAt);
+                if (val.lastAnnounced) val.lastAnnounced = new Date(val.lastAnnounced);
+                streamStates.set(key, val);
+            }
+            logger.info('Loaded stream states from disk.');
+        }
+    } catch (e) {
+        logger.error('Failed to load stream states:', e.message);
+    }
+}
+
+function saveStreamStates() {
+    try {
+        const obj = Object.fromEntries(streamStates);
+        fs.writeFileSync(STATE_FILE, JSON.stringify(obj, null, 2));
+    } catch (e) {
+        logger.error('Failed to save stream states:', e.message);
+    }
+}
+
+// Load on startup
+loadStreamStates();
+
 async function updateStreamState(channel) {
     const status = await checkStreamStatus(channel);
     const current = streamStates.get(channel);
     const wasLive = current && current.isLive;
 
+    // Default game name if undefined
+    const gameName = (status && status.game) ? status.game : 'something cool';
+
     // 1. Stream is LIVE
     if (status && status.isLive) {
-        streamStates.set(channel, status);
-        await streamIntel.updateStreamStatus(channel, status);
+        // Check if we should announce (Live now, wasn't live OR not announced recently)
+        // We add a 'lastAnnounced' timestamp to prevent spam on restarts
+        const now = Date.now();
+        const lastAnnounced = current ? (current.lastAnnounced ? new Date(current.lastAnnounced).getTime() : 0) : 0;
+        const cooldown = 60 * 60 * 1000; // 1 hour cooldown for "We are live" message
 
-        if (!wasLive) {
-            logger.info(`🔴 STREAM LIVE: ${channel} playing ${status.game}`);
-            client.say(channel, `🔴 WE ARE LIVE! playing ${status.game}! Get in here cuhz! 🚀`);
+        const shouldAnnounce = !wasLive || (now - lastAnnounced > cooldown);
+
+        // Update state
+        const newState = {
+            ...status,
+            game: gameName,
+            lastAnnounced: shouldAnnounce ? new Date() : (current ? current.lastAnnounced : null)
+        };
+
+        streamStates.set(channel, newState);
+        saveStreamStates(); // Persist immediately
+
+        await streamIntel.updateStreamStatus(channel, newState);
+
+        if (shouldAnnounce) {
+            logger.info(`🔴 STREAM LIVE: ${channel} playing ${gameName}`);
+            client.say(channel, `🔴 WE ARE LIVE! playing ${gameName}! Get in here cuhz! 🚀`);
+        } else {
+            logger.info(`🔴 Stream live (already announced): ${channel}`);
         }
     }
     // 2. Stream went OFFLINE
     else if (wasLive) {
-        streamStates.set(channel, { isLive: false });
+        streamStates.set(channel, { isLive: false, lastAnnounced: current.lastAnnounced });
+        saveStreamStates();
+
         await streamIntel.updateStreamStatus(channel, { isLive: false });
         logger.info(`⚫ STREAM ENDED: ${channel}`);
     }
