@@ -59,21 +59,37 @@ const PUBLIC_COMMANDS = {
 };
 
 const USER_COMMANDS = {
-    '!snow': 'can’t ban the snow man ☃️',
-    '!mahni': '🏆',
+    '!uni': 'Universal vibes loaded! Welcome to the galaxy! 🌌',
+    '!balen': 'Style has entered the chat. 💎',
+    '!chi': 'Windy City energy! Chi2K is in the building. 🏀',
+    '!bot': 'Just a bot doing bot things. 🤖',
+    '!drizzy': 'Drizzy in the cut! No drizzle, just reign! ☔👑',
     '!ec': 'Edward in the chat! Let’s get it. ⚡',
+    '!four': 'The Captain is here. 🫡',
+    '!jay': 'HBN Jay bringing the heat! 300 level energy! 🔥',
     '!rell': 'Rell is here, the vibes are up! 🔥',
+    '!jxy': 'Speak up! JxyTalk is in the room. 🎙️',
+    '!keem': 'KeemKillem with the plays! Welcome fam! 🎮',
+    '!jaylo': 'Jaylo sliding through! Smooth operator! ⛸️',
+    '!tank': 'MDG Tank rolling out! Heavy hitter! 🛡️',
+    '!badguy': 'It\'s MR BAD GUY... wait, he\'s actually chill! 😈',
+    '!neb': 'Nebulous vibes... mysterious and cool. 🌫️',
+    '!night': 'The OG bot is here. Respect the elders. 🤖',
+    '!papi': 'Papi Cartier has arrived. Luxury vibes only. 💎',
+    '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
+    '!famous': 'Real Famous K stepping in. Flash the cameras! 📸',
+    '!rebound': 'Rebound Mindset. Bounce back stronger every time. 🏀',
+    '!snow': 'can’t ban the snow man ☃️',
+    '!thorn': 'Watch out for the thorns! 🌹',
+    '!mahni': '🏆 VGX Mahni: Champion mindset! 🏆',
+    '!zuri': 'Zuri Owen in the house! Welcome family! 🏰',
     '!shock': 'Warning: High Voltage in the chat! ⚡',
     '!kay': 'Big Mula in the building! 💰',
-    '!thorn': 'Watch out for the thorns! 🌹',
     '!limit': 'Taking it to the limit! 🚀',
     '!reacts': 'Reactions are LIVE! 👀',
     '!rock': 'Solid as a rock. 🪨',
-    '!four': 'The Captain is here. 🫡',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!balen': 'Style has entered the chat. 💎',
-    '!bot': 'Just a bot doing bot things. 🤖 Want to change a command message? Email SUPPORT@PLANETCUHZ.COM',
-    '!shoutouts': 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Juan, !Storm, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM'
+    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !storm !juan !rico !pnx !ac'
 };
 
 const HYPE_MESSAGES = [
@@ -1039,10 +1055,10 @@ async function handleMessage(channel, tags, message, self) {
         if (count === 1) {
             // First use: Unique welcome
             const suffix = STORM_SUFFIXES[Math.floor(Math.random() * STORM_SUFFIXES.length)];
-            client.say(channel, `🌪️ @${tags.username} cuhzin glad to have you back in the chat! ${suffix}`);
+            client.say(channel, `🌪️ cuhzin glad to have you back in the chat! ${suffix}`);
         } else {
             // Reuse: Hype shoutout
-            client.say(channel, `⚡ STORM IS IN THE BUILDING! @${tags.username} bringing the energy! Don't blink! 🌩️`);
+            client.say(channel, `⚡ STORM IS IN THE BUILDING! bringing the energy! Don't blink! 🌩️`);
         }
         return;
     }
@@ -1055,10 +1071,10 @@ async function handleMessage(channel, tags, message, self) {
         if (count === 1) {
             // First use: Unique welcome
             const suffix = JUAN_SUFFIXES[Math.floor(Math.random() * JUAN_SUFFIXES.length)];
-            client.say(channel, `🔫 @${tags.username} the juan and only! Wassup cuhzin glad to see you, what level are you in cod? ${suffix}`);
+            client.say(channel, `🔫 the juan and only! Wassup cuhzin glad to see you, what level are you in cod? ${suffix}`);
         } else {
             // Reuse: Hype shoutout
-            client.say(channel, `🎯 The Juan and Only is holding it down! @${tags.username} staying active! 🔥`);
+            client.say(channel, `🎯 The Juan and Only is holding it down! staying active! 🔥`);
         }
         return;
     }
