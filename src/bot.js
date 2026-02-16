@@ -59,11 +59,8 @@ const PUBLIC_COMMANDS = {
 };
 
 const USER_COMMANDS = {
-    '!ac': 'cuhz welcome back!',
     '!snow': 'can’t ban the snow man ☃️',
     '!mahni': '🏆',
-    '!pnx': '☮️',
-    '!rico': 'The heavy hitter is in the building! 💸',
     '!ec': 'Edward in the chat! Let’s get it. ⚡',
     '!rell': 'Rell is here, the vibes are up! 🔥',
     '!shock': 'Warning: High Voltage in the chat! ⚡',
@@ -76,7 +73,7 @@ const USER_COMMANDS = {
     '!yoo': 'Yoo! Welcome to the stream. 👋',
     '!balen': 'Style has entered the chat. 💎',
     '!bot': 'Just a bot doing bot things. 🤖 Want to change a command message? Email SUPPORT@PLANETCUHZ.COM',
-    '!shoutouts': 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM'
+    '!shoutouts': 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Juan, !Storm, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM'
 };
 
 const HYPE_MESSAGES = [
@@ -155,6 +152,110 @@ const LUCKY_4_QUOTES = [
     "Keep going. Everything you need will come to you at the perfect time. ⏱️",
     "You are stronger than you think. 💪",
     "4 the culture. 4 the community. 4 the win. 🌐"
+];
+
+const AC_QUOTES = [
+    "Job's not finished. Welcome back xAc130z. Thank you for leading the way. 🐍",
+    "Dedication sees dreams come true. Planet Cuhz stand up! 🌌",
+    "Rest at the end, not in the middle. The grind continues. 💎",
+    "Mamba Mentality: Be better than you were yesterday. Welcome back xAc130z. 🚀",
+    "Welcome back xAc130z. Time to focus. Time to dominate. ⚔️",
+    "Great things come from hard work and perseverance. Thank you for showing us the way. 💪",
+    "If you don't believe in yourself, no one will do it for you. Be legendary xAc130z. 🧠",
+    "The moment you give up, is the moment you let someone else win. Not today. 🏆",
+    "Everything negative is all an opportunity to rise. Welcome home xAc130z. 🌍",
+    "I don't relate to lazy people. We don't speak the same language. Let's work! 🦾",
+    "Thank you for the energy xAc130z. Planet Cuhz is rising because of you. 🌠",
+    "Leaders don't force people to follow, they invite them on a journey. Thanks for the journey xAc130z. 🗺️",
+    "Resilience is key. Welcome back to the arena, xAc130z. 🏟️",
+    "Greatness is not a destination, it's a lifestyle. Live it, xAc130z. 🦁",
+    "We don't quit, we don't cower, we don't run. We endure. Welcome back. 🛡️",
+    "Focus on the process, trusting that the results will come. Thank you for the vision. 📉",
+    "Haters are a good problem to have. Nobody hates the good ones. They hate the great ones. 🐍",
+    "Thank you xAc130z for building this galaxy. We are just getting started. 🌌",
+    "Every setback is a setup for a comeback. Let's get it. 🏹",
+    "Passion comes from love. Thank you for loving the game and the community. ❤️",
+    "The most important thing is to try and inspire people. You do that daily. Thank you. ✨",
+    "Hard work outweighs talent — every time. Keep pushing xAc130z. 🏋️‍♂️",
+    "We rise by lifting others. Thanks for lifting up Planet Cuhz. 🤲",
+    "Pressure is a privilege. Embrace it, xAc130z. 💎",
+    "You can't be stopped if you don't stop. Welcome back to the grind. 🛑",
+    "Thank you, xAc130z. The vision is clear. The mission is on. 🎯",
+    "Boos don't block dunks. Keep scoring, Keep leading. 🏀",
+    "A true leader steps up when others step back. Thanks for stepping up. 👣",
+    "Mamba Mentality: 4 A.M. logic. No excuses. Welcome back. 🌚",
+    "Planet Cuhz 4 Life. Thank you xAc130z for bringing us together. 🌐"
+];
+
+
+
+// --- Welcome Quotes (Dynamic) ---
+const WELCOME_QUOTES = [
+    "Welcome to the Planet, cuhz! 🌌",
+    "Ayyy! Look who just pulled up! Welcome to the family! 🚀",
+    "The energy just went up! Welcome in cuhz! ⚡",
+    "Planet Cuhz is better with you here. Welcome! 🌍",
+    "Yo! Grab a seat, we vibing out today. Welcome! 🎧",
+    "New challenger approaching! Just kidding, welcome fam! 🎮",
+    "Glad you could make it! Let's get these Ws in the chat! 🏆",
+    "Welcome to the resistance against bad vibes. You're safe here. 🛡️",
+    "Cuhz has entered the building! Make some noise! 📢",
+    "Yo cuhz! Good to see you. Stay awhile and listen! 👂",
+    "Welcome! Don't forget to follow if you're enjoying the vibes! 💖",
+    "A legendary viewer has appeared! Welcome in! 🌟"
+];
+
+// --- Custom Command Variations ---
+const STORM_SUFFIXES = [
+    "The forecast calls for 100% chance of Ws! 🌩️",
+    "Bringing the thunder and the lightning! ⚡",
+    "Category 5 vibes incoming! 🌀",
+    "Make it rain on 'em! 💸",
+    "The calm before the storm... wait, YOU are the storm! 🌪️"
+];
+
+const JUAN_SUFFIXES = [
+    "The Juan and Only! 🔫",
+    "Juan love, Juan heart! ❤️",
+    "We found the chosen Juan! 🕶️",
+    "Takes one to know Juan! 🤝",
+    "Juan step at a time to greatness! 👣"
+];
+
+const RICO_QUOTES = [
+    "The heavy hitter is in the building! Rico comin' through! 💸",
+    "Hide your wallets, hide your wives, Rico has arrived! 💰",
+    "Big boss Rico stepping on the scene! Watch the throne! 👑",
+    "Yo cuhz! Rico is in the chat, everyone stand up! 🫡",
+    "Rico Suave? Nah, Rico SAVAGE! Welcome to the planet! 🦁",
+    "Money moves only when Rico is here. 📉📈",
+    "The vibes just went up 1000%. Rico is here fam! 🚀",
+    "RICOOOOO! The legend himself. Glad you made it cuhz! 💎",
+    "Warning: High levels of swagg detected. Rico is online. 🚨",
+    "If you know, you know. Rico in the cut! ✂️",
+    "Respect the architect. Rico is watching. 🏗️",
+    "Don't blink, you might miss a Rico play. 🏀",
+    "Chill mode activated... just kidding, Rico is here to turn it up! 🔥",
+    "From the concrete to the cosmos, Rico runs it. 🌌",
+    "Salute the general. Rico is on deck! 🎖️"
+];
+
+const PNX_QUOTES = [
+    "☮️ PNX in the building! Peace and love to the cuhz! ✌️",
+    "☮️ Positive Network Xperience! Welcome to the vibes! ✨",
+    "☮️ PNX bringing that zen energy to Planet Cuhz. Stay peaceful! 🧘‍♂️",
+    "☮️ Peace, Love, and PNX! Glad you're here cuhz! ❤️",
+    "☮️ The vibes just got smoother. PNX is here! 🌊",
+    "☮️ Keep it peaceful, keep it PNX. 🕊️",
+    "☮️ PNX in the cut! Spreading good vibes only! ☮️",
+    "☮️ Salute to the peace-maker! PNX is online! 🫡",
+    "☮️ No stress, just PNX. Welcome back fam! ☀️",
+    "☮️ PNX: The frequency of Planet Cuhz. 📡",
+    "☮️ Inner peace, outer energy. PNX is here to stay! ⚡",
+    "☮️ Leveling up the harmony. PNX has entered! 🌌",
+    "☮️ Good vibes are contagious. Thanks for bringing them, PNX! ☯️",
+    "☮️ High frequency, low ego. PNX in the house! 🏠",
+    "☮️ 4 A Reason, 4 the Peace. PNX 4 Ever! 💎"
 ];
 
 const TIMER_MESSAGES = [
@@ -866,7 +967,8 @@ async function handleMessage(channel, tags, message, self) {
         // Welcome back message (if last seen > 24h ago or new user AND settings allow it)
         const canWelcome = !persona.settings || persona.settings.auto_welcome;
         if (canWelcome && (!user || user.last_seen < oneDayAgo)) {
-            client.say(channel, `Welcome to the Planet, @${tags.username}! 🌌`);
+            const randomWelcome = WELCOME_QUOTES[Math.floor(Math.random() * WELCOME_QUOTES.length)];
+            client.say(channel, `${randomWelcome} @${tags.username} 🌌`);
         }
 
         // Auto-shoutout for fellow streamers (if not shouted out recently)
@@ -916,13 +1018,69 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
-    // 1. Exact Match Public Commands (Persona Specific)
+    // --- Special Master Commands (Precedence) ---
+
+    if (msg === '!ac') {
+        const randomQuote = AC_QUOTES[Math.floor(Math.random() * AC_QUOTES.length)];
+        client.say(channel, `🐍 ${randomQuote}`);
+        return;
+    }
+
+    // In-memory session tracking for command usage (resets on restart)
+    if (!global.sessionCommandUsage) {
+        global.sessionCommandUsage = new Map(); // key: specific_command_user (e.g. "!storm_username")
+    }
+
+    if (msg.startsWith('!storm')) {
+        const key = `!storm_${tags.username}`;
+        const count = (global.sessionCommandUsage.get(key) || 0) + 1;
+        global.sessionCommandUsage.set(key, count);
+
+        if (count === 1) {
+            // First use: Unique welcome
+            const suffix = STORM_SUFFIXES[Math.floor(Math.random() * STORM_SUFFIXES.length)];
+            client.say(channel, `🌪️ @${tags.username} cuhzin glad to have you back in the chat! ${suffix}`);
+        } else {
+            // Reuse: Hype shoutout
+            client.say(channel, `⚡ STORM IS IN THE BUILDING! @${tags.username} bringing the energy! Don't blink! 🌩️`);
+        }
+        return;
+    }
+
+    if (msg.startsWith('!juan')) {
+        const key = `!juan_${tags.username}`;
+        const count = (global.sessionCommandUsage.get(key) || 0) + 1;
+        global.sessionCommandUsage.set(key, count);
+
+        if (count === 1) {
+            // First use: Unique welcome
+            const suffix = JUAN_SUFFIXES[Math.floor(Math.random() * JUAN_SUFFIXES.length)];
+            client.say(channel, `🔫 @${tags.username} the juan and only! Wassup cuhzin glad to see you, what level are you in cod? ${suffix}`);
+        } else {
+            // Reuse: Hype shoutout
+            client.say(channel, `🎯 The Juan and Only is holding it down! @${tags.username} staying active! 🔥`);
+        }
+        return;
+    }
+
+    if (msg === '!rico') {
+        const randomRico = RICO_QUOTES[Math.floor(Math.random() * RICO_QUOTES.length)];
+        client.say(channel, `💸 ${randomRico}`);
+        return;
+    }
+
+    if (msg === '!pnx') {
+        const randomPnx = PNX_QUOTES[Math.floor(Math.random() * PNX_QUOTES.length)];
+        client.say(channel, `☮️ ${randomPnx}`);
+        return;
+    }
+
+    // 1. Exact Match Public Commands (Dashboard Persona Specific)
     if (persona.commands[msg]) {
         client.say(channel, persona.commands[msg]);
         return;
     }
 
-    // 1.5. Master User Commands
     if (USER_COMMANDS[msg]) {
         client.say(channel, USER_COMMANDS[msg]);
         return;
@@ -1358,12 +1516,14 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg === '!refresh' && isMod) {
+    if (msg.startsWith('!refresh') && isMod) {
         client.say(channel, `🔄 Refreshing persona from dashboard...`);
         await fetchChannelPersona(channel);
         client.say(channel, `✅ Persona reloaded!`);
         return;
     }
+
+
 
     // Auto-shoutout management commands
     if (msg.startsWith('!addstreamer ') && isMod) {
