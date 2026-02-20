@@ -42,7 +42,7 @@ ABOUT PLANET CUHZ:
 - The CUHZ Chain Generator is a community tool: https://cuhz-bot-dashboard-846.created.app/chain-generator
 
 STREAMERS:
-- fourareason4 — The founder, solo dev building AI named "William". Location: Nashua, NH
+- fourareason4 — The founder, solo dev building AI.
 - planetcuhz — The brand channel (the boss)
 - rico_santanax — Community streamer and collaborator
 - snowy_wolfies_ttv — The stats god
