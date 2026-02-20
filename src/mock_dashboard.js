@@ -115,12 +115,12 @@ app.get('/helix/streams', (req, res) => {
     const userLogin = req.query.user_login;
     console.log(`[MOCK] GET /helix/streams called for: ${userLogin}`);
 
-    if (userLogin === 'fourareason4') {
+    if (userLogin === 'xac130z') {
         res.json({
             data: [{
                 id: "123456789",
                 user_id: "123",
-                user_login: "fourareason4",
+                user_login: "xac130z",
                 game_name: "Just Chatting",
                 type: "live",
                 title: "Mock Stream Title",

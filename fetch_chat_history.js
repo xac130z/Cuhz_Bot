@@ -4,7 +4,7 @@ const fs = require('fs');
 // Configuration from URL provided by user
 const PROJECT_ID = 'ec2bc656-3301-4039-9873-ce66b6f3a230';
 const ENV_ID = '45c1336e-ee0d-4715-9d33-79f975afe948';
-const CHANNEL = 'fourareason4';
+const CHANNEL = 'xac130z';
 
 // Time range for "yesterday" (2026-02-09)
 // Adjusting for potential timezone differences by casting a wide net

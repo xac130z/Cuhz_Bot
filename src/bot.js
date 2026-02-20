@@ -83,13 +83,14 @@ const USER_COMMANDS = {
     '!thorn': 'Watch out for the thorns! 🌹',
     '!mahni': '🏆 VGX Mahni: Champion mindset! 🏆',
     '!zuri': 'Zuri Owen in the house! Welcome family! 🏰',
+    '!planet': 'Planet CUHZ is in the building! The mothership has landed. 🌍🌌',
     '!shock': 'Warning: High Voltage in the chat! ⚡',
     '!kay': 'Big Mula in the building! 💰',
     '!limit': 'Taking it to the limit! 🚀',
     '!reacts': 'Reactions are LIVE! 👀',
     '!rock': 'Solid as a rock. 🪨',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !storm !juan !rico !pnx !ac'
+    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !storm !juan !rico !pnx !ac'
 };
 
 const HYPE_MESSAGES = [
@@ -295,8 +296,8 @@ async function fetchChannelPersona(channel) {
     if (!config.apiBase || !config.botApiSecret) {
         logger.info(`No API config, using defaults for ${channel}`);
         const persona = { ...DEFAULT_CONFIG, timers: [...TIMER_MESSAGES] };
-        if (cleanChannel === 'fourareason4') {
-            persona.timers.push("📱 Follow Four A Reason on YouTube and TikTok! 🚀");
+        if (cleanChannel === 'xac130z') {
+            persona.timers.push("📱 Follow xAc130z on YouTube and TikTok! 🚀");
         }
         channelConfigs.set(channel.toLowerCase(), persona);
         return;
@@ -327,9 +328,9 @@ async function fetchChannelPersona(channel) {
             hype: HYPE_MESSAGES
         };
 
-        // Add fourareason4 specific timer
-        if (cleanChannel === 'fourareason4') {
-            const promoMsg = "📱 Follow Four A Reason on YouTube and TikTok! 🚀";
+        // Add xac130z specific timer
+        if (cleanChannel === 'xac130z') {
+            const promoMsg = "📱 Follow xAc130z on YouTube and TikTok! 🚀";
             if (!persona.timers.includes(promoMsg)) {
                 persona.timers.push(promoMsg);
             }
@@ -341,8 +342,8 @@ async function fetchChannelPersona(channel) {
         logger.error(`Error fetching persona for ${channel}:`, error.message);
 
         const fallbackPersona = { ...DEFAULT_CONFIG, timers: [...TIMER_MESSAGES] };
-        if (cleanChannel === 'fourareason4') {
-            fallbackPersona.timers.push("📱 Follow Four A Reason on YouTube and TikTok! 🚀");
+        if (cleanChannel === 'xac130z') {
+            fallbackPersona.timers.push("📱 Follow xAc130z on YouTube and TikTok! 🚀");
         }
         channelConfigs.set(channel.toLowerCase(), fallbackPersona);
     }
@@ -996,7 +997,7 @@ async function handleMessage(channel, tags, message, self) {
 
     const msg = message.toLowerCase();
     const cleanChannel = channel.replace('#', '').toLowerCase();
-    const isVerifiedStream = ['fourareason4', 'planetcuhz', 'rico_santanax'].includes(cleanChannel);
+    const isVerifiedStream = ['xac130z', 'planetcuhz', 'rico_santanax'].includes(cleanChannel);
 
     const persona = getChannelConfig(channel);
 
@@ -1323,10 +1324,10 @@ async function handleMessage(channel, tags, message, self) {
 
     // --- Dev Service Promotion Commands ---
     if (['!build', '!agents'].includes(msg)) {
-        let promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @fourareason4 know right here in the stream! 🚀";
+        let promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @xac130z know right here in the stream! 🚀";
 
-        if (cleanChannel === 'planetcuhz') promo = "Looking to level up your brand with a custom bot or AI team? Let @fourareason4 know he's in the chat! 🌌";
-        if (cleanChannel === 'rico_santanax') promo = "Rico's bot is built by the fam! Want your own? Holla at @fourareason4 for custom bots and AI agents! 🔥";
+        if (cleanChannel === 'planetcuhz') promo = "Looking to level up your brand with a custom bot or AI team? Let @xac130z know he's in the chat! 🌌";
+        if (cleanChannel === 'rico_santanax') promo = "Rico's bot is built by the fam! Want your own? Holla at @xac130z for custom bots and AI agents! 🔥";
 
         client.say(channel, promo);
         return;
@@ -1349,7 +1350,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg === '!aistats' && tags.username === 'fourareason4' && isVerifiedStream) {
+    if (msg === '!aistats' && tags.username === 'xac130z' && isVerifiedStream) {
         const s = aiService.getStats();
         const cacheStats = await contextHandler.getCacheStats();
         const eyes = `👁️${s.eyes.available ? '✅' : '❌'}(${s.eyes.failures})`;
@@ -1643,7 +1644,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // Warriors command removed per user request
 
-    if (msg === '!status' && tags.username === 'fourareason4') {
+    if (msg === '!status' && tags.username === 'xac130z') {
         const state = streamStates.get(channel);
         const liveStatus = state ? (state.isLive ? 'LIVE 🔴' : 'OFFLINE ⚫') : 'UNKNOWN ⚪';
         client.say(channel, `✅ Bot Online. Stream: ${liveStatus}. Ver: Non-Crypto v1.2 (Smart Mode)`);

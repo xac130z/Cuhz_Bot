@@ -323,7 +323,7 @@ class DBAdapter {
 
       if (count === 0) {
         console.log('🌱 Seeding initial data...');
-        const channels = ['#fourareason4', '#planetcuhz', '#rico_santanax'];
+        const channels = ['#xac130z', '#planetcuhz', '#rico_santanax'];
 
         for (const channelName of channels) {
           const cRes = await this.prepare('INSERT INTO channels (name) VALUES (?)').run(channelName);

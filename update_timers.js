@@ -5,11 +5,11 @@ console.log('🎯 Setting up staggered timer intervals for smooth flow...\n');
 // Define staggered intervals for each timer to avoid overwhelming chat
 const timerConfig = [
     {
-        channel: '#fourareason4',
+        channel: '#xac130z',
         timers: [
-            { message: "YO CUHZ! 🚀 Lock in with the legend on Instagram! → instagram.com/Fourareason4", interval: 60 },
-            { message: "STAY CONNECTED CUHZ! 🌌 Catch the hottest vibes on TikTok! → tiktok.com/@Fourareason4", interval: 45 },
-            { message: "DON'T MISS A BEAT CUHZ! 🔥 Tap into the X/Twitter feed for all the updates! → x.com/fourareason4", interval: 75 }
+            { message: "YO CUHZ! 🚀 Lock in with the legend on Instagram! → instagram.com/xac130z", interval: 60 },
+            { message: "STAY CONNECTED CUHZ! 🌌 Catch the hottest vibes on TikTok! → tiktok.com/@xac130z", interval: 45 },
+            { message: "DON'T MISS A BEAT CUHZ! 🔥 Tap into the X/Twitter feed for all the updates! → x.com/xac130z", interval: 75 }
         ]
     },
     {
@@ -52,7 +52,7 @@ timerConfig.forEach(config => {
 
 console.log('✅ Timer intervals updated successfully!');
 console.log('\n📊 Flow Pattern:');
-console.log('   #fourareason4: 60min → 45min → 75min (staggered)');
+console.log('   #xac130z: 60min → 45min → 75min (staggered)');
 console.log('   #planetcuhz: 60min → 60min (consistent)');
 console.log('   #rico_santanax: 60min → 60min (consistent)');
 console.log('\n💡 This creates a natural rhythm without overwhelming viewers.');
