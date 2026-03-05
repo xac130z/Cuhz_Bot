@@ -14,6 +14,17 @@ const modIntel = require('./mod_intel');
 const fs = require('fs');
 const path = require('path');
 
+// --- Tier System Definition ---
+const TIERS = { BASIC: 'basic', PRO: 'pro', PREMIUM: 'premium' };
+const CHANNEL_TIERS = {
+    'fourareason4': TIERS.PREMIUM,
+    'rico_santanax': TIERS.PREMIUM,
+    'planetcuhz': TIERS.PREMIUM,
+    'xac130z': TIERS.PREMIUM,
+    'vgxmahni': TIERS.BASIC,
+    'qweenstormygirlnz89': TIERS.BASIC
+};
+
 // --- Global Error Handlers (Prevention) ---
 process.on('unhandledRejection', (reason, promise) => {
     logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -47,13 +58,13 @@ const PUBLIC_COMMANDS = {
     '!roadmap': '🧭 https://planetcuhz.com/whitepaper#roadmap',
     '!rules': '📌 Be respectful. No hate. No spam. Stay CUHZ.',
     '!privacy': '🔒 Privacy & security → https://planetcuhz.com/privacy',
-    '!cuhzchain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
-    '!chain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
+    '!cuhzchain': '🔗 CUHZ Chain Generator → https://dash.planetcuhz.com/chain-generator',
+    '!chain': '🔗 CUHZ Chain Generator → https://dash.planetcuhz.com/chain-generator',
     '!gm': 'Good morning CUHZ ☀️',
     '!gn': 'Good night CUHZ 🌙',
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
-    '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
+    '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://dash.planetcuhz.com',
     '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!',
     '!help': '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | AI: !ask !code | Mods: !chatreport !mood !personality !so !raid | Ask a question naturally for AI help!'
 };
@@ -90,7 +101,8 @@ const USER_COMMANDS = {
     '!reacts': 'Reactions are LIVE! 👀',
     '!rock': 'Solid as a rock. 🪨',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !storm !juan !rico !pnx !ac'
+    '!dame': 'cool 8  ,  nbvcxzsw       m1/////?120348\\-[;,',
+    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !storm !juan !rico !pnx !ac !dame'
 };
 
 const HYPE_MESSAGES = [
@@ -279,7 +291,7 @@ const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
     "💬 Join the Discord → https://discord.gg/5rFRaeBuHn",
-    "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
+    "🔗 CUHZ Chain Generator → https://dash.planetcuhz.com/chain-generator"
 ];
 
 // AI Warriors removed per user request
@@ -997,7 +1009,15 @@ async function handleMessage(channel, tags, message, self) {
 
     const msg = message.toLowerCase();
     const cleanChannel = channel.replace('#', '').toLowerCase();
-    const isVerifiedStream = ['xac130z', 'planetcuhz', 'rico_santanax'].includes(cleanChannel);
+
+    // --- Tier System Definition ---
+
+    const tier = CHANNEL_TIERS[cleanChannel] || TIERS.BASIC;
+    const isPremium = tier === TIERS.PREMIUM;
+    const isProOrPremium = tier === TIERS.PRO || tier === TIERS.PREMIUM;
+
+    // Legacy mapping for existing commands that relied on isVerifiedStream
+    const isVerifiedStream = isPremium;
 
     const persona = getChannelConfig(channel);
 
@@ -1007,8 +1027,8 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // 0.5. Context-Aware Response (AI)
-    if (config.enableContextAware && !msg.startsWith('!')) {
+    // 0.5. Context-Aware Response (AI) - Premium Only
+    if (isPremium && config.enableContextAware && !msg.startsWith('!')) {
         try {
             const currentPersonality = moodTracker.getCurrentPersonality(channel);
             const personalityConfig = moodTracker.getPersonalityConfig(currentPersonality);
@@ -1035,96 +1055,113 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
-    // --- Special Master Commands (Precedence) ---
-
-    if (msg === '!ac') {
-        const randomQuote = AC_QUOTES[Math.floor(Math.random() * AC_QUOTES.length)];
-        client.say(channel, `🐍 ${randomQuote}`);
-        return;
-    }
-
-    // In-memory session tracking for command usage (resets on restart)
-    if (!global.sessionCommandUsage) {
-        global.sessionCommandUsage = new Map(); // key: specific_command_user (e.g. "!storm_username")
-    }
-
-    if (msg.startsWith('!storm')) {
-        const key = `!storm_${tags.username}`;
-        const count = (global.sessionCommandUsage.get(key) || 0) + 1;
-        global.sessionCommandUsage.set(key, count);
-
-        if (count === 1) {
-            // First use: Unique welcome
-            const suffix = STORM_SUFFIXES[Math.floor(Math.random() * STORM_SUFFIXES.length)];
-            client.say(channel, `🌪️ cuhzin glad to have you back in the chat! ${suffix}`);
-        } else {
-            // Reuse: Hype shoutout
-            client.say(channel, `⚡ STORM IS IN THE BUILDING! bringing the energy! Don't blink! 🌩️`);
-        }
-        return;
-    }
-
-    if (msg.startsWith('!juan')) {
-        const key = `!juan_${tags.username}`;
-        const count = (global.sessionCommandUsage.get(key) || 0) + 1;
-        global.sessionCommandUsage.set(key, count);
-
-        if (count === 1) {
-            // First use: Unique welcome
-            const suffix = JUAN_SUFFIXES[Math.floor(Math.random() * JUAN_SUFFIXES.length)];
-            client.say(channel, `🔫 the juan and only! Wassup cuhzin glad to see you, what level are you in cod? ${suffix}`);
-        } else {
-            // Reuse: Hype shoutout
-            client.say(channel, `🎯 The Juan and Only is holding it down! staying active! 🔥`);
-        }
-        return;
-    }
-
-    if (msg === '!rico') {
-        const randomRico = RICO_QUOTES[Math.floor(Math.random() * RICO_QUOTES.length)];
-        client.say(channel, `💸 ${randomRico}`);
-        return;
-    }
-
-    if (msg === '!pnx') {
-        const randomPnx = PNX_QUOTES[Math.floor(Math.random() * PNX_QUOTES.length)];
-        client.say(channel, `☮️ ${randomPnx}`);
-        return;
-    }
-
     // 1. Exact Match Public Commands (Dashboard Persona Specific)
+    // Basic Tier (and above) has access to these standard commands.
     if (persona.commands[msg]) {
         client.say(channel, persona.commands[msg]);
         return;
     }
 
-    if (USER_COMMANDS[msg]) {
-        client.say(channel, USER_COMMANDS[msg]);
+    // --- Special Master Commands (Precedence) - Pro/Premium Tier Only ---
+    if (isProOrPremium) {
+        if (msg === '!ac') {
+            const randomQuote = AC_QUOTES[Math.floor(Math.random() * AC_QUOTES.length)];
+            client.say(channel, `🐍 ${randomQuote}`);
+            return;
+        }
+
+        // In-memory session tracking for command usage (resets on restart)
+        if (!global.sessionCommandUsage) {
+            global.sessionCommandUsage = new Map(); // key: specific_command_user (e.g. "!storm_username")
+        }
+
+        if (msg.startsWith('!storm')) {
+            const key = `!storm_${tags.username}`;
+            const count = (global.sessionCommandUsage.get(key) || 0) + 1;
+            global.sessionCommandUsage.set(key, count);
+
+            if (count === 1) {
+                // First use: Unique welcome
+                const suffix = STORM_SUFFIXES[Math.floor(Math.random() * STORM_SUFFIXES.length)];
+                client.say(channel, `🌪️ cuhzin glad to have you back in the chat! ${suffix}`);
+            } else {
+                // Reuse: Hype shoutout
+                client.say(channel, `⚡ STORM IS IN THE BUILDING! bringing the energy! Don't blink! 🌩️`);
+            }
+            return;
+        }
+
+        if (msg.startsWith('!juan')) {
+            const key = `!juan_${tags.username}`;
+            const count = (global.sessionCommandUsage.get(key) || 0) + 1;
+            global.sessionCommandUsage.set(key, count);
+
+            if (count === 1) {
+                // First use: Unique welcome
+                const suffix = JUAN_SUFFIXES[Math.floor(Math.random() * JUAN_SUFFIXES.length)];
+                client.say(channel, `🔫 the juan and only! Wassup cuhzin glad to see you, what level are you in cod? ${suffix}`);
+            } else {
+                // Reuse: Hype shoutout
+                client.say(channel, `🎯 The Juan and Only is holding it down! staying active! 🔥`);
+            }
+            return;
+        }
+
+        if (msg === '!rico') {
+            const randomRico = RICO_QUOTES[Math.floor(Math.random() * RICO_QUOTES.length)];
+            client.say(channel, `💸 ${randomRico}`);
+            return;
+        }
+
+        if (msg === '!pnx') {
+            const randomPnx = PNX_QUOTES[Math.floor(Math.random() * PNX_QUOTES.length)];
+            client.say(channel, `☮️ ${randomPnx}`);
+            return;
+        }
+
+        if (USER_COMMANDS[msg]) {
+            client.say(channel, USER_COMMANDS[msg]);
+            return;
+        }
+    }
+
+    // 1.5. Dynamic Help System based on Tiers
+    if (msg === '!help') {
+        if (isPremium) {
+            client.say(channel, '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | AI: !ask !code | Mods: !chatreport !mood !personality !so !raid | Ask a question naturally for AI help!');
+        } else if (tier === TIERS.PRO) {
+            client.say(channel, '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | Mods: !chatreport !so !raid');
+        } else {
+            // Basic Tier
+            client.say(channel, '🌌 Commands (Basic): !cuhz !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord');
+        }
         return;
     }
 
-    // 1.6. Support & Command Help
-    if (msg.includes('how do i get a command') || msg.includes('how to get a custom command')) {
-        client.say(channel, `Custom commands are for regulars! If you're on the list and want an update, email SUPPORT@PLANETCUHZ.COM`);
-        return;
-    }
+    // 1.6. Support & Command Help - Pro/Premium only since Basic doesn't get custom commands
+    if (isProOrPremium) {
+        if (msg.includes('how do i get a command') || msg.includes('how to get a custom command')) {
+            client.say(channel, `Custom commands are for regulars! If you're on the list and want an update, email SUPPORT@PLANETCUHZ.COM`);
+            return;
+        }
 
-    if (msg.includes('how to change my message') || msg.includes('how do i change my message') || msg.includes('change my command')) {
-        client.say(channel, `If you want to change your custom command message, please email SUPPORT@PLANETCUHZ.COM`);
-        return;
-    }
+        if (msg.includes('how to change my message') || msg.includes('how do i change my message') || msg.includes('change my command')) {
+            client.say(channel, `If you want to change your custom command message, please email SUPPORT@PLANETCUHZ.COM`);
+            return;
+        }
 
-    // 1.6. Directory Command
-    if (msg === '!shoutouts') {
-        client.say(channel, 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM');
-        return;
-    }
+        // 1.6. Directory Command
+        if (msg === '!shoutouts') {
+            client.say(channel, 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM');
+            return;
+        }
 
-    // 1.7. Support Query Detection ("How do I get a command?")
-    const helpPattern = /how (do|can) i (get|have|make) a (command|custom command)/i;
-    if (helpPattern.test(message)) {
-        client.say(channel, "Custom commands are for regulars! If you're on the list and want an update, email SUPPORT@PLANETCUHZ.COM");
-        return;
+        // 1.7. Support Query Detection ("How do I get a command?")
+        const helpPattern = /how (do|can) i (get|have|make) a (command|custom command)/i;
+        if (helpPattern.test(message)) {
+            client.say(channel, "Custom commands are for regulars! If you're on the list and want an update, email SUPPORT@PLANETCUHZ.COM");
+            return;
+        }
     }
 
     // 2. Dynamic Commands
@@ -1671,7 +1708,9 @@ async function handleMessage(channel, tags, message, self) {
 }
 
 // --- Express Setup ---
+const cors = require('cors');
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 function verifyDashboardRequest(req, res, next) {
@@ -1727,6 +1766,18 @@ app.get('/health', (req, res) => {
         streamStates: Object.fromEntries(streamStates),
         startTime: startTime.toISOString(),
         logs: logger.getLogs()
+    });
+});
+
+app.get('/api/system-status', (req, res) => {
+    res.json({
+        tiers: CHANNEL_TIERS,
+        ai: {
+            gemini: !!process.env.GEMINI_API_KEY,
+            claude: !!process.env.ANTHROPIC_API_KEY,
+            qwen: !!process.env.GROQ_API_KEY,
+            contextAware: config.enableContextAware
+        }
     });
 });
 
