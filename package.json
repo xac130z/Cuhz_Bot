@@ -5,6 +5,9 @@
   "scripts": {
     "start": "node src/bot.js",
     "dev": "node src/bot.js",
+    "dev:dashboard": "cd dashboard && npm run dev",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:dashboard\"",
+    "build:dashboard": "cd dashboard && npm install --legacy-peer-deps && npm run build",
     "dev:mock": "node src/mock_dashboard.js",
     "test": "node tests/test_context.js && node tests/test_mood_tracker.js && node tests/test_sentiment.js && node tests/test_personality_integration.js",
     "lint": "eslint src/**/*.js"
@@ -18,6 +21,7 @@
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.2",
     "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "pg": "^8.18.0",
@@ -25,6 +29,7 @@
   },
   "devDependencies": {
     "@railway/cli": "^4.29.0",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.2"
   }
 }

@@ -67,7 +67,7 @@ None.
 
 ### Short Term (This Week)
 1. **Deploy to Railway** - Push updated code to production
-2. **Verify Dashboard Sync** - Test production connection to `cuhz-bot-dashboard-846.created.app`
+2. **Verify Dashboard Sync** - Test production connection to `dash.planetcuhz.com`
 3. **Monitor Health** - Check `/health` endpoint post-deployment
 
 ---

@@ -80,7 +80,7 @@ Copy `.env.example` to `.env` and fill in your credentials:
 - `BOT_OAUTH_TOKEN`: Your Twitch Bot OAuth token.
 - `BOT_USERNAME`: The Twitch username of the bot.
 - `TWITCH_CHANNEL_NAME`: Comma-separated list of channels to join (e.g., `fourareason4,planetcuhz`).
-- `API_BASE`: URL of the dashboard API (e.g., `https://cuhz-bot-dashboard-846.created.app`).
+- `API_BASE`: URL of the dashboard API (e.g., `https://dash.planetcuhz.com`).
 - `BOT_API_SECRET`: Shared secret for API authentication.
 - `USE_MOCK_API`: Set to `true` for local testing, `false` for production.
 
@@ -217,7 +217,7 @@ The bot integrates with Anything.com via a REST API:
    - `BOT_OAUTH_TOKEN`: `oauth:your_real_token`
    - `BOT_USERNAME`: `your_bot_username`
    - `TWITCH_CHANNEL_NAME`: `fourareason4,planetcuhz,rico_santanax`
-   - `API_BASE`: `https://cuhz-bot-dashboard-846.created.app`
+   - `API_BASE`: `https://dash.planetcuhz.com`
    - `BOT_API_SECRET`: (Contact admin for the production secret)
    - `USE_MOCK_API`: `false`
 
@@ -229,7 +229,7 @@ The bot integrates with Anything.com via a REST API:
    - Once deployed, visit `https://your-railway-url/health` to confirm the bot is connected and joining channels.
 
 5. **Dashboard Sync**: 
-   - Log in to `https://cuhz-bot-dashboard-846.created.app/admin` and verify that the marketing intervals are reflected in the global settings.
+   - Log in to `https://dash.planetcuhz.com/admin` and verify that the marketing intervals are reflected in the global settings.
 
 For detailed deployment steps, see [`.agent/workflows/deploy.md`](file:///Users/DeveloperOps/Desktop/Antigravity%20Agent/.agent/workflows/deploy.md).
 

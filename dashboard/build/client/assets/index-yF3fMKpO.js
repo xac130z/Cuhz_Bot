@@ -1,0 +1,1 @@
+if(typeof window<"u"){const n={};globalThis.process??(globalThis.process={});const o=globalThis.process.env??{};globalThis.process.env=new Proxy(Object.assign({},n,o),{get(e,s){return s in e?e[s]:void 0},has(){return!0}})}
