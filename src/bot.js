@@ -101,8 +101,7 @@ const USER_COMMANDS = {
     '!reacts': 'Reactions are LIVE! 👀',
     '!rock': 'Solid as a rock. 🪨',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!dame': 'cool 8  ,  nbvcxzsw       m1/////?120348\\-[;,',
-    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !storm !juan !rico !pnx !ac !dame'
+    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !storm !juan !rico !pnx !ac'
 };
 
 const HYPE_MESSAGES = [
@@ -267,6 +266,17 @@ const RICO_QUOTES = [
     "Chill mode activated... just kidding, Rico is here to turn it up! 🔥",
     "From the concrete to the cosmos, Rico runs it. 🌌",
     "Salute the general. Rico is on deck! 🎖️"
+];
+
+const DAME_QUOTES = [
+    "Dame has arrived! The chat just leveled up! 🚀",
+    "Dame time! Check your clocks cuhz, it's Dame Time! ⌚",
+    "Everyone stand back, Dame is dropping knowledge! 🧠",
+    "Ain't no game when Dame is in the chat! 🎮",
+    "The one, the only, DAME! Welcome back to the planet! 🌍",
+    "Dame is holding it down! Pure legendary status! 🏆",
+    "Ice in his veins, fire in the chat! Dame is here! 🧊",
+    "You already know what it is! Dame making moves! 💯"
 ];
 
 const PNX_QUOTES = [
@@ -1119,6 +1129,12 @@ async function handleMessage(channel, tags, message, self) {
             return;
         }
 
+        if (msg === '!dame') {
+            const randomDame = DAME_QUOTES[Math.floor(Math.random() * DAME_QUOTES.length)];
+            client.say(channel, `⌚ ${randomDame}`);
+            return;
+        }
+
         if (USER_COMMANDS[msg]) {
             client.say(channel, USER_COMMANDS[msg]);
             return;
@@ -1152,7 +1168,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command
         if (msg === '!shoutouts') {
-            client.say(channel, 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot. Want to change your message? Email SUPPORT@PLANETCUHZ.COM');
+            client.say(channel, 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot, !Dame. Want to change your message? Email SUPPORT@PLANETCUHZ.COM');
             return;
         }
 
