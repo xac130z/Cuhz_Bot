@@ -58,13 +58,13 @@ const PUBLIC_COMMANDS = {
     '!roadmap': '🧭 https://planetcuhz.com/whitepaper#roadmap',
     '!rules': '📌 Be respectful. No hate. No spam. Stay CUHZ.',
     '!privacy': '🔒 Privacy & security → https://planetcuhz.com/privacy',
-    '!cuhzchain': '🔗 CUHZ Chain Generator → https://dash.planetcuhz.com/chain-generator',
-    '!chain': '🔗 CUHZ Chain Generator → https://dash.planetcuhz.com/chain-generator',
+    '!cuhzchain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
+    '!chain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
     '!gm': 'Good morning CUHZ ☀️',
     '!gn': 'Good night CUHZ 🌙',
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
-    '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://dash.planetcuhz.com',
+    '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
     '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!',
     '!help': '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | AI: !ask !code | Mods: !chatreport !mood !personality !so !raid | Ask a question naturally for AI help!'
 };
@@ -306,7 +306,7 @@ const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
     "💬 Join the Discord → https://discord.gg/5rFRaeBuHn",
-    "🔗 CUHZ Chain Generator → https://dash.planetcuhz.com/chain-generator"
+    "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
 ];
 
 // AI Warriors removed per user request
@@ -1068,6 +1068,36 @@ async function handleMessage(channel, tags, message, self) {
         } catch (error) {
             logger.error('Context-aware response error:', error.message);
         }
+    }
+
+    // 0.9. !chain interactive AI handler — intercepts !chain <prompt> before static lookup
+    if (msg.startsWith('!chain ')) {
+        const prompt = message.replace(/^!chain\s+/i, '').trim();
+        if (prompt) {
+            if (!config.apiBase || !config.botApiSecret) {
+                client.say(channel, `🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
+            } else {
+                try {
+                    const res = await axios.post(`${config.apiBase}/api/bot/command`, {
+                        text: `!chain ${prompt}`,
+                        channel: cleanChannel,
+                        user: { id: tags['user-id'], name: tags.username }
+                    }, {
+                        headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+                        timeout: 10000
+                    });
+                    if (res.data && res.data.handled && res.data.reply) {
+                        client.say(channel, res.data.reply);
+                    } else {
+                        client.say(channel, `🔗 Chain generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
+                    }
+                } catch (err) {
+                    logger.error('Error in !chain handler:', err.message);
+                    client.say(channel, `🔗 Try it at: https://cuhz-bot-dashboard-846.created.app/chain-generator`);
+                }
+            }
+        }
+        return;
     }
 
     // 1. Exact Match Public Commands (Dashboard Persona Specific)
