@@ -101,7 +101,7 @@ const USER_COMMANDS = {
     '!reacts': 'Reactions are LIVE! 👀',
     '!rock': 'Solid as a rock. 🪨',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!shoutouts': 'Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !storm !juan !rico !pnx !ac'
+    '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
 };
 
 const HYPE_MESSAGES = [
@@ -1070,6 +1070,36 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
+    // 0.9. !chain interactive AI handler — intercepts !chain <prompt> before static lookup
+    if (msg.startsWith('!chain ')) {
+        const prompt = message.replace(/^!chain\s+/i, '').trim();
+        if (prompt) {
+            if (!config.apiBase || !config.botApiSecret) {
+                client.say(channel, `🔗 CUHZ Chain Generator → https://dash.planetcuhz.com/chain-generator`);
+            } else {
+                try {
+                    const res = await axios.post(`${config.apiBase}/api/bot/command`, {
+                        text: `!chain ${prompt}`,
+                        channel: cleanChannel,
+                        user: { id: tags['user-id'], name: tags.username }
+                    }, {
+                        headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+                        timeout: 10000
+                    });
+                    if (res.data && res.data.handled && res.data.reply) {
+                        client.say(channel, res.data.reply);
+                    } else {
+                        client.say(channel, `🔗 Chain generator → https://dash.planetcuhz.com/chain-generator`);
+                    }
+                } catch (err) {
+                    logger.error('Error in !chain handler:', err.message);
+                    client.say(channel, `🔗 Try it at: https://dash.planetcuhz.com/chain-generator`);
+                }
+            }
+        }
+        return;
+    }
+
     // 1. Exact Match Public Commands (Dashboard Persona Specific)
     // Basic Tier (and above) has access to these standard commands.
     if (persona.commands[msg]) {
@@ -1149,12 +1179,12 @@ async function handleMessage(channel, tags, message, self) {
     // 1.5. Dynamic Help System based on Tiers
     if (msg === '!help') {
         if (isPremium) {
-            client.say(channel, '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | AI: !ask !code | Mods: !chatreport !mood !personality !so !raid | Ask a question naturally for AI help!');
+            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !streamstats !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | AI: !ask !code !whois !topchatters | Mods: !chatreport !mood !personality !give !title !game !so !raid !ban !timeout !addstreamer | Ask naturally for AI help!');
         } else if (tier === TIERS.PRO) {
-            client.say(channel, '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | Mods: !chatreport !so !raid');
+            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | Mods: !chatreport !so !raid !give');
         } else {
             // Basic Tier
-            client.say(channel, '🌌 Commands (Basic): !cuhz !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord');
+            client.say(channel, '🌌 Commands (Basic): !cuhz !chain !quote !4 !hype !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord');
         }
         return;
     }
@@ -1173,7 +1203,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command
         if (msg === '!shoutouts') {
-            client.say(channel, 'Available Commands: !AC, !snow, !Mahni, !PNX, !Rico, !EC, !Rell, !Shock, !Kay, !Thorn, !Limit, !Reacts, !Rock, !Four, !Yoo, !Balen, !Bot, !Dame. Want to change your message? Email SUPPORT@PLANETCUHZ.COM');
+            client.say(channel, 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM');
             return;
         }
 
@@ -1198,8 +1228,7 @@ async function handleMessage(channel, tags, message, self) {
 
             if (!channelUser || !targetUser) {
                 logger.warn(`Could not resolve IDs for followage check: Ch=${channel} User=${targetUsername}`);
-                // Only reply if it was a specific request that failed
-                if (args[1]) client.say(channel, `Could not find user @${targetUsername}`);
+                client.say(channel, `⚠️ Can't look up follow data right now — the bot may need re-authorization. Try again later!`);
                 return;
             }
 
@@ -1239,7 +1268,7 @@ async function handleMessage(channel, tags, message, self) {
             const targetUser = await getTwitchUser(tags.username);
 
             if (!channelUser || !targetUser) {
-                client.say(channel, `⚠️ API Error: Could not verify follower status. Try again later.`);
+                client.say(channel, `⚠️ Follower lookup failed — bot may need re-authorization. Contact a mod!`);
                 return;
             }
 
@@ -1291,6 +1320,16 @@ async function handleMessage(channel, tags, message, self) {
             const up = new Date() - startTime;
             const minutes = Math.floor((up / 1000) / 60);
             client.say(channel, `Stream is currently offline. Bot has been running for ${minutes} minutes.`);
+        }
+        return;
+    }
+
+    if (msg === '!viewers') {
+        const stats = await streamIntel.getStats(channel);
+        if (stats && stats.isLive) {
+            client.say(channel, `👥 Current viewers: ${stats.viewers} (Peak: ${stats.peak_viewers || stats.viewers}) 🔴`);
+        } else {
+            client.say(channel, `📴 Stream is currently offline.`);
         }
         return;
     }
@@ -1392,13 +1431,21 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // Mood Detection Commands
-    if (msg === '!mood' && isMod && config.enableMoodDetection) {
-        const moodState = moodTracker.getMoodState(channel);
-        client.say(channel, `📊 Current mood: ${moodState.currentMood} | Energy: ${moodState.energy}/100 | Toxicity: ${moodState.toxicity}/100 | Personality: ${moodState.currentPersonality}`);
+    if (msg === '!mood' && isMod) {
+        if (!config.enableMoodDetection) {
+            client.say(channel, `📊 Mood detection is currently disabled.`);
+        } else {
+            const moodState = moodTracker.getMoodState(channel);
+            client.say(channel, `📊 Current mood: ${moodState.currentMood} | Energy: ${moodState.energy}/100 | Toxicity: ${moodState.toxicity}/100 | Personality: ${moodState.currentPersonality}`);
+        }
         return;
     }
 
-    if (msg.startsWith('!personality ') && isMod && config.enableMoodDetection) {
+    if (msg.startsWith('!personality ') && isMod) {
+        if (!config.enableMoodDetection) {
+            client.say(channel, `🎭 Mood detection is disabled — personality changes are unavailable.`);
+            return;
+        }
         const mode = message.split(' ')[1]?.toLowerCase();
         if (moodTracker.setPersonality(channel, mode)) {
             client.say(channel, `🎭 Personality set to: ${mode}`);

@@ -20,7 +20,7 @@ const timerConfig = [
         ]
     },
     {
-        channel: '#rico_santanax',
+        channel: '#rico2ez',
         timers: [
             { message: "🌌 Planet CUHZ → https://planetcuhz.com", interval: 60 },
             { message: "🔗 All links → https://linktr.ee/PlanetCUHZ", interval: 60 }
@@ -54,5 +54,5 @@ console.log('✅ Timer intervals updated successfully!');
 console.log('\n📊 Flow Pattern:');
 console.log('   #xac130z: 60min → 45min → 75min (staggered)');
 console.log('   #planetcuhz: 60min → 60min (consistent)');
-console.log('   #rico_santanax: 60min → 60min (consistent)');
+console.log('   #rico2ez: 60min → 60min (consistent)');
 console.log('\n💡 This creates a natural rhythm without overwhelming viewers.');
