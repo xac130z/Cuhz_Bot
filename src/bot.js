@@ -18,7 +18,7 @@ const path = require('path');
 const TIERS = { BASIC: 'basic', PRO: 'pro', PREMIUM: 'premium' };
 const CHANNEL_TIERS = {
     'fourareason4': TIERS.PREMIUM,
-    'rico_santanax': TIERS.PREMIUM,
+    'rico2ez': TIERS.PREMIUM,
     'planetcuhz': TIERS.PREMIUM,
     'xac130z': TIERS.PREMIUM,
     'vgxmahni': TIERS.BASIC,
@@ -251,21 +251,26 @@ const JUAN_SUFFIXES = [
 ];
 
 const RICO_QUOTES = [
-    "The heavy hitter is in the building! Rico comin' through! 💸",
-    "Hide your wallets, hide your wives, Rico has arrived! 💰",
-    "Big boss Rico stepping on the scene! Watch the throne! 👑",
-    "Yo cuhz! Rico is in the chat, everyone stand up! 🫡",
-    "Rico Suave? Nah, Rico SAVAGE! Welcome to the planet! 🦁",
-    "Money moves only when Rico is here. 📉📈",
-    "The vibes just went up 1000%. Rico is here fam! 🚀",
-    "RICOOOOO! The legend himself. Glad you made it cuhz! 💎",
-    "Warning: High levels of swagg detected. Rico is online. 🚨",
-    "If you know, you know. Rico in the cut! ✂️",
-    "Respect the architect. Rico is watching. 🏗️",
-    "Don't blink, you might miss a Rico play. 🏀",
-    "Chill mode activated... just kidding, Rico is here to turn it up! 🔥",
-    "From the concrete to the cosmos, Rico runs it. 🌌",
-    "Salute the general. Rico is on deck! 🎖️"
+    "Rico2ez makes it look easy because he put in the work when no one was watching. 💪",
+    "The smoothest player in the game just walked in. Welcome, Rico2ez! 😎",
+    "Easy mode activated. Rico2ez is in the building! 🏆",
+    "Some people make it hard. Rico2ez makes it 2ez. 🎯",
+    "The blueprint is in his name — Rico2ez, always winning. 👑",
+    "Pressure? Rico2ez doesn't feel it. He creates it. 🔥",
+    "When Rico2ez steps in, the energy shifts. Lock in cuhz! ⚡",
+    "Rico2ez — because struggling is optional when you're built different. 💎",
+    "The legend is live. Rico2ez showing how it's done! 🚀",
+    "It ain't luck, it ain't chance. It's Rico2ez being Rico2ez. 🌟",
+    "Effortless. Relentless. Unstoppable. That's Rico2ez. 🦁",
+    "Watch closely cuhz — Rico2ez is about to school everyone. 📚",
+    "The moves look easy because Rico2ez stayed ready. 🏃‍♂️",
+    "Rico2ez in the chat — vibes automatically elevated. 🌌",
+    "They call it 2ez because for Rico, it always is. Salute! 🫡",
+    "Greatness doesn't announce itself... except when Rico2ez pulls up. 🔊",
+    "Consistency. Focus. Rico2ez. Three things that hit different. 🎯",
+    "Rico2ez came to play and cuhz, he never loses. 💰",
+    "Stay ready so you don't have to get ready. Rico2ez philosophy. 🛡️",
+    "The grind is real, the results are realer. Rico2ez in the building! 🏗️"
 ];
 
 const DAME_QUOTES = [
@@ -1119,7 +1124,7 @@ async function handleMessage(channel, tags, message, self) {
 
         if (msg === '!rico') {
             const randomRico = RICO_QUOTES[Math.floor(Math.random() * RICO_QUOTES.length)];
-            client.say(channel, `💸 ${randomRico}`);
+            client.say(channel, `🎯 ${randomRico}`);
             return;
         }
 
@@ -1380,7 +1385,7 @@ async function handleMessage(channel, tags, message, self) {
         let promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @xac130z know right here in the stream! 🚀";
 
         if (cleanChannel === 'planetcuhz') promo = "Looking to level up your brand with a custom bot or AI team? Let @xac130z know he's in the chat! 🌌";
-        if (cleanChannel === 'rico_santanax') promo = "Rico's bot is built by the fam! Want your own? Holla at @xac130z for custom bots and AI agents! 🔥";
+        if (cleanChannel === 'rico2ez') promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @xac130z know right here in the stream! 🚀";
 
         client.say(channel, promo);
         return;

@@ -44,7 +44,7 @@ ABOUT PLANET CUHZ:
 STREAMERS:
 - xac130z — The founder, solo dev building AI.
 - planetcuhz — The brand channel (the boss)
-- rico_santanax — Community streamer and collaborator
+- rico2ez — Community streamer and collaborator
 - snowy_wolfies_ttv — The stats god
 - VGxMahni — The trophy holder
 
