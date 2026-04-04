@@ -68,8 +68,7 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!',
-    '!help': '🌌 Commands: !cuhz !shoutouts !quote !4 !pointsinfo !points !top !claim !gamble !uptime !followage !links !discord | AI: !ask !code | Mods: !chatreport !mood !personality !so !raid | Ask a question naturally for AI help!'
+    '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!'
 };
 
 const USER_COMMANDS = {
