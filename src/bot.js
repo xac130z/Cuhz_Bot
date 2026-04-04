@@ -46,6 +46,7 @@ let connectedChannels = new Set();
 let timerIndices = new Map(); // channel -> index
 let streamStates = new Map(); // channel -> { isLive: boolean, startedAt: Date, title: string }
 let channelConfigs = new Map(); // channel -> { timers: [], commands: {}, hype: [] }
+let dailyMessages = new Map(); // channel -> string (set via !settoday)
 let twitchClientId = null; // Fetched dynamically
 let botUserId = null; // Captured during validation
 
@@ -304,11 +305,69 @@ const PNX_QUOTES = [
     "☮️ 4 A Reason, 4 the Peace. PNX 4 Ever! 💎"
 ];
 
+// --- CUHZ Vibe Commands (All Tiers) ---
+const VIBE_MESSAGES = [
+    'We on a different frequency cuhz 🌌',
+    'Vibes immaculate rn no cap 💎',
+    'Planet CUHZ energy is LIVE ⚡',
+    'We built different over here 🚀',
+    'Tuned in to the right wavelength cuhz 📡'
+];
+const W_MESSAGES = [
+    'W in the chat for the cuhz fam 🏆',
+    'BIG W energy rn 💪',
+    'We don\'t take L\'s on Planet CUHZ 🚀',
+    'Nothing but W\'s today cuhz 🔥',
+    'Certified W moment 💎'
+];
+const BET_MESSAGES = [
+    'Bet. We locked in cuhz. 🎯',
+    'Bet bet bet! Let\'s ride 🚀',
+    'Say less cuhz, bet. 💪',
+    'That\'s a bet. No cap. 🔥'
+];
+const GZ_MESSAGES = [
+    'GG EZ cuhz! Let\'s gooo 🔥',
+    'Big W for the cuhz! 🏆',
+    'Congrats cuhz, you earned that 💎',
+    'That\'s what we\'re talking about! GZ! 🚀'
+];
+const NOCAP_MESSAGES = [
+    'No cap no cap — this stream is different 🌌',
+    'Facts only cuhz, no 🧢 allowed on Planet CUHZ',
+    'Straight facts no printer cuhz 💯',
+    'No cap detected. Certified real one. 🔥'
+];
+
+// --- Basic Tier Custom Shoutouts (accessible in ALL tiers) ---
+const BASIC_USER_COMMANDS = {
+    '!mahni': '🏆 VGX Mahni: Champion mindset! 🏆',
+    '!snow': 'can\'t ban the snow man ☃️',
+    '!tay': 'It\'s giving 2K legend energy — ohthatztayy locked in! 🕹️🏀',
+    '!yoo': 'Yoo! Welcome to the stream. 👋'
+};
+
+// --- Commands blocked for Basic tier (info/link dumps) ---
+const BASIC_BLOCKED_COMMANDS = new Set([
+    '!cuhz', '!links', '!discord', '!whatiscuhz', '!faq',
+    '!whitepaper', '!roadmap', '!rules', '!privacy',
+    '!cuhzchain', '!chain', '!giveaway', '!enter',
+    '!dashboard', '!pointsinfo', '!schedule', '!stream',
+    '!followage', '!viewers', '!streamstats'
+]);
+
 const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
     "💬 Join the Discord → https://discord.gg/5rFRaeBuHn",
     "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
+];
+
+const BASIC_TIMER_MESSAGES = [
+    '🤖 Want CUHZ Bot in your channel? Pull up to @fourareason4\'s stream! → twitch.tv/fourareason4 🚀',
+    '🌌 Planet CUHZ — the creator ecosystem where we all level up together 💎',
+    '💬 Join the CUHZ fam on Discord → https://discord.gg/5rFRaeBuHn',
+    '🔥 Type !hype, !vibe, or !w to show love in the chat!'
 ];
 
 // AI Warriors removed per user request
@@ -322,9 +381,12 @@ const DEFAULT_CONFIG = {
 
 async function fetchChannelPersona(channel) {
     const cleanChannel = channel.toLowerCase().replace('#', '');
+    const isBasicChannel = (CHANNEL_TIERS[cleanChannel] || TIERS.BASIC) === TIERS.BASIC;
+    const defaultTimers = isBasicChannel ? BASIC_TIMER_MESSAGES : TIMER_MESSAGES;
+
     if (!config.apiBase || !config.botApiSecret) {
         logger.info(`No API config, using defaults for ${channel}`);
-        const persona = { ...DEFAULT_CONFIG, timers: [...TIMER_MESSAGES] };
+        const persona = { ...DEFAULT_CONFIG, timers: [...defaultTimers] };
         if (cleanChannel === 'xac130z') {
             persona.timers.push("📱 Follow xAc130z on YouTube and TikTok! 🚀");
         }
@@ -351,7 +413,7 @@ async function fetchChannelPersona(channel) {
 
         const persona = {
             commands: { ...PUBLIC_COMMANDS, ...cmdRes.data.commands },
-            timers: timerRes.data.timers && timerRes.data.timers.length > 0 ? [...timerRes.data.timers] : [...TIMER_MESSAGES],
+            timers: timerRes.data.timers && timerRes.data.timers.length > 0 ? [...timerRes.data.timers] : [...defaultTimers],
             interval: timerRes.data.interval || 60,
             settings: setRes.data || { auto_welcome: 1, auto_marketing: 1 },
             hype: HYPE_MESSAGES
@@ -370,7 +432,7 @@ async function fetchChannelPersona(channel) {
     } catch (error) {
         logger.error(`Error fetching persona for ${channel}:`, error.message);
 
-        const fallbackPersona = { ...DEFAULT_CONFIG, timers: [...TIMER_MESSAGES] };
+        const fallbackPersona = { ...DEFAULT_CONFIG, timers: [...defaultTimers] };
         if (cleanChannel === 'xac130z') {
             fallbackPersona.timers.push("📱 Follow xAc130z on YouTube and TikTok! 🚀");
         }
@@ -872,15 +934,23 @@ function startRotationalTimer(channel) {
             const shouldSend = config.useMockApi || isLive;
 
             if (shouldSend) {
+                const dailyMsg = dailyMessages.get(channel.toLowerCase());
                 const index = timerIndices.get(channel) || 0;
-                const message = persona.timers[index];
 
-                if (message) {
-                    client.say(channel, message).catch(err => logger.error('Error sending timer msg:', err));
+                // If daily message is set, alternate it every other cycle
+                if (dailyMsg && index % 2 === 0) {
+                    client.say(channel, dailyMsg).catch(err => logger.error('Error sending daily msg:', err));
+                } else {
+                    const timerIndex = dailyMsg ? Math.floor(index / 2) % persona.timers.length : index % persona.timers.length;
+                    const message = persona.timers[timerIndex];
+                    if (message) {
+                        client.say(channel, message).catch(err => logger.error('Error sending timer msg:', err));
+                    }
                 }
 
                 // Rotate
-                const nextIndex = (index + 1) % persona.timers.length;
+                const totalSlots = dailyMsg ? persona.timers.length * 2 : persona.timers.length;
+                const nextIndex = (index + 1) % totalSlots;
                 timerIndices.set(channel, nextIndex);
             } else {
                 // logger.debug(`Skipping timer for ${channel} (Stream Offline)`);
@@ -1017,8 +1087,11 @@ async function handleMessage(channel, tags, message, self) {
             client.say(channel, `${randomWelcome} @${tags.username} 🌌`);
         }
 
-        // Auto-shoutout for fellow streamers (if not shouted out recently)
-        await handleAutoShoutout(channel, usernameL, tags.username);
+        // Auto-shoutout for fellow streamers (pro/premium only)
+        const joinChannelTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
+        if (joinChannelTier !== TIERS.BASIC) {
+            await handleAutoShoutout(channel, usernameL, tags.username);
+        }
 
     } catch (err) {
         logger.error('Error tracking user points/welcome:', err.message);
@@ -1036,6 +1109,7 @@ async function handleMessage(channel, tags, message, self) {
     // Legacy mapping for existing commands that relied on isVerifiedStream
     const isVerifiedStream = isPremium;
 
+    const isMod = tags.mod || (tags.badges && tags.badges.broadcaster);
     const persona = getChannelConfig(channel);
 
     // 0. Global Connectivity Test
@@ -1072,7 +1146,64 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
+    // 0.8. CUHZ Vibe Commands (ALL tiers)
+    if (msg === '!vibe') {
+        client.say(channel, VIBE_MESSAGES[Math.floor(Math.random() * VIBE_MESSAGES.length)]);
+        return;
+    }
+    if (msg === '!w') {
+        client.say(channel, W_MESSAGES[Math.floor(Math.random() * W_MESSAGES.length)]);
+        return;
+    }
+    if (msg === '!bet') {
+        client.say(channel, BET_MESSAGES[Math.floor(Math.random() * BET_MESSAGES.length)]);
+        return;
+    }
+    if (msg === '!gz') {
+        client.say(channel, GZ_MESSAGES[Math.floor(Math.random() * GZ_MESSAGES.length)]);
+        return;
+    }
+    if (msg === '!nocap') {
+        client.say(channel, NOCAP_MESSAGES[Math.floor(Math.random() * NOCAP_MESSAGES.length)]);
+        return;
+    }
+    if (msg === '!fam') {
+        client.say(channel, 'Cuhz fam in the building! Tag someone who needs to see this stream 👀');
+        return;
+    }
+    if (msg === '!goat') {
+        client.say(channel, 'GOAT behavior detected 🐐 Keep going cuhz!');
+        return;
+    }
+    if (msg === '!getcuhzbot') {
+        client.say(channel, '🤖 Want CUHZ Bot in your channel? Pull up to @fourareason4\'s stream and ask about it! → https://twitch.tv/fourareason4 🚀');
+        return;
+    }
+
+    // 0.85. Basic User Commands (ALL tiers — custom shoutouts for basic channel owners)
+    if (BASIC_USER_COMMANDS[msg]) {
+        client.say(channel, BASIC_USER_COMMANDS[msg]);
+        return;
+    }
+
+    // 0.86. Daily Message System (Mod/Broadcaster only)
+    if (msg.startsWith('!settoday ') && isMod) {
+        const todayMsg = message.slice('!settoday '.length).trim();
+        if (todayMsg) {
+            dailyMessages.set(channel.toLowerCase(), `📢 Today: ${todayMsg}`);
+            client.say(channel, `✅ Today's update set: "${todayMsg}"`);
+        }
+        return;
+    }
+    if (msg === '!cleartoday' && isMod) {
+        dailyMessages.delete(channel.toLowerCase());
+        client.say(channel, '✅ Today\'s update cleared.');
+        return;
+    }
+
     // 0.9. !chain interactive AI handler — intercepts !chain <prompt> before static lookup
+    // Chain command is Pro/Premium only
+    if (msg.startsWith('!chain ') && !isProOrPremium) return;
     if (msg.startsWith('!chain ')) {
         const prompt = message.replace(/^!chain\s+/i, '').trim();
         if (prompt) {
@@ -1103,8 +1234,10 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 1. Exact Match Public Commands (Dashboard Persona Specific)
-    // Basic Tier (and above) has access to these standard commands.
-    if (persona.commands[msg]) {
+    // Block info/link commands for Basic tier
+    if (!isProOrPremium && BASIC_BLOCKED_COMMANDS.has(msg)) {
+        // Basic tier doesn't get info/link commands — silent skip
+    } else if (persona.commands[msg]) {
         client.say(channel, persona.commands[msg]);
         return;
     }
@@ -1186,7 +1319,7 @@ async function handleMessage(channel, tags, message, self) {
             client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | Mods: !chatreport !so !raid !give');
         } else {
             // Basic Tier
-            client.say(channel, '🌌 Commands (Basic): !cuhz !chain !quote !4 !hype !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord');
+            client.say(channel, '🌌 CUHZ Bot — !hype !vibe !w !bet !gz !nocap !fam !goat !quote !4 !gm !gn !points !gamble !top !claim !achievements !uptime !getcuhzbot | Mods: !settoday !cleartoday | Stay CUHZ 🚀');
         }
         return;
     }
@@ -1393,7 +1526,6 @@ async function handleMessage(channel, tags, message, self) {
 
 
     // 3. Mod / Owner Commands
-    const isMod = tags.mod || (tags.badges && tags.badges.broadcaster);
 
     // --- Mod Intelligence Commands ---
 
@@ -1594,7 +1726,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg.startsWith('!so ') && isMod) {
+    if (msg.startsWith('!so ') && isMod && isProOrPremium) {
         const target = message.split(' ')[1];
         if (target) {
             const cleanTarget = target.replace('@', '');
@@ -1649,8 +1781,8 @@ async function handleMessage(channel, tags, message, self) {
 
 
 
-    // Auto-shoutout management commands
-    if (msg.startsWith('!addstreamer ') && isMod) {
+    // Auto-shoutout management commands (Pro/Premium only)
+    if (msg.startsWith('!addstreamer ') && isMod && isProOrPremium) {
         const streamerName = message.split(' ')[1]?.replace('@', '').toLowerCase();
         if (streamerName) {
             try {
@@ -1668,7 +1800,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg.startsWith('!removestreamer ') && isMod) {
+    if (msg.startsWith('!removestreamer ') && isMod && isProOrPremium) {
         const streamerName = message.split(' ')[1]?.replace('@', '').toLowerCase();
         if (streamerName) {
             try {
@@ -1686,7 +1818,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg === '!liststreamers' && isMod) {
+    if (msg === '!liststreamers' && isMod && isProOrPremium) {
         try {
             const streamers = await db.prepare(`
                 SELECT streamer_username, shoutout_count 
