@@ -23,7 +23,8 @@ const CHANNEL_TIERS = {
     'xac130z': TIERS.PREMIUM,
     'vgxmahni': TIERS.BASIC,
     'qweenstormygirlnz89': TIERS.BASIC,
-    'ohthatztayy': TIERS.BASIC
+    'ohthatztayy': TIERS.BASIC,
+    'snowy_wolfies_ttv': TIERS.BASIC
 };
 
 // --- Global Error Handlers (Prevention) ---
