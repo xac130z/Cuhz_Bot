@@ -1319,13 +1319,19 @@ async function handleMessage(channel, tags, message, self) {
     // 1.5. Dynamic Help System based on Tiers
     if (msg === '!help') {
         if (isPremium) {
-            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !streamstats !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | AI: !ask !code !whois !topchatters | Mods: !chatreport !mood !personality !give !title !game !so !raid !ban !timeout !addstreamer | Ask naturally for AI help!');
+            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !fam !goat !getcuhzbot !streamstats !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | AI: !ask !code !whois !topchatters | Mods: !chatreport !mood !personality !give !title !game !so !raid !ban !timeout !addstreamer !settoday !cleartoday | Ask naturally for AI help!');
         } else if (tier === TIERS.PRO) {
-            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | Mods: !chatreport !so !raid !give');
+            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !fam !goat !getcuhzbot !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | Mods: !chatreport !so !raid !give !settoday !cleartoday');
         } else {
             // Basic Tier
-            client.say(channel, '🌌 CUHZ Bot — !hype !vibe !w !bet !gz !nocap !fam !goat !quote !4 !gm !gn !points !gamble !top !claim !achievements !uptime !getcuhzbot | Mods: !settoday !cleartoday | Stay CUHZ 🚀');
+            client.say(channel, '🌌 CUHZ Bot — !hype !vibe !w !bet !gz !nocap !fam !goat !quote !4 !gm !gn !points !gamble !top !claim !achievements !uptime !getcuhzbot !shoutouts | Mods: !settoday !cleartoday | Stay CUHZ 🚀');
         }
+        return;
+    }
+
+    // 1.55. Basic Tier Shoutouts Directory
+    if (!isProOrPremium && msg === '!shoutouts') {
+        client.say(channel, 'Community Commands: !mahni !snow !tay !yoo !vibe !w !bet !gz !nocap !fam !goat | Want CUHZ Bot? Pull up to @fourareason4 → twitch.tv/fourareason4 🚀');
         return;
     }
 
