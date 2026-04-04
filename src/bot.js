@@ -1083,8 +1083,13 @@ async function handleMessage(channel, tags, message, self) {
         // Welcome back message (if last seen > 24h ago or new user AND settings allow it)
         const canWelcome = !persona.settings || persona.settings.auto_welcome;
         if (canWelcome && (!user || user.last_seen < oneDayAgo)) {
-            const randomWelcome = WELCOME_QUOTES[Math.floor(Math.random() * WELCOME_QUOTES.length)];
-            client.say(channel, `${randomWelcome} @${tags.username} 🌌`);
+            const joinTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
+            if (joinTier === TIERS.BASIC) {
+                client.say(channel, `Wassup cuhz, Welcome to the stream! @${tags.username}`);
+            } else {
+                const randomWelcome = WELCOME_QUOTES[Math.floor(Math.random() * WELCOME_QUOTES.length)];
+                client.say(channel, `${randomWelcome} @${tags.username} 🌌`);
+            }
         }
 
         // Auto-shoutout for fellow streamers (pro/premium only)
