@@ -129,13 +129,17 @@ if (config.groqApiKey) {
     logger.warn('⚠️ No Qwen API key set — The Hands (Qwen) disabled');
 }
 
-// ─────────── Failure Tracking ───────────
+// ─────────── Failure Tracking (Exponential Backoff) ───────────
 const brainHealth = {
-    gemini: { failures: 0, lastUsed: null },
-    claude: { failures: 0, lastUsed: null },
-    qwen: { failures: 0, lastUsed: null }
+    gemini: { failures: 0, lastUsed: null, backoffUntil: 0 },
+    claude: { failures: 0, lastUsed: null, backoffUntil: 0 },
+    qwen: { failures: 0, lastUsed: null, backoffUntil: 0 }
 };
-const FAILURE_THRESHOLD = 3;
+
+function computeBackoff(failures) {
+    // 5s, 10s, 20s, 40s, 80s... capped at 5 minutes
+    return Math.min(5000 * Math.pow(2, failures - 1), 300000);
+}
 
 // ─────────── Sliding Window Rate Limiter ───────────
 const requestTimestamps = [];
@@ -164,7 +168,23 @@ function truncateForTwitch(text) {
 
 // ─────────── Response Cache ───────────
 const responseCache = new Map();
-const CACHE_DURATION = 3600000; // 1 hour
+const CACHE_DURATION = 600000; // 10 minutes
+
+// ─────────── Recent Response Tracker (Anti-Repetition) ───────────
+const recentResponses = new Map(); // channel -> string[]
+const MAX_RECENT_RESPONSES = 10;
+
+function trackResponse(channel, response) {
+    if (!channel || !response) return;
+    if (!recentResponses.has(channel)) recentResponses.set(channel, []);
+    const list = recentResponses.get(channel);
+    list.push(response);
+    if (list.length > MAX_RECENT_RESPONSES) list.shift();
+}
+
+function getRecentResponses(channel) {
+    return recentResponses.get(channel) || [];
+}
 
 // =============================================
 //  INDIVIDUAL BRAIN EXECUTORS
@@ -174,20 +194,27 @@ const CACHE_DURATION = 3600000; // 1 hour
  * Execute prompt via Gemini (The Eyes) — fast, cheap, bulk chat
  */
 async function executeGemini(prompt) {
-    if (!geminiModel || brainHealth.gemini.failures >= FAILURE_THRESHOLD) return null;
+    if (!geminiModel || Date.now() < brainHealth.gemini.backoffUntil) return null;
 
     try {
-        const result = await geminiModel.generateContent(prompt);
+        const temperature = 0.7 + (Math.random() * 0.3); // 0.7-1.0 for variety
+        const result = await geminiModel.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature, maxOutputTokens: 300 }
+        });
         if (!result.response || !result.response.text) {
             throw new Error('Empty/blocked response from Gemini');
         }
         const text = result.response.text().trim();
         brainHealth.gemini.failures = 0;
+        brainHealth.gemini.backoffUntil = 0;
         brainHealth.gemini.lastUsed = Date.now();
         return text;
     } catch (err) {
         brainHealth.gemini.failures++;
-        logger.warn(`👁️ Gemini error (${brainHealth.gemini.failures}/${FAILURE_THRESHOLD}): ${err.message}`);
+        const backoffMs = computeBackoff(brainHealth.gemini.failures);
+        brainHealth.gemini.backoffUntil = Date.now() + backoffMs;
+        logger.warn(`👁️ Gemini error (${brainHealth.gemini.failures}, backoff ${Math.round(backoffMs / 1000)}s): ${err.message}`);
         return null;
     }
 }
@@ -196,12 +223,13 @@ async function executeGemini(prompt) {
  * Execute prompt via Claude (The Brain) — complex, persona-perfect
  */
 async function executeClaude(systemPrompt, userMessage) {
-    if (!claudeClient || brainHealth.claude.failures >= FAILURE_THRESHOLD) return null;
+    if (!claudeClient || Date.now() < brainHealth.claude.backoffUntil) return null;
 
     try {
         const response = await claudeClient.messages.create({
             model: CLAUDE_MODEL,
             max_tokens: 200,
+            temperature: 0.8,
             system: systemPrompt,
             messages: [
                 { role: 'user', content: userMessage }
@@ -212,11 +240,14 @@ async function executeClaude(systemPrompt, userMessage) {
         if (!text) throw new Error('Empty response from Claude');
 
         brainHealth.claude.failures = 0;
+        brainHealth.claude.backoffUntil = 0;
         brainHealth.claude.lastUsed = Date.now();
         return text;
     } catch (err) {
         brainHealth.claude.failures++;
-        logger.warn(`🧠 Claude error (${brainHealth.claude.failures}/${FAILURE_THRESHOLD}): ${err.message}`);
+        const backoffMs = computeBackoff(brainHealth.claude.failures);
+        brainHealth.claude.backoffUntil = Date.now() + backoffMs;
+        logger.warn(`🧠 Claude error (${brainHealth.claude.failures}, backoff ${Math.round(backoffMs / 1000)}s): ${err.message}`);
         return null;
     }
 }
@@ -225,7 +256,7 @@ async function executeClaude(systemPrompt, userMessage) {
  * Execute prompt via Qwen (The Hands) — code, logic, technical
  */
 async function executeQwen(systemPrompt, userMessage) {
-    if (!qwenApiUrl || brainHealth.qwen.failures >= FAILURE_THRESHOLD) return null;
+    if (!qwenApiUrl || Date.now() < brainHealth.qwen.backoffUntil) return null;
 
     try {
         const response = await fetch(qwenApiUrl, {
@@ -255,11 +286,14 @@ async function executeQwen(systemPrompt, userMessage) {
         if (!text) throw new Error('Empty response from Qwen');
 
         brainHealth.qwen.failures = 0;
+        brainHealth.qwen.backoffUntil = 0;
         brainHealth.qwen.lastUsed = Date.now();
         return text;
     } catch (err) {
         brainHealth.qwen.failures++;
-        logger.warn(`🔧 Qwen error (${brainHealth.qwen.failures}/${FAILURE_THRESHOLD}): ${err.message}`);
+        const backoffMs = computeBackoff(brainHealth.qwen.failures);
+        brainHealth.qwen.backoffUntil = Date.now() + backoffMs;
+        logger.warn(`🔧 Qwen error (${brainHealth.qwen.failures}, backoff ${Math.round(backoffMs / 1000)}s): ${err.message}`);
         return null;
     }
 }
@@ -340,18 +374,12 @@ async function executeWithRouting(prompt, vibe = 'eyes') {
         }
     }
 
+    if (!text) {
+        logger.warn(`⚠️ ALL AI BRAINS UNAVAILABLE — degraded mode. Backoffs: Gemini ${Math.max(0, Math.round((brainHealth.gemini.backoffUntil - Date.now()) / 1000))}s, Claude ${Math.max(0, Math.round((brainHealth.claude.backoffUntil - Date.now()) / 1000))}s, Qwen ${Math.max(0, Math.round((brainHealth.qwen.backoffUntil - Date.now()) / 1000))}s`);
+    }
+
     return { text, model: modelUsed };
 }
-
-// Periodically try to recover failed brains
-setInterval(() => {
-    for (const [name, health] of Object.entries(brainHealth)) {
-        if (health.failures >= FAILURE_THRESHOLD) {
-            logger.info(`🔄 Recovering ${name} brain (was at ${health.failures} failures)...`);
-            health.failures = 0;
-        }
-    }
-}, 5 * 60 * 1000);
 
 // =============================================
 //  PUBLIC API
@@ -417,7 +445,7 @@ JSON format:
 /**
  * Generate context-aware response — routes based on vibe
  */
-async function generateContextAwareResponse(userMessage, recentMessages = [], currentMood = 'neutral', availableCommands = {}, personalityConfig = null, userProfile = null) {
+async function generateContextAwareResponse(channel, userMessage, recentMessages = [], currentMood = 'neutral', availableCommands = {}, personalityConfig = null, userProfile = null) {
     if (!geminiModel && !claudeClient && !qwenApiUrl) return null;
 
     // Check cache
@@ -451,6 +479,12 @@ async function generateContextAwareResponse(userMessage, recentMessages = [], cu
             if (userProfile.notes) userContext += `, known for: ${userProfile.notes}`;
         }
 
+        // Anti-repetition: tell AI what it said recently
+        const recent = getRecentResponses(channel);
+        const avoidBlock = recent.length > 0
+            ? `\nIMPORTANT: Do NOT repeat or closely paraphrase these recent responses:\n${recent.map(r => `- "${r}"`).join('\n')}\nBe creative and vary your language.`
+            : '';
+
         const prompt = `Current mood: ${currentMood}${personalityInstructions}${userContext}
 
 Recent chat:\n${context}
@@ -459,7 +493,7 @@ Commands: ${commandList}
 
 User says: "${userMessage}"
 
-Reply as Cuhz Bot (under 200 chars). If it's just casual chat with no question, reply: NO_RESPONSE`;
+Reply as Cuhz Bot (under 200 chars). If it's just casual chat with no question, reply: NO_RESPONSE${avoidBlock}`;
 
         const { text, model } = await executeWithRouting(prompt, vibe);
 
@@ -467,6 +501,7 @@ Reply as Cuhz Bot (under 200 chars). If it's just casual chat with no question, 
 
         let response = safetyFilter(truncateForTwitch(text));
         responseCache.set(cacheKey, { response, timestamp: Date.now() });
+        trackResponse(channel, response);
 
         logger.info(`🤖 [${model.toUpperCase()}/${vibe}] "${response}"`);
         return response;
@@ -564,9 +599,9 @@ function getStats() {
 
     return {
         triBrain: true,
-        eyes: { model: 'Gemini 2.0 Flash', available: geminiModel !== null, failures: brainHealth.gemini.failures },
-        brain: { model: CLAUDE_MODEL, available: claudeClient !== null, failures: brainHealth.claude.failures },
-        hands: { model: qwenModel || 'none', available: qwenApiUrl !== null, failures: brainHealth.qwen.failures },
+        eyes: { model: 'Gemini 2.0 Flash', available: geminiModel !== null, failures: brainHealth.gemini.failures, backoffUntil: brainHealth.gemini.backoffUntil },
+        brain: { model: CLAUDE_MODEL, available: claudeClient !== null, failures: brainHealth.claude.failures, backoffUntil: brainHealth.claude.backoffUntil },
+        hands: { model: qwenModel || 'none', available: qwenApiUrl !== null, failures: brainHealth.qwen.failures, backoffUntil: brainHealth.qwen.backoffUntil },
         requestsThisMinute: requestTimestamps.length,
         maxRequestsPerMinute: MAX_REQUESTS_PER_MINUTE,
         cacheSize: responseCache.size,
@@ -584,5 +619,7 @@ module.exports = {
     clearCache,
     getStats,
     truncateForTwitch,
+    trackResponse,
+    getRecentResponses,
     CUHZ_KNOWLEDGE
 };

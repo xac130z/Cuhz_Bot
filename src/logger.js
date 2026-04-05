@@ -1,5 +1,5 @@
 const logBuffer = [];
-const MAX_LOGS = 50;
+const MAX_LOGS = 500;
 
 function formatTime() {
     return new Date().toISOString();

@@ -203,6 +203,64 @@
             color: #ffcc00;
         }
 
+        .log-debug {
+            border-color: var(--purple);
+            color: #b388ff;
+        }
+
+        .log-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .log-filter-btn {
+            padding: 0.3rem 0.7rem;
+            border-radius: 8px;
+            border: 1px solid;
+            background: rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: opacity 0.2s, background 0.2s;
+        }
+
+        .log-filter-btn[data-level="INFO"] { border-color: var(--cyan); color: var(--cyan); }
+        .log-filter-btn[data-level="WARN"] { border-color: #ffcc00; color: #ffcc00; }
+        .log-filter-btn[data-level="ERROR"] { border-color: #ff4d4d; color: #ff4d4d; }
+        .log-filter-btn[data-level="DEBUG"] { border-color: var(--purple); color: #b388ff; }
+
+        .log-filter-btn.inactive {
+            opacity: 0.3;
+            background: transparent;
+        }
+
+        #log-search {
+            flex: 1;
+            min-width: 150px;
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-family: monospace;
+            font-size: 0.8rem;
+            outline: none;
+        }
+
+        #log-search:focus {
+            border-color: var(--cyan);
+        }
+
+        #log-search::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
         footer {
             text-align: center;
             padding: 4rem 2rem;
@@ -251,6 +309,13 @@
 
             <div class="card" style="grid-column: 1 / -1;">
                 <h2>Mission Logs</h2>
+                <div class="log-controls">
+                    <button class="log-filter-btn" data-level="INFO">INFO</button>
+                    <button class="log-filter-btn" data-level="WARN">WARN</button>
+                    <button class="log-filter-btn" data-level="ERROR">ERROR</button>
+                    <button class="log-filter-btn" data-level="DEBUG">DEBUG</button>
+                    <input type="text" id="log-search" placeholder="Search logs...">
+                </div>
                 <div class="logs" id="log-container">
                     <div class="log-entry log-info">[INFO] Dashboard initialized...</div>
                     <div class="log-entry log-info">[INFO] Connecting to Twitch Galaxy...</div>
@@ -264,6 +329,55 @@
     </footer>
 
     <script>
+        // Log filter state
+        const activeFilters = new Set(['INFO', 'WARN', 'ERROR', 'DEBUG']);
+        let searchQuery = '';
+        let allLogs = [];
+
+        // Set up filter button listeners
+        document.querySelectorAll('.log-filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const level = btn.dataset.level;
+                if (activeFilters.has(level)) {
+                    activeFilters.delete(level);
+                    btn.classList.add('inactive');
+                    btn.classList.remove('active');
+                } else {
+                    activeFilters.add(level);
+                    btn.classList.remove('inactive');
+                    btn.classList.add('active');
+                }
+                renderLogs();
+            });
+        });
+
+        // Set up search listener
+        document.getElementById('log-search').addEventListener('input', (e) => {
+            searchQuery = e.target.value.toLowerCase();
+            renderLogs();
+        });
+
+        function renderLogs() {
+            const logContainer = document.getElementById('log-container');
+            const filtered = allLogs.filter(log => {
+                if (!activeFilters.has(log.level)) return false;
+                if (searchQuery && !log.message.toLowerCase().includes(searchQuery)) return false;
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                logContainer.innerHTML = '<div class="log-entry log-info" style="opacity:0.4">[No matching logs]</div>';
+                return;
+            }
+
+            logContainer.innerHTML = filtered.map(log => `
+                <div class="log-entry log-${log.level.toLowerCase()}">
+                    [${new Date(log.timestamp).toLocaleTimeString()}] [${log.level}] ${log.message}
+                </div>
+            `).join('');
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
         async function updateDashboard() {
             try {
                 const res = await fetch('/health');
@@ -290,15 +404,9 @@
                 document.getElementById('uptime').innerText = minutes + 'm';
 
                 // Update logs
-                const logContainer = document.getElementById('log-container');
                 if (data.logs && data.logs.length > 0) {
-                    logContainer.innerHTML = data.logs.map(log => `
-                        <div class="log-entry log-${log.level.toLowerCase()}">
-                            [${new Date(log.timestamp).toLocaleTimeString()}] [${log.level}] ${log.message}
-                        </div>
-                    `).join('');
-                    // Auto scroll to bottom
-                    logContainer.scrollTop = logContainer.scrollHeight;
+                    allLogs = data.logs;
+                    renderLogs();
                 }
 
             } catch (err) {

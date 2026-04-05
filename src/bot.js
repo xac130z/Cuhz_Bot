@@ -111,7 +111,12 @@ const HYPE_MESSAGES = [
     "Planet CUHZ in the building! 🌌",
     "Hype! Hype! Hype! 🔥",
     "Level up your content game! 💎",
-    "Welcome to the Planet! 🌍"
+    "Welcome to the Planet! 🌍",
+    "The orbit is CRAZY rn cuhz! 🪐",
+    "CUHZ energy unmatched right now! 💥",
+    "We breaking through the atmosphere! 🌠",
+    "Strap in cuhz, we going INTERSTELLAR! ✨",
+    "This stream hitting different tonight! 🔥🌌"
 ];
 
 const MOTIVATIONAL_QUOTES = [
@@ -310,32 +315,54 @@ const VIBE_MESSAGES = [
     'Vibes immaculate rn no cap 💎',
     'Planet CUHZ energy is LIVE ⚡',
     'We built different over here 🚀',
-    'Tuned in to the right wavelength cuhz 📡'
+    'Tuned in to the right wavelength cuhz 📡',
+    'The cosmic frequency is unmatched tonight 🌠',
+    'Straight vibin on Planet CUHZ rn 🪐',
+    'This the energy we came for cuhz ✨',
+    'Whole stream locked in on another level 🔒💎',
+    'The vibe check is immaculate 💯'
 ];
 const W_MESSAGES = [
     'W in the chat for the cuhz fam 🏆',
     'BIG W energy rn 💪',
     'We don\'t take L\'s on Planet CUHZ 🚀',
     'Nothing but W\'s today cuhz 🔥',
-    'Certified W moment 💎'
+    'Certified W moment 💎',
+    'That\'s a massive W for the whole planet 🌍',
+    'W after W after W cuhz 🏆🏆🏆',
+    'Stack them W\'s up cuhz! 📈',
+    'The W factory is OPEN tonight 🔥',
+    'Planet CUHZ stays winning no cap 💪🌌'
 ];
 const BET_MESSAGES = [
     'Bet. We locked in cuhz. 🎯',
     'Bet bet bet! Let\'s ride 🚀',
     'Say less cuhz, bet. 💪',
-    'That\'s a bet. No cap. 🔥'
+    'That\'s a bet. No cap. 🔥',
+    'You already know it\'s a bet cuhz 🤝',
+    'Bet on Planet CUHZ every time 🌌',
+    'Lock it in. Bet. 🔒',
+    'That\'s a cosmic bet right there 🪐💎'
 ];
 const GZ_MESSAGES = [
     'GG EZ cuhz! Let\'s gooo 🔥',
     'Big W for the cuhz! 🏆',
     'Congrats cuhz, you earned that 💎',
-    'That\'s what we\'re talking about! GZ! 🚀'
+    'That\'s what we\'re talking about! GZ! 🚀',
+    'You went crazy cuhz, GZ! 🌌',
+    'Planet CUHZ is proud of you! GZ 🪐✨',
+    'Built different and it shows. GG! 💪',
+    'That was clean cuhz. Respect. GZ 🔥💎'
 ];
 const NOCAP_MESSAGES = [
     'No cap no cap — this stream is different 🌌',
     'Facts only cuhz, no 🧢 allowed on Planet CUHZ',
     'Straight facts no printer cuhz 💯',
-    'No cap detected. Certified real one. 🔥'
+    'No cap detected. Certified real one. 🔥',
+    'Zero cap zone right here cuhz 🚫🧢',
+    'Speaking nothing but truth on this planet 🌍💎',
+    'Cap-free since day one cuhz ✨',
+    'That\'s on everything. No cap. 💪🌌'
 ];
 
 // --- Basic Tier Custom Shoutouts (accessible in ALL tiers) ---
@@ -722,6 +749,17 @@ function setupEventHandlers() {
     client.on('connected', (addr, port) => {
         logger.info(`Connected to Twitch at ${addr}:${port}`);
     });
+
+    client.on('disconnected', (reason) => {
+        logger.error(`🔌 Twitch IRC DISCONNECTED: ${reason}`);
+    });
+
+    // Periodic IRC connection health check
+    setInterval(() => {
+        if (client && client.readyState() !== 'OPEN') {
+            logger.warn(`🔌 Twitch IRC connection state: ${client.readyState()} — may need reconnect`);
+        }
+    }, 60000);
 
     client.on('join', async (channel, username, self) => {
         if (self && !connectedChannels.has(channel)) {

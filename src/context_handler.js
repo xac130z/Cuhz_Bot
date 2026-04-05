@@ -195,6 +195,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
 
     try {
         const aiResponse = await aiService.generateContextAwareResponse(
+            channel,
             message,
             context,
             currentMood,
@@ -249,7 +250,7 @@ async function getCachedResponse(query) {
  * @param {string} response
  * @param {number} ttlHours - Time to live in hours
  */
-async function cacheResponse(query, response, ttlHours = 24) {
+async function cacheResponse(query, response, ttlHours = 4) {
     try {
         const normalizedQuery = query.toLowerCase().trim();
         const expiresAt = new Date(Date.now() + ttlHours * 3600000).toISOString();
