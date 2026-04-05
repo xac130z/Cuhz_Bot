@@ -17,7 +17,7 @@ const path = require('path');
 // --- Tier System Definition ---
 const TIERS = { BASIC: 'basic', PRO: 'pro', PREMIUM: 'premium' };
 const CHANNEL_TIERS = {
-    'fourareason4': TIERS.PREMIUM,
+    'four_a_reason': TIERS.PREMIUM,
     'rico2ez': TIERS.PREMIUM,
     'planetcuhz': TIERS.PREMIUM,
     'xac130z': TIERS.PREMIUM,
@@ -390,7 +390,7 @@ const TIMER_MESSAGES = [
 ];
 
 const BASIC_TIMER_MESSAGES = [
-    '🤖 Want CUHZ Bot in your channel? Pull up to @fourareason4\'s stream! → twitch.tv/fourareason4 🚀',
+    '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream! → twitch.tv/four_a_reason 🚀',
     '🌌 Planet CUHZ — the creator ecosystem where we all level up together 💎',
     '💬 Join the CUHZ fam on Discord → https://discord.gg/5rFRaeBuHn',
     '🔥 Type !hype, !vibe, or !w to show love in the chat!'
@@ -1218,7 +1218,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
     if (msg === '!getcuhzbot') {
-        client.say(channel, '🤖 Want CUHZ Bot in your channel? Pull up to @fourareason4\'s stream and ask about it! → https://twitch.tv/fourareason4 🚀');
+        client.say(channel, '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream and ask about it! → https://twitch.tv/four_a_reason 🚀');
         return;
     }
 
@@ -1368,7 +1368,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        client.say(channel, 'Community Commands: !mahni !snow !tay !yoo !vibe !w !bet !gz !nocap !fam !goat | Want CUHZ Bot? Pull up to @fourareason4 → twitch.tv/fourareason4 🚀');
+        client.say(channel, 'Community Commands: !mahni !snow !tay !yoo !vibe !w !bet !gz !nocap !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
 
