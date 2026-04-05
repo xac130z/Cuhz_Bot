@@ -364,6 +364,33 @@ const NOCAP_MESSAGES = [
     'Cap-free since day one cuhz ✨',
     'That\'s on everything. No cap. 💪🌌'
 ];
+const L_MESSAGES = [
+    'An L today is just setup for a bigger W tomorrow cuhz 💪',
+    'Legends don\'t dodge L\'s, they learn from em cuhz 🔥',
+    'That L just made you stronger. Watch. 🌌',
+    'Every L is a lesson in disguise cuhz, keep pushing 💎',
+    'You think Kobe never took L\'s? He came back harder every time cuhz 🐍',
+    'L\'s build character. W\'s build legacy. You need both cuhz 🏆',
+    'Take that L, flip it, and turn it into fuel cuhz 🚀',
+    'The comeback is always greater than the setback cuhz ✨',
+    'Real ones don\'t crumble from an L, they evolve cuhz 🪐',
+    'That L was just the universe testing your grind cuhz 🌠',
+    'Greatness ain\'t a straight line — L\'s are part of the journey cuhz 💯',
+    'You didn\'t lose, you just found what doesn\'t work cuhz 🧠',
+    'Even the stars had to burn before they shined cuhz 🌟',
+    'Dust yourself off cuhz, the mission ain\'t over 🛸',
+    'That L got you one step closer to the biggest W of your life cuhz 🔥',
+    'Pressure makes diamonds cuhz, remember that 💎',
+    'Fall seven times, stand up eight. That\'s the CUHZ way 🌌',
+    'L\'s don\'t define you — how you respond does cuhz 💪',
+    'The grind don\'t stop for one bad day cuhz, keep going 🚀',
+    'You think greatness is easy? Nah, it\'s built on L\'s cuhz 🏗️',
+    'That L was temporary. Your potential is forever cuhz ✨',
+    'Champions eat L\'s for breakfast and still dominate cuhz 🏆',
+    'Ain\'t no L big enough to stop what you\'re building cuhz 🌍',
+    'Stay locked in cuhz, the W is right around the corner 🔒',
+    'Planet CUHZ don\'t quit after an L — we reload and go again cuhz 🪐🔥'
+];
 
 // --- Basic Tier Custom Shoutouts (accessible in ALL tiers) ---
 const BASIC_USER_COMMANDS = {
@@ -1209,6 +1236,10 @@ async function handleMessage(channel, tags, message, self) {
         client.say(channel, NOCAP_MESSAGES[Math.floor(Math.random() * NOCAP_MESSAGES.length)]);
         return;
     }
+    if (msg === '!l') {
+        client.say(channel, L_MESSAGES[Math.floor(Math.random() * L_MESSAGES.length)]);
+        return;
+    }
     if (msg === '!fam') {
         client.say(channel, 'Cuhz fam in the building! Tag someone who needs to see this stream 👀');
         return;
@@ -1356,19 +1387,19 @@ async function handleMessage(channel, tags, message, self) {
     // 1.5. Dynamic Help System based on Tiers
     if (msg === '!help') {
         if (isPremium) {
-            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !fam !goat !getcuhzbot !streamstats !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | AI: !ask !code !whois !topchatters | Mods: !chatreport !mood !personality !give !title !game !so !raid !ban !timeout !addstreamer !settoday !cleartoday | Ask naturally for AI help!');
+            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !l !fam !goat !getcuhzbot !streamstats !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | AI: !ask !code !whois !topchatters | Mods: !chatreport !mood !personality !give !title !game !so !raid !ban !timeout !addstreamer !settoday !cleartoday | Ask naturally for AI help!');
         } else if (tier === TIERS.PRO) {
-            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !fam !goat !getcuhzbot !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | Mods: !chatreport !so !raid !give !settoday !cleartoday');
+            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !l !fam !goat !getcuhzbot !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | Mods: !chatreport !so !raid !give !settoday !cleartoday');
         } else {
             // Basic Tier
-            client.say(channel, '🌌 CUHZ Bot — !hype !vibe !w !bet !gz !nocap !fam !goat !quote !4 !gm !gn !points !gamble !top !claim !achievements !uptime !getcuhzbot !shoutouts | Mods: !settoday !cleartoday | Stay CUHZ 🚀');
+            client.say(channel, '🌌 CUHZ Bot — !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !4 !gm !gn !points !gamble !top !claim !achievements !uptime !getcuhzbot !shoutouts | Mods: !settoday !cleartoday | Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        client.say(channel, 'Community Commands: !mahni !snow !tay !yoo !vibe !w !bet !gz !nocap !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
+        client.say(channel, 'Community Commands: !mahni !snow !tay !yoo !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
 
