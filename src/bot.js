@@ -94,7 +94,6 @@ const USER_COMMANDS = {
     '!rebound': 'Rebound Mindset. Bounce back stronger every time. 🏀',
     '!snow': 'can’t ban the snow man ☃️',
     '!thorn': 'Watch out for the thorns! 🌹',
-    '!mahni': '🏆 VGX Mahni: Champion mindset! 🏆',
     '!zuri': 'Zuri Owen in the house! Welcome family! 🏰',
     '!planet': 'Planet CUHZ is in the building! The mothership has landed. 🌍🌌',
     '!shock': 'Warning: High Voltage in the chat! ⚡',
@@ -309,6 +308,29 @@ const PNX_QUOTES = [
     "☮️ 4 A Reason, 4 the Peace. PNX 4 Ever! 💎"
 ];
 
+const MAHNI_QUOTES = [
+    "Mahni in the building! The music, the energy, the vibes — she brings it ALL 🎶🏆",
+    "When Mahni drops a track, the whole planet feels it 🌍🔥",
+    "Streamer. Artist. Supporter. Mahni does it all and makes it look easy 💎",
+    "Mahni's music hits different — that's not opinion, that's fact 🎧💯",
+    "She supports her people like no other. Mahni is the real MVP 🫡❤️",
+    "VGX Mahni with the champion mindset! Can't stop, won't stop 🏆🚀",
+    "Mahni's got bars, beats, and a heart of gold. Respect the grind 🎤✨",
+    "If you haven't heard Mahni's music yet, you're sleeping cuhz 😴🔊",
+    "The queen of the vibes just walked in. Mahni is HERE 👑🌌",
+    "Mahni putting on for her people every single day. That's loyalty 💪❤️",
+    "Music that moves you. Energy that inspires you. That's Mahni 🎵⚡",
+    "Mahni came to win and she brought the whole squad with her 🏆👊",
+    "Real recognize real — and Mahni is as real as it gets 💯🔥",
+    "She's not just making music, she's building a movement. Salute Mahni 🫡🌟",
+    "Mahni shows up for her community every time. That's rare cuhz 💎🙏",
+    "The beats hit hard, the lyrics hit harder. Mahni on another level 🎶📈",
+    "When the vibes need saving, Mahni pulls up with the soundtrack 🎧🦸‍♀️",
+    "Mahni's grind is unmatched. Artist by day, supporter by heart ❤️🎤",
+    "If loyalty had a face, it'd be Mahni. She holds it down for everyone 👑💪",
+    "VGX Mahni — the music speaks, the hustle screams, the heart inspires 🏆🌌"
+];
+
 // --- CUHZ Vibe Commands (All Tiers) ---
 const VIBE_MESSAGES = [
     'We on a different frequency cuhz 🌌',
@@ -394,7 +416,6 @@ const L_MESSAGES = [
 
 // --- Basic Tier Custom Shoutouts (accessible in ALL tiers) ---
 const BASIC_USER_COMMANDS = {
-    '!mahni': '🏆 VGX Mahni: Champion mindset! 🏆',
     '!snow': 'can\'t ban the snow man ☃️',
     '!tay': 'It\'s giving 2K legend energy — ohthatztayy locked in! 🕹️🏀',
     '!yoo': 'Yoo! Welcome to the stream. 👋'
@@ -1250,6 +1271,12 @@ async function handleMessage(channel, tags, message, self) {
     }
     if (msg === '!getcuhzbot') {
         client.say(channel, '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream and ask about it! → https://twitch.tv/four_a_reason 🚀');
+        return;
+    }
+
+    // 0.84. Mahni Rotation (ALL tiers)
+    if (msg === '!mahni') {
+        client.say(channel, MAHNI_QUOTES[Math.floor(Math.random() * MAHNI_QUOTES.length)]);
         return;
     }
 
