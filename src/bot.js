@@ -102,7 +102,6 @@ const USER_COMMANDS = {
     '!reacts': 'Reactions are LIVE! 👀',
     '!rock': 'Solid as a rock. 🪨',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!bern': 'Bernie2K in the building! Courts on fire when he pulls up 🏀🔥 Show love to the hooper!',
     '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !bern !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
 };
 
@@ -307,6 +306,17 @@ const PNX_QUOTES = [
     "☮️ Good vibes are contagious. Thanks for bringing them, PNX! ☯️",
     "☮️ High frequency, low ego. PNX in the house! 🏠",
     "☮️ 4 A Reason, 4 the Peace. PNX 4 Ever! 💎"
+];
+
+const BERN_QUOTES = [
+    "Bernie2K in the building! Courts on fire when he pulls up 🏀🔥",
+    "Bernie got the sticks on lock — buckets only cuhz 🎮🏆",
+    "Don't reach on Bernie2K, he'll cook you every time 🍳🏀",
+    "Bernie2K making it look 2EZ out there! Hooper mentality 💪🔥",
+    "When Bernie loads in, the other team should just quit 🎮😤",
+    "Bernie2K dropping dimes and draining threes — can't guard him 🏀💎",
+    "The court belongs to Bernie2K. Step up or step aside 👑🔥",
+    "Bernie2K with the green light every play — shooter's touch 🟢🏀"
 ];
 
 const MAHNI_QUOTES = [
@@ -1403,6 +1413,12 @@ async function handleMessage(channel, tags, message, self) {
         if (msg === '!dame') {
             const randomDame = DAME_QUOTES[Math.floor(Math.random() * DAME_QUOTES.length)];
             client.say(channel, `⌚ ${randomDame}`);
+            return;
+        }
+
+        if (msg === '!bern') {
+            const randomBern = BERN_QUOTES[Math.floor(Math.random() * BERN_QUOTES.length)];
+            client.say(channel, `🏀 ${randomBern}`);
             return;
         }
 
