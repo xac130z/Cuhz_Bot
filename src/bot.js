@@ -102,7 +102,8 @@ const USER_COMMANDS = {
     '!reacts': 'Reactions are LIVE! 👀',
     '!rock': 'Solid as a rock. 🪨',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
+    '!bern': 'Bernie2K in the building! Courts on fire when he pulls up 🏀🔥 Show love to the hooper!',
+    '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !bern !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
 };
 
 const HYPE_MESSAGES = [
