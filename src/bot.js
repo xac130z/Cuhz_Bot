@@ -322,14 +322,14 @@ const SPENCE_QUOTES = [
 ];
 
 // !snowy for snowy_wolfies_ttv — includes "can't ban the Snowman" callback.
-// Palette ❄️ 💖 🧙‍♀️ 💜 ⚡.
+// Palette ❄️ 🧙‍♀️ 💜 ⚡ (no hearts per user preference).
 const SNOWY_QUOTES = [
     "❄️ The Snowman has entered the chat! @snowy_wolfies_ttv on deck 💜",
     "❄️ Can't ban the Snowman — @snowy_wolfies_ttv here to stay 🧙‍♀️",
     "💜 Snowy in the building! Positivity dialed to a thousand ❄️",
-    "🧙‍♀️ Hogwarts Legacy royalty in the chat — @snowy_wolfies_ttv touched down 💖",
+    "🧙‍♀️ Hogwarts Legacy royalty in the chat — @snowy_wolfies_ttv touched down ❄️",
     "❄️ The frequency just got cooler. Snowy's here cuhz ⚡",
-    "💖 @snowy_wolfies_ttv SLID IN — chat officially upgraded ❄️",
+    "⚡ @snowy_wolfies_ttv SLID IN — chat officially upgraded ❄️",
     "❄️ Can't ban the Snowman, can't dim the Snowman — Snowy's HERE 💜",
     "⚡ Snowy in the chat! Hogwarts crew rolling deep tonight 🧙‍♀️"
 ];
