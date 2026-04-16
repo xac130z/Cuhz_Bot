@@ -114,7 +114,7 @@ function drainQueue(key) {
 const PUBLIC_COMMANDS = {
     '!cuhz': '🚀 https://planetcuhz.com',
     '!links': '🔗 https://linktr.ee/PlanetCUHZ',
-    '!discord': '💬 https://discord.gg/5rFRaeBuHn',
+    '!discord': '💬 Join the CUHZ fam → https://discord.gg/5rFRaeBuHn',
     '!whatiscuhz': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!faq': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!whitepaper': '📄 https://planetcuhz.com/whitepaper',
@@ -492,6 +492,45 @@ const CUHZ_QUOTES = [
     "💎 Planet CUHZ = the ecosystem. Frequency tuned, family locked in 🌌",
     "📡 You ever feel the energy hit different? That's the CUHZ frequency ⚡",
     "🌌 Planet CUHZ for life. Family over everything, every single time 💎"
+];
+
+// Canonical social links. Kept in bot.js (config.js is env-only) so the user has
+// one place to edit when they add IG/TikTok/YT. Linktree covers the long tail.
+const SOCIAL_LINKS = {
+    website:  'https://planetcuhz.com',
+    linktree: 'https://linktr.ee/PlanetCUHZ',
+    discord:  'https://discord.gg/5rFRaeBuHn',
+    // Drop IG/TikTok/YT URLs in here when ready.
+    instagram: null,
+    tiktok:    null,
+    youtube:   null
+};
+
+// !lurk — 5 variants; {user} is replaced with @username.
+const LURK_QUOTES = [
+    "👀 @{user} tapped in from the shadows — we see you cuhz",
+    "👀 @{user} locked in on lurk mode. Respect cuhz",
+    "👀 @{user} in the cut, watchin' the whole thing. We got you",
+    "👀 @{user} on stealth. The frequency's still tuned 📡",
+    "👀 @{user} lurkin' with purpose — CUHZ fam either way"
+];
+
+// !unlurk / !back — 5 variants; {user} is replaced with @username.
+const UNLURK_QUOTES = [
+    "⚡ @{user} back in the frequency ⚡",
+    "⚡ @{user} stepped out the shadows — welcome back cuhz 🌌",
+    "⚡ Unlurk detected! @{user} back on the mic 💎",
+    "⚡ @{user} just rejoined the convo — we see you 🔥",
+    "⚡ @{user} back in rotation. Chat's fully live now 📡"
+];
+
+// Raid farewells — fired before /raid is issued. {target} is the raid destination.
+const RAID_FAREWELLS = [
+    "🚀 CUHZ FAM WE RAIDIN' @{target}! Pull up and show love 💎",
+    "🚀 All aboard — we ridin' out to @{target}! Let's GO cuhz 🔥",
+    "🚀 Raiding @{target} — tell 'em CUHZ sent you 🌌",
+    "🚀 Next stop: @{target}. CUHZ fam move as one 💎",
+    "🚀 RAID TIME! @{target} — keep the frequency alive ⚡"
 ];
 
 
@@ -1765,15 +1804,19 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
-    // 1.5. Dynamic Help System based on Tiers
-    if (msg === '!help') {
+    // 1.5. Dynamic Help System based on Tiers. Grouped + under Twitch's 500-char limit per line.
+    if (msg === '!help' || msg === '!commands') {
+        // Utility — common to all tiers (differences called out inline).
+        const utility = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !discord !links !cuhz !planet !quote !hype !vibe';
+        // Personality/shoutouts — the user-specific pools.
+        const personality = '🎤 Shoutouts: !ac !4 !ec !rock !pnx !tj !spence !snowy !kasha !qween !fvmous !gg';
         if (isPremium) {
-            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !l !fam !goat !getcuhzbot !streamstats !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | AI: !ask !code !whois !topchatters | Mods: !chatreport !mood !personality !give !title !game !so !raid !ban !timeout !addstreamer !settoday !cleartoday | Ask naturally for AI help!');
+            sendMessage(channel, utility + ' | AI: !ask !code !whois !topchatters | ' + personality);
+            sendMessage(channel, 'Mods: !chatreport !mood !give !title !game !so !raid !ban !timeout !settoday !cleartoday — Ask naturally for AI help 💎');
         } else if (tier === TIERS.PRO) {
-            client.say(channel, '🌌 Commands: !cuhz !chain !shoutouts !quote !4 !hype !vibe !w !bet !gz !nocap !l !fam !goat !getcuhzbot !achievements !pointsinfo !points !top !claim !gamble !uptime !viewers !followage !links !discord !build | Mods: !chatreport !so !raid !give !settoday !cleartoday');
+            sendMessage(channel, utility + ' | ' + personality + ' | Mods: !chatreport !so !raid !give !settoday !cleartoday');
         } else {
-            // Basic Tier
-            client.say(channel, '🌌 CUHZ Bot — !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !4 !gm !gn !points !gamble !top !claim !achievements !uptime !getcuhzbot !shoutouts | Mods: !settoday !cleartoday | Stay CUHZ 🚀');
+            sendMessage(channel, utility + ' | ' + personality + ' | Mods: !settoday !cleartoday — Stay CUHZ 🚀');
         }
         return;
     }
@@ -1902,19 +1945,49 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // --- Phase 8: Utility commands ---
+    if (msg === '!lurk') {
+        const line = pickNoRepeat(`lurk:${cleanChannel}`, LURK_QUOTES, 2).replace('{user}', tags.username);
+        sendMessage(channel, line);
+        return;
+    }
+
+    if (msg === '!unlurk' || msg === '!back') {
+        const line = pickNoRepeat(`unlurk:${cleanChannel}`, UNLURK_QUOTES, 2).replace('{user}', tags.username);
+        sendMessage(channel, line);
+        return;
+    }
+
+    if (msg === '!socials') {
+        const extras = [];
+        if (SOCIAL_LINKS.instagram) extras.push(`IG: ${SOCIAL_LINKS.instagram}`);
+        if (SOCIAL_LINKS.tiktok)    extras.push(`TikTok: ${SOCIAL_LINKS.tiktok}`);
+        if (SOCIAL_LINKS.youtube)   extras.push(`YT: ${SOCIAL_LINKS.youtube}`);
+        const tail = extras.length ? ` | ${extras.join(' | ')}` : '';
+        sendMessage(channel, `🔗 Planet CUHZ socials → ${SOCIAL_LINKS.linktree} | 💬 Discord → ${SOCIAL_LINKS.discord} | 🌌 Site → ${SOCIAL_LINKS.website}${tail}`);
+        return;
+    }
+
+    // Viewer version of !game (bare, no args). Mod version (!game <name>) stays below.
+    if (msg === '!game') {
+        const state = streamStates.get(channel);
+        const gameName = state && state.game ? state.game : null;
+        if (gameName) sendMessage(channel, `🎮 Currently playing ${gameName}`);
+        else sendMessage(channel, `🎮 No game set right now cuhz — check back in a sec`);
+        return;
+    }
+
     if (msg === '!uptime') {
         const state = streamStates.get(channel);
+        const channelName = channel.replace('#', '');
 
         if (state && state.isLive && state.startedAt) {
             const diff = Date.now() - state.startedAt.getTime();
             const hours = Math.floor(diff / (1000 * 60 * 60));
             const minutes = Math.floor((diff / (1000 * 60)) % 60);
-            client.say(channel, `Stream has been live for ${hours}h ${minutes}m! 🔴`);
+            sendMessage(channel, `🔴 ${channelName} has been live for ${hours}h ${minutes}m — grinding 💎`);
         } else {
-            // Fallback to bot uptime if stream is offline (or unknown)
-            const up = new Date() - startTime;
-            const minutes = Math.floor((up / 1000) / 60);
-            client.say(channel, `Stream is currently offline. Bot has been running for ${minutes} minutes.`);
+            sendMessage(channel, `Stream's offline right now cuhz. Check the schedule 📅`);
         }
         return;
     }
@@ -2065,17 +2138,17 @@ async function handleMessage(channel, tags, message, self) {
     // --- Points & Economy Commands ---
     if (msg === '!points' || msg === '!balance') {
         const balance = await pointsService.getBalance(tags.username);
-        client.say(channel, `💎 @${tags.username}, you have ${balance} Cuhz Points!`);
+        sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ points in the bank`);
         return;
     }
 
     if (msg === '!richlist' || msg === '!top') {
-        const richList = await pointsService.getRichList(5);
-        if (richList.length === 0) {
-            client.say(channel, "📉 The economy is in shambles! (No data yet)");
+        const weeklyTop = await pointsService.getWeeklyTop(5);
+        if (weeklyTop.length === 0) {
+            sendMessage(channel, "🏆 No weekly leaderboard data yet — keep chattin' cuhz 💎");
         } else {
-            const list = richList.map((u, i) => `${i + 1}. ${u.username} (${u.points})`).join(' | ');
-            client.say(channel, `👑 Cuhz Rich List: ${list}`);
+            const list = weeklyTop.map((u, i) => `${i + 1}. ${u.username} (${u.points})`).join(' | ');
+            sendMessage(channel, `🏆 Top cuhz this week: ${list}`);
         }
         return;
     }
@@ -2184,8 +2257,16 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg.startsWith('!raid ') && isMod) {
-        const target = message.split(' ')[1];
-        if (target) client.say(channel, `/raid ${target}`);
+        // Loose-parse first @username-like token, same pattern as !so.
+        const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
+        const rawTarget = match && match.length >= 2 ? match[1] : null; // [0] is "raid"
+        if (!rawTarget) return;
+        const target = rawTarget.replace('@', '').toLowerCase();
+        // Fire farewell template first (goes through the send queue so the /raid
+        // command that follows is spaced ≥1.5s after — no Twitch rate-limit blowup).
+        const farewell = pickNoRepeat(`raid:${cleanChannel}`, RAID_FAREWELLS, 2).replace('{target}', target);
+        sendMessage(channel, farewell);
+        sendMessage(channel, `/raid ${target}`);
         return;
     }
 

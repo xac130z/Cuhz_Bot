@@ -98,6 +98,28 @@ class PointsService {
     }
 
     /**
+     * Top point earners in the last 7 days (rolled up from points_ledger).
+     * Negative ledger entries (spends) reduce the weekly total — so this is NET earnings.
+     */
+    async getWeeklyTop(limit = 5) {
+        try {
+            const rows = await db.prepare(`
+                SELECT username, SUM(amount) AS points
+                FROM points_ledger
+                WHERE created_at >= datetime('now', '-7 days')
+                GROUP BY username
+                HAVING SUM(amount) > 0
+                ORDER BY SUM(amount) DESC
+                LIMIT ?
+            `).all(limit);
+            return rows;
+        } catch (err) {
+            logger.error('Failed to get weekly top:', err);
+            return [];
+        }
+    }
+
+    /**
      * Claim a one-time bonus (like follower bonus)
      * Checks ledger to ensuring no prior claim of this type
      */
