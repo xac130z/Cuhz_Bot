@@ -50,6 +50,66 @@ let dailyMessages = new Map(); // channel -> string (set via !settoday)
 let twitchClientId = null; // Fetched dynamically
 let botUserId = null; // Captured during validation
 
+// Per-channel welcome tracking (First Contact is scoped to CHANNEL, not global).
+// Keyed by `${channel}:${username}` -> { firstContactAt: number, lastWelcomedAt: number }
+const _channelWelcomes = new Map();
+const WELCOME_BACK_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+// Random pick that avoids repeating the last N picks for a given key.
+const _recentPicks = new Map(); // key -> string[]
+function pickNoRepeat(key, arr, avoidLast = 3) {
+    if (!arr || arr.length === 0) return null;
+    const recent = _recentPicks.get(key) || [];
+    const pool = arr.filter(x => !recent.includes(x));
+    const source = pool.length ? pool : arr;
+    const pick = source[Math.floor(Math.random() * source.length)];
+    const next = [...recent, pick].slice(-avoidLast);
+    _recentPicks.set(key, next);
+    return pick;
+}
+
+// Per-channel outbound queue: Twitch rate-limited the bot when welcome + achievement
+// sends fired within the same second. Queue guarantees ≥1.5s spacing per channel.
+const SEND_SPACING_MS = 1500;
+const _sendQueues = new Map(); // channel -> { queue: [], draining: bool, lastSentAt: number }
+
+function sendMessage(channel, text) {
+    if (!client || !channel || !text) return;
+    const key = channel;
+    let state = _sendQueues.get(key);
+    if (!state) {
+        state = { queue: [], draining: false, lastSentAt: 0 };
+        _sendQueues.set(key, state);
+    }
+    state.queue.push(text);
+    if (!state.draining) drainQueue(key);
+}
+
+function drainQueue(key) {
+    const state = _sendQueues.get(key);
+    if (!state || state.queue.length === 0) {
+        if (state) state.draining = false;
+        return;
+    }
+    state.draining = true;
+    const wait = Math.max(0, state.lastSentAt + SEND_SPACING_MS - Date.now());
+    setTimeout(() => {
+        const next = state.queue.shift();
+        if (next != null) {
+            try {
+                const p = client.say(key, next);
+                if (p && typeof p.catch === 'function') {
+                    p.catch(err => logger.error(`send error [${key}]:`, err && err.message ? err.message : err));
+                }
+            } catch (err) {
+                logger.error(`send error [${key}]:`, err && err.message ? err.message : err);
+            }
+            state.lastSentAt = Date.now();
+        }
+        drainQueue(key);
+    }, wait);
+}
+
 // --- Content Data (Non-Crypto) ---
 const PUBLIC_COMMANDS = {
     '!cuhz': '🚀 https://planetcuhz.com',
@@ -100,7 +160,6 @@ const USER_COMMANDS = {
     '!kay': 'Big Mula in the building! 💰',
     '!limit': 'Taking it to the limit! 🚀',
     '!reacts': 'Reactions are LIVE! 👀',
-    '!rock': 'Solid as a rock. 🪨',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
     '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !bern !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
 };
@@ -188,37 +247,222 @@ const LUCKY_4_QUOTES = [
     "4 the culture. 4 the community. 4 the win. 🌐"
 ];
 
+// 12 creative variants — Four a Reason energy, dedication + grind, Planet CUHZ brand.
+// Rotated via pickNoRepeat (no repeats within last 3 fires).
 const AC_QUOTES = [
-    "Job's not finished. Welcome back xAc130z. Thank you for leading the way. 🐍",
-    "Dedication sees dreams come true. Planet Cuhz stand up! 🌌",
-    "Rest at the end, not in the middle. The grind continues. 💎",
-    "Mamba Mentality: Be better than you were yesterday. Welcome back xAc130z. 🚀",
-    "Welcome back xAc130z. Time to focus. Time to dominate. ⚔️",
-    "Great things come from hard work and perseverance. Thank you for showing us the way. 💪",
-    "If you don't believe in yourself, no one will do it for you. Be legendary xAc130z. 🧠",
-    "The moment you give up, is the moment you let someone else win. Not today. 🏆",
-    "Everything negative is all an opportunity to rise. Welcome home xAc130z. 🌍",
-    "I don't relate to lazy people. We don't speak the same language. Let's work! 🦾",
-    "Thank you for the energy xAc130z. Planet Cuhz is rising because of you. 🌠",
-    "Leaders don't force people to follow, they invite them on a journey. Thanks for the journey xAc130z. 🗺️",
-    "Resilience is key. Welcome back to the arena, xAc130z. 🏟️",
-    "Greatness is not a destination, it's a lifestyle. Live it, xAc130z. 🦁",
-    "We don't quit, we don't cower, we don't run. We endure. Welcome back. 🛡️",
-    "Focus on the process, trusting that the results will come. Thank you for the vision. 📉",
-    "Haters are a good problem to have. Nobody hates the good ones. They hate the great ones. 🐍",
-    "Thank you xAc130z for building this galaxy. We are just getting started. 🌌",
-    "Every setback is a setup for a comeback. Let's get it. 🏹",
-    "Passion comes from love. Thank you for loving the game and the community. ❤️",
-    "The most important thing is to try and inspire people. You do that daily. Thank you. ✨",
-    "Hard work outweighs talent — every time. Keep pushing xAc130z. 🏋️‍♂️",
-    "We rise by lifting others. Thanks for lifting up Planet Cuhz. 🤲",
-    "Pressure is a privilege. Embrace it, xAc130z. 💎",
-    "You can't be stopped if you don't stop. Welcome back to the grind. 🛑",
-    "Thank you, xAc130z. The vision is clear. The mission is on. 🎯",
-    "Boos don't block dunks. Keep scoring, Keep leading. 🏀",
-    "A true leader steps up when others step back. Thanks for stepping up. 👣",
-    "Mamba Mentality: 4 A.M. logic. No excuses. Welcome back. 🌚",
-    "Planet Cuhz 4 Life. Thank you xAc130z for bringing us together. 🌐"
+    "🐍 xAc130z in the frequency — job's NOT finished. CUHZ fam, lock in 💎",
+    "🌌 The Captain touched down. Mamba Mentality active — let's get these reps in ⚡",
+    "💎 4 a REASON. 4 a SEASON. 4 a LIFETIME. xAc130z is why we're here 🐍",
+    "⚡ Dedication on display. The blueprint just walked in — welcome back cuhz 🌌",
+    "🐍 Rest at the end, not in the middle. xAc130z showing how it's done 💎",
+    "🌌 Planet CUHZ stand UP — the architect is live. Energy officially maxed ⚡",
+    "💎 Pressure is a privilege and xAc130z been built for it. Tune in cuhz 🐍",
+    "⚡ Mamba hour. No excuses, no shortcuts. xAc130z in the building 🌌",
+    "🐍 Thank you for the vision xAc. The galaxy you built is POPPIN' 💎",
+    "🌌 Haters stay in the stands — xAc130z in the arena. CUHZ we movin' ⚡",
+    "💎 Greatness ain't a moment, it's a lifestyle. Welcome home xAc130z 🐍",
+    "⚡ Every setback = setup for a comeback. Captain's back. LET'S WORK 🌌"
+];
+
+// 12 warm hype variants for Rocklin — palette 💎 🌹 💖 ✨ ⚡ 🔥 🌌 📡 🚀 only.
+// Always names her, rotated via pickNoRepeat (no repeats within last 3 fires).
+const ROCK_QUOTES = [
+    "💎 ROCKLIN IN THE BUILDING! The vibes just went up 10 levels 🚀",
+    "🌹 @Rocklin just pulled up — everybody stand up for our girl 💖",
+    "💎 Ayyy it's Rocklin! Glad you made it cuhz, we been waitin' 🔥",
+    "⚡ Rock just touched down — frequency officially tuned in 📡",
+    "💖 Our sis Rocklin is HERE. Chat got brighter immediately ✨",
+    "🌹 ROCK! So good to see you cuhz — pull up a seat, we on one today 💎",
+    "🔥 Rocklin in the chat means it's a real day now. Welcome home 🌌",
+    "💎 The one and only @Rocklin! You already know we love to see you 💖",
+    "⚡ Rock slid in — CUHZ fam fully assembled now 🚀",
+    "🌹 Hey Rocklin! So glad you came through, we missed you cuhz 💖",
+    "✨ Rocklin's here — somebody turn the hype up, that's fam 🔥",
+    "💎 Look who finally pulled up! @Rocklin we got you all night 🌌"
+];
+
+// --- New user commands: 8 variants each, pickNoRepeat(..., 2). Everyone-permission. ---
+
+// !TJ for tjmisses — hook: "ain't no show like a TJ show"
+const TJ_QUOTES = [
+    "🎤 Ain't no show like a TJ show! @tjmisses in the building 🔥",
+    "🎤 The one, the only — @tjmisses. Ain't no show like a TJ show 💎",
+    "🔥 TJ JUST PULLED UP. Say it with me: ain't no show like a TJ show ⚡",
+    "🎤 Lights up, cameras on — @tjmisses is live. TJ show or no show 🌌",
+    "💎 Ain't no show like a TJ show, and ain't no energy like TJ energy. Welcome cuhz 🔥",
+    "⚡ TJ just walked in and the whole vibe shifted. You already know — TJ show 🎤",
+    "🌌 @tjmisses in the frequency. Ain't no show like a TJ show, never has been 💎",
+    "🔥 TJ MISSES IN THE CHAT! Clear the stage — ain't no show like a TJ show 🎤"
+];
+
+// !spence — hype + respect
+const SPENCE_QUOTES = [
+    "👑 @spence in the chat — real recognize real. Welcome cuhz 💎",
+    "🔥 SPENCE touched down. The standard just got higher ⚡",
+    "💎 Spence slid through — respect given, respect earned. Welcome in 🌌",
+    "⚡ @spence is here. Take notes, this one moves different 🔥",
+    "👑 Spence in the building — veteran energy, rookie hunger 💎",
+    "🌌 Ayy it's Spence! Good to see you cuhz, we been ready 🔥",
+    "🔥 Spence pulled up and the chat leveled up. That's how it goes 👑",
+    "💎 @spence — always a W when you roll through. Welcome home cuhz ⚡"
+];
+
+// !snowy for snowy_wolfies_ttv — includes "can't ban the Snowman" callback
+const SNOWY_QUOTES = [
+    "❄️ The Snowman has entered the chat! @snowy_wolfies_ttv on deck 💜",
+    "❄️ Can't ban the Snowman — @snowy_wolfies_ttv here to stay 🧙‍♀️",
+    "💜 Snowy in the building! Positivity dialed to a thousand ❄️",
+    "🧙‍♀️ Hogwarts Legacy royalty in the chat — @snowy_wolfies_ttv touched down ✨",
+    "❄️ The frequency just got cooler. Snowy's here cuhz 💜",
+    "💜 @snowy_wolfies_ttv SLID IN. Somebody alert the wolves 🐺",
+    "❄️ Snowman energy activated. Chat officially frosted with good vibes ✨",
+    "🐺 Snowy in the chat! Pack's rolling deep tonight 💜"
+];
+
+// !kasha for dangbabykasha — Gryffindor
+const KASHA_QUOTES = [
+    "🦁 Gryffindor ROAR! @dangbabykasha just pulled up 🔥",
+    "🦁 Kasha in the chat — bravery checked in ⚡",
+    "🔥 @dangbabykasha SLID IN! The lion's den is full now 🦁",
+    "⚡ Kasha energy detected. Chat immediately got braver 🦁",
+    "🦁 Our girl Kasha is here! Gryffindor stand up 🔥",
+    "🔥 @dangbabykasha touched down — courage on camera ⚡",
+    "🦁 Kasha in the building, and the sorting hat agrees — she BUILT different 🔥",
+    "⚡ Welcome in @dangbabykasha! Real ones know 🦁"
+];
+
+// !qween for qweenstormygirlnz89
+const QWEEN_QUOTES = [
+    "👑 QWEEN STORMY in the chat! Sims slayer, vibe curator 🏀✨",
+    "👑 @qweenstormygirlnz89 we see you cuhz — the frequency is up 📡",
+    "✨ Qween Stormy pulled up. Chat officially upgraded 👑",
+    "👑 Ayy it's Qween! Good to see you cuhz 💖",
+    "💖 @qweenstormygirlnz89 slid through — royalty in the building 👑",
+    "👑 Qween energy only. Stormy here to run it ⚡",
+    "✨ Qween Stormy in the chat means we WINNING today 👑",
+    "💖 Welcome back Qween — the throne was empty without you 👑"
+];
+
+// !fvmous for realfvmousk — includes "4 RAIDY" callback
+const FVMOUS_QUOTES = [
+    "⭐ FVMOUS in the building! @realfvmousk that raid energy unmatched 🚀",
+    "⭐ 4 RAIDY! @realfvmousk dropped in with the heat 🔥",
+    "🚀 Fvmous just touched down — CUHZ fam stand up ⭐",
+    "🔥 @realfvmousk slid in with the 4 RAIDY energy. Let's GO ⭐",
+    "⭐ Fvmous here! Star power officially in the chat 🌟",
+    "🌟 @realfvmousk pulled up. Frequency got famous real quick ⭐",
+    "⭐ FVMOUS! 4 RAIDY 4 LIFE — welcome home cuhz 🚀",
+    "🔥 @realfvmousk in the chat — legends always pull through ⭐"
+];
+
+// WE ARE LIVE announcement pool — 6 variants, {game} interpolated.
+const LIVE_ANNOUNCEMENTS = [
+    "🔴 WE ARE LIVE! playing {game}! Get in here cuhz! 🚀",
+    "🔴 LIVE NOW — {game} on deck. Pull up cuhz 🚀",
+    "🔴 Stream's hot — slidin' on {game}. Come thru 💎",
+    "🔴 It's a day. LIVE with {game}. Lock in 🔥",
+    "🔴 Frequency tuned. {game} is on. Let's ride ⚡",
+    "🔴 We back — {game} is live. CUHZ fam assemble 🌌"
+];
+
+// Timer-driven auto-posts — 10 per category, weighted so same category doesn't fire twice in a row.
+const TIMER_POOLS = {
+    ecosystem: [
+        "🌌 Planet CUHZ → https://planetcuhz.com",
+        "🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com",
+        "💎 Built on love, loyalty, and levelin' up. Welcome to Planet CUHZ → https://planetcuhz.com",
+        "🌌 The frequency → https://planetcuhz.com",
+        "⚡ Creators supporting creators. That's Planet CUHZ → https://planetcuhz.com",
+        "🌌 Real ecosystem, real community, real creators → https://planetcuhz.com",
+        "💎 Planet CUHZ — where the CUHZ fam lives → https://planetcuhz.com",
+        "🌌 Tap in with the ecosystem → https://planetcuhz.com",
+        "🚀 This is Planet CUHZ. Welcome home → https://planetcuhz.com",
+        "🌌 CUHZ fam, first time here? → https://planetcuhz.com"
+    ],
+    discord: [
+        "💬 Join the Discord → https://discord.gg/5rFRaeBuHn",
+        "💬 CUHZ fam on Discord → https://discord.gg/5rFRaeBuHn",
+        "💬 Real convos happening in Discord → https://discord.gg/5rFRaeBuHn",
+        "💬 Don't lurk, join the Discord → https://discord.gg/5rFRaeBuHn",
+        "💬 Link up with the fam → https://discord.gg/5rFRaeBuHn",
+        "💬 Where the CUHZ planning happens → https://discord.gg/5rFRaeBuHn",
+        "💬 Free to join, hard to leave → https://discord.gg/5rFRaeBuHn",
+        "💬 Slide in the Discord → https://discord.gg/5rFRaeBuHn",
+        "💬 CUHZ Discord — come say what's up → https://discord.gg/5rFRaeBuHn",
+        "💬 Planet CUHZ Discord is active 24/7 → https://discord.gg/5rFRaeBuHn"
+    ],
+    socials: [
+        "🔗 All links → https://linktr.ee/PlanetCUHZ",
+        "🔗 Every socials link in one spot → https://linktr.ee/PlanetCUHZ",
+        "🔗 Follow the whole movement → https://linktr.ee/PlanetCUHZ",
+        "🔗 IG, TikTok, YT — all here → https://linktr.ee/PlanetCUHZ",
+        "🔗 Don't miss anything CUHZ → https://linktr.ee/PlanetCUHZ",
+        "🔗 Bookmark this → https://linktr.ee/PlanetCUHZ",
+        "🔗 Linktree central → https://linktr.ee/PlanetCUHZ",
+        "🔗 Planet CUHZ universe in one link → https://linktr.ee/PlanetCUHZ",
+        "🔗 One link, all the vibes → https://linktr.ee/PlanetCUHZ",
+        "🔗 Tap in across platforms → https://linktr.ee/PlanetCUHZ"
+    ],
+    tools: [
+        "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "⛓️ Try the Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "🔗 Make your own CUHZ chain → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "⛓️ Chain tool — free to use → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "🔗 Chain Generator is live → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "⛓️ Build a chain in seconds → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "🔗 CUHZ chains for the culture → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "⛓️ Mint ya vibe — Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "🔗 Chain tool — drop in and cook → https://cuhz-bot-dashboard-846.created.app/chain-generator",
+        "⛓️ The Chain Generator is how we move → https://cuhz-bot-dashboard-846.created.app/chain-generator"
+    ],
+    rules: [
+        "📌 Be respectful. No hate. No spam. Stay CUHZ.",
+        "📌 House rules: respect the chat, love the cuhz, keep it clean.",
+        "📌 Chat is a vibe — keep it that way. No hate, no spam.",
+        "📌 CUHZ rules: respect always, hate never.",
+        "📌 Good vibes only. Drama gets dropped.",
+        "📌 We build up, we don't tear down. Stay CUHZ.",
+        "📌 Mods enforce love, not fear. Respect the fam.",
+        "📌 Keep it real, keep it clean, keep it CUHZ.",
+        "📌 No hate, no spam, no cap. That's the code.",
+        "📌 Planet CUHZ code: love louder than hate."
+    ],
+    support: [
+        "🔥 Type !hype, !vibe, or !w to show love in the chat!",
+        "🔥 Follow the stream if you're vibin' — it's free 💎",
+        "🔥 Drop a follow, tell a friend. That's how we grow.",
+        "🔥 Sharing the stream helps more than you think 💎",
+        "🔥 Lurkers welcome — drop a !lurk so we know you're here 👀",
+        "🔥 If you're enjoying the vibes, a follow helps the fam 💎",
+        "🔥 Check !commands to see what this bot can do 🤖",
+        "🔥 Raid us when you wrap up — we raid back 💎",
+        "🔥 Type !socials to follow CUHZ everywhere 🔗",
+        "🔥 Support the stream — follow + share = real MVP moves 💎"
+    ]
+};
+
+// Welcome-back lines — fire when a user returns after ≥4h away (separate from First Contact).
+const WELCOME_BACK_QUOTES = [
+    "🌌 Welcome back cuhz! Good to see you again 💎",
+    "⚡ Look who's back in the frequency — welcome home 🌌",
+    "💎 Cuhz fam back in the building. Let's get it ⚡",
+    "🌌 Returning champion detected. Welcome back 🚀",
+    "⚡ Been a minute! Good to have you back cuhz 💎",
+    "💎 The CUHZ fam missed you — welcome back in 🌌",
+    "🚀 Back in the chat where you belong. Welcome home cuhz 💎",
+    "🌌 Welcome back! Chat level immediately went up ⚡"
+];
+
+// !gg for geniiknight — Slytherin
+const GG_QUOTES = [
+    "🐍 Slytherin stand UP! @geniiknight just slid in 💚",
+    "🐍 GeniiKnight in the chat — the cunning ones always pull through 💚",
+    "💚 @geniiknight touched down. Slytherin pride on display 🐍",
+    "🐍 Genii in the building! Strategy + vibes in one package 💚",
+    "💚 The knight has arrived — @geniiknight we been ready 🐍",
+    "🐍 Slytherin energy activated. @geniiknight setting the tone 💚",
+    "💚 Ayy it's Genii! The common room just got hype 🐍",
+    "🐍 @geniiknight slid in quiet but loud — that's the move 💚"
 ];
 
 
@@ -953,7 +1197,8 @@ async function updateStreamState(channel) {
 
         if (shouldAnnounce) {
             logger.info(`🔴 STREAM LIVE: ${channel} playing ${gameName}`);
-            client.say(channel, `🔴 WE ARE LIVE! playing ${gameName}! Get in here cuhz! 🚀`);
+            const template = pickNoRepeat(`live:${channel}`, LIVE_ANNOUNCEMENTS, 2);
+            sendMessage(channel, template.replace('{game}', gameName));
         } else {
             logger.info(`🔴 Stream live (already announced): ${channel}`);
         }
@@ -1044,18 +1289,21 @@ function startRotationalTimer(channel) {
 
                 // If daily message is set, alternate it every other cycle
                 if (dailyMsg && index % 2 === 0) {
-                    client.say(channel, dailyMsg).catch(err => logger.error('Error sending daily msg:', err));
+                    sendMessage(channel, dailyMsg);
                 } else {
-                    const timerIndex = dailyMsg ? Math.floor(index / 2) % persona.timers.length : index % persona.timers.length;
-                    const message = persona.timers[timerIndex];
-                    if (message) {
-                        client.say(channel, message).catch(err => logger.error('Error sending timer msg:', err));
-                    }
+                    // Pick a TIMER_POOLS category that isn't the one we fired last time.
+                    const lastKey = `timerCat:${channel}`;
+                    const lastCat = _recentPicks.get(lastKey) || [];
+                    const allCats = Object.keys(TIMER_POOLS);
+                    const available = allCats.filter(c => !lastCat.includes(c));
+                    const cat = (available.length ? available : allCats)[Math.floor(Math.random() * (available.length || allCats.length))];
+                    _recentPicks.set(lastKey, [cat]);
+                    const line = pickNoRepeat(`timer:${channel}:${cat}`, TIMER_POOLS[cat], 3);
+                    if (line) sendMessage(channel, line);
                 }
 
-                // Rotate
-                const totalSlots = dailyMsg ? persona.timers.length * 2 : persona.timers.length;
-                const nextIndex = (index + 1) % totalSlots;
+                // Rotate daily-slot alternation
+                const nextIndex = (index + 1) % 2;
                 timerIndices.set(channel, nextIndex);
             } else {
                 // logger.debug(`Skipping timer for ${channel} (Stream Offline)`);
@@ -1127,6 +1375,9 @@ async function handleMessage(channel, tags, message, self) {
     const isCommand = message.startsWith('!');
     userMemory.recordMessage(channel, username, message, isCommand);
 
+    // Declared here so both the points/welcome block and later command dispatch can read it.
+    const msg = message.toLowerCase();
+
     // --- Track User Activity ---
     try {
         const usernameL = username.toLowerCase();
@@ -1161,14 +1412,15 @@ async function handleMessage(channel, tags, message, self) {
         `);
         await upsertUser.run(usernameL);
 
-        // 4. Check Achievements (Async)
+        // 4. Check Achievements (Async) — decoupled from points so a failure here
+        //    can't break point awarding, and routed through the send queue.
         loyaltySystem.checkAchievements(usernameL).then(newAchievements => {
             if (newAchievements && newAchievements.length > 0) {
                 newAchievements.forEach(ach => {
-                    client.say(channel, `🏆 ACHIEVEMENT UNLOCKED: @${tags.username} earned '${ach}'!`);
+                    sendMessage(channel, `🏆 ACHIEVEMENT UNLOCKED: @${tags.username} earned '${ach}'!`);
                 });
             }
-        });
+        }).catch(err => logger.error('Achievement check failed:', err && err.message ? err.message : err));
 
         // ... commands ...
 
@@ -1185,15 +1437,34 @@ async function handleMessage(channel, tags, message, self) {
 
 
         const persona = getChannelConfig(channel);
-        // Welcome back message (if last seen > 24h ago or new user AND settings allow it)
+        // Per-channel First Contact: each channel gets to welcome the user once.
+        // Returning-user welcome: fire a lighter "welcome back" line if it's been ≥4h
+        // since we last welcomed them in THIS channel (and they haven't spoken in 4h+).
         const canWelcome = !persona.settings || persona.settings.auto_welcome;
-        if (canWelcome && (!user || user.last_seen < oneDayAgo)) {
+        if (canWelcome) {
+            const welcomeKey = `${channel}:${usernameL}`;
+            const welcomeState = _channelWelcomes.get(welcomeKey);
             const joinTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
-            if (joinTier === TIERS.BASIC) {
-                client.say(channel, `Wassup cuhz, Welcome to the stream! @${tags.username}`);
-            } else {
-                const randomWelcome = WELCOME_QUOTES[Math.floor(Math.random() * WELCOME_QUOTES.length)];
-                client.say(channel, `${randomWelcome} @${tags.username} 🌌`);
+            const nowMs = now.getTime();
+
+            if (!welcomeState) {
+                // First Contact for this channel — full hype welcome.
+                if (joinTier === TIERS.BASIC) {
+                    sendMessage(channel, `Wassup cuhz, Welcome to the stream! @${tags.username}`);
+                } else {
+                    const randomWelcome = WELCOME_QUOTES[Math.floor(Math.random() * WELCOME_QUOTES.length)];
+                    sendMessage(channel, `${randomWelcome} @${tags.username} 🌌`);
+                }
+                _channelWelcomes.set(welcomeKey, { firstContactAt: nowMs, lastWelcomedAt: nowMs });
+            } else if (nowMs - welcomeState.lastWelcomedAt >= WELCOME_BACK_COOLDOWN_MS) {
+                // Only fire welcome-back if the user ALSO hasn't chatted in the last 4h
+                // (prevents re-welcoming someone who just idled in the tab).
+                const lastSeenMs = user ? new Date(user.last_seen).getTime() : 0;
+                if (!user || (nowMs - lastSeenMs) >= WELCOME_BACK_COOLDOWN_MS) {
+                    const line = pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3);
+                    sendMessage(channel, `${line} @${tags.username}`);
+                    welcomeState.lastWelcomedAt = nowMs;
+                }
             }
         }
 
@@ -1207,7 +1478,6 @@ async function handleMessage(channel, tags, message, self) {
         logger.error('Error tracking user points/welcome:', err.message);
     }
 
-    const msg = message.toLowerCase();
     const cleanChannel = channel.replace('#', '').toLowerCase();
 
     // --- Tier System Definition ---
@@ -1300,6 +1570,33 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // 0.849. !rock — all tiers, 12 variants, no repeats within last 3 fires.
+    if (msg === '!rock') {
+        const line = pickNoRepeat(`rock:${cleanChannel}`, ROCK_QUOTES, 3);
+        sendMessage(channel, line);
+        return;
+    }
+
+    // 0.849b. New user commands — all tiers, 8 variants each, no repeats within last 2.
+    const USER_VARIANT_POOLS = {
+        '!tj':      TJ_QUOTES,
+        '!spence':  SPENCE_QUOTES,
+        '!snowy':   SNOWY_QUOTES,
+        '!sw':      SNOWY_QUOTES,
+        '!kasha':   KASHA_QUOTES,
+        '!qween':   QWEEN_QUOTES,
+        '!fvmous':  FVMOUS_QUOTES,
+        '!fam':     FVMOUS_QUOTES,
+        '!gg':      GG_QUOTES,
+        '!geni':    GG_QUOTES,
+    };
+    if (USER_VARIANT_POOLS[msg]) {
+        const pool = USER_VARIANT_POOLS[msg];
+        const line = pickNoRepeat(`user:${msg}:${cleanChannel}`, pool, 2);
+        sendMessage(channel, line);
+        return;
+    }
+
     // 0.85. Basic User Commands (ALL tiers — custom shoutouts for basic channel owners)
     if (BASIC_USER_COMMANDS[msg]) {
         client.say(channel, BASIC_USER_COMMANDS[msg]);
@@ -1365,8 +1662,8 @@ async function handleMessage(channel, tags, message, self) {
     // --- Special Master Commands (Precedence) - Pro/Premium Tier Only ---
     if (isProOrPremium) {
         if (msg === '!ac') {
-            const randomQuote = AC_QUOTES[Math.floor(Math.random() * AC_QUOTES.length)];
-            client.say(channel, `🐍 ${randomQuote}`);
+            const line = pickNoRepeat(`ac:${cleanChannel}`, AC_QUOTES, 3);
+            sendMessage(channel, line);
             return;
         }
 
@@ -1858,12 +2155,25 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg.startsWith('!so ') && isMod && isProOrPremium) {
-        const target = message.split(' ')[1];
-        if (target) {
-            const cleanTarget = target.replace('@', '');
-            client.say(channel, `Big shoutout to @${cleanTarget}! Everyone check them out here: https://twitch.tv/${cleanTarget} 🚀`);
-        }
+    if (msg.startsWith('!so')) {
+        // Mod + broadcaster only — silently drop for everyone else.
+        if (!isMod) return;
+        // Loose-parse: grab the first @username-like token, ignore trailing context
+        // (e.g. "!so @four_a_reason [raiding in from NBA 2K26]").
+        const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
+        const rawTarget = match && match.length >= 2 ? match[1] : null; // [0] is "so"
+        if (!rawTarget) return;
+        const cleanTarget = rawTarget.replace('@', '').toLowerCase();
+        const hypeLines = [
+            `CUHZ fam supports CUHZ fam 💎`,
+            `Go pull up — tell 'em cuhz sent you 🌌`,
+            `Frequency tuned, show 'em love ⚡`,
+            `Real ones support real ones 🔥`,
+            `They been cookin' — go see for yourself 🚀`,
+            `Planet CUHZ in the building 🌌`
+        ];
+        const hype = hypeLines[Math.floor(Math.random() * hypeLines.length)];
+        sendMessage(channel, `🚀 Go show @${cleanTarget} some love → twitch.tv/${cleanTarget}   ${hype}`);
         return;
     }
 
