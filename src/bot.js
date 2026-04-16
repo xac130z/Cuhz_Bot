@@ -137,7 +137,7 @@ const USER_COMMANDS = {
     '!chi': 'Windy City energy! Chi2K is in the building. 🏀',
     '!bot': 'Just a bot doing bot things. 🤖',
     '!drizzy': 'Drizzy in the cut! No drizzle, just reign! ☔👑',
-    '!ec': 'Edward in the chat! Let’s get it. ⚡',
+    // !ec — rotated handler; see EC_QUOTES + dispatch block.
     '!four': 'The Captain is here. 🫡',
     '!jay': 'HBN Jay bringing the heat! 300 level energy! 🔥',
     '!rell': 'Rell is here, the vibes are up! 🔥',
@@ -177,31 +177,33 @@ const HYPE_MESSAGES = [
     "This stream hitting different tonight! 🔥🌌"
 ];
 
+// !quote pool — format: "{emoji} {quote} — {author} {emoji}". 24 entries from
+// the authors called out in Phase 6. Picked via pickNoRepeat (no-repeat-last-3).
 const MOTIVATIONAL_QUOTES = [
-    "Everything negative - pressure, challenges - is all an opportunity for me to rise. — Kobe Bryant 🐍",
-    "Dedication sees dreams come true. — Kobe Bryant 🐍",
-    "The most important thing is to try and inspire people so that they can be great in whatever they want to do. — Kobe Bryant 🐍",
-    "I create my own path. It was straight and narrow. I looked at it this way: you were either in my way, or out of it. — Kobe Bryant 🐍",
-    "If you do not believe in yourself, no one will do it for you. — Kobe Bryant 🐍",
-    "A grateful heart is a magnet for miracles. ✨",
-    "Happiness is not by chance, but by choice. ☀️",
-    "The expert in anything was once a beginner. 🌱",
-    "Your vibe attracts your tribe. 🫂",
-    "Consistency is key. Keep showing up. 🔑",
-    "Dream big. Work hard. Stay humble. 💪",
-    "Focus on the step in front of you, not the whole staircase. 🪜",
-    "Success is the sum of small efforts repeated day in and day out. 📈",
-    "Believe you can and you're halfway there. 🚀",
-    "Don't watch the clock; do what it does. Keep going. ⏰",
-    "Your only limit is your mind. 🧠",
-    "Great things never came from comfort zones. 🌊",
-    "Discipline is doing what needs to be done, even if you don't want to do it. ⚔️",
-    "Gratitude changes everything. 🙏",
-    "Start where you are. Use what you have. Do what you can. 🛠️",
-    "Every day is a second chance. 🌅",
-    "Positive mind. Positive vibes. Positive life. ☮️",
-    "Fall down seven times, stand up eight. 🥊",
-    "Make today so awesome yesterday gets jealous. 😎"
+    "🐍 The most important thing is to try and inspire people so that they can be great in whatever they want to do. — Kobe Bryant 🐍",
+    "🐍 Everything negative — pressure, challenges — is all an opportunity for me to rise. — Kobe Bryant 🐍",
+    "🐍 Dedication sees dreams come true. — Kobe Bryant 🐍",
+    "✊ The time is always right to do what is right. — Dr. Martin Luther King Jr. ✊",
+    "✊ Darkness cannot drive out darkness; only light can do that. Hate cannot drive out hate; only love can do that. — Dr. Martin Luther King Jr. ✊",
+    "✊ I have decided to stick with love. Hate is too great a burden to bear. — Dr. Martin Luther King Jr. ✊",
+    "🔥 A man who stands for nothing will fall for anything. — Malcolm X 🔥",
+    "🔥 Education is the passport to the future, for tomorrow belongs to those who prepare for it today. — Malcolm X 🔥",
+    "🌿 You never know how strong you are until being strong is your only choice. — Bob Marley 🌿",
+    "🌿 Love the life you live. Live the life you love. — Bob Marley 🌿",
+    "🌍 A people without the knowledge of their past history, origin and culture is like a tree without roots. — Marcus Garvey 🌍",
+    "🌍 With confidence, you have won before you have started. — Marcus Garvey 🌍",
+    "🥊 Don't count the days, make the days count. — Muhammad Ali 🥊",
+    "🥊 He who is not courageous enough to take risks will accomplish nothing in life. — Muhammad Ali 🥊",
+    "🌹 You may encounter many defeats, but you must not be defeated. — Maya Angelou 🌹",
+    "🌹 I can be changed by what happens to me. But I refuse to be reduced by it. — Maya Angelou 🌹",
+    "📜 If there is no struggle, there is no progress. — Frederick Douglass 📜",
+    "💙 The game is going to test you. Never fold. Stay down till you come up. — Nipsey Hussle 💙",
+    "💙 The highest human act is to inspire. — Nipsey Hussle 💙",
+    "🌹 Reality is wrong. Dreams are for real. — Tupac Shakur 🌹",
+    "✍️ Not everything that is faced can be changed, but nothing can be changed until it is faced. — James Baldwin ✍️",
+    "📚 If you surrender to the air, you can ride it. — Toni Morrison 📚",
+    "✊ The revolution has always been in the hands of the young. — Huey P. Newton ✊",
+    "✊ You can jail a revolutionary, but you can't jail the revolution. — Fred Hampton ✊"
 ];
 
 const LUCKY_4_QUOTES = [
@@ -282,6 +284,18 @@ const ROCK_QUOTES = [
 ];
 
 // --- New user commands: 8 variants each, pickNoRepeat(..., 2). Everyone-permission. ---
+
+// !ec for edward1chuckk — 8 variants, hype + family + ⚡ energy.
+const EC_QUOTES = [
+    "⚡ Edward in the chat! Let's get it cuhz 🔥",
+    "⚡ @edward1chuckk just pulled up — energy officially maxed ⚡",
+    "🔥 EDWARD IN THE BUILDING! CUHZ fam louder than the algorithm ⚡",
+    "⚡ Ayy it's Edward! Glad you made it cuhz, we been ready 🔥",
+    "💎 Edward slid in — the frequency just got charged ⚡",
+    "⚡ @edward1chuckk in the chat means it's go time. Let's WORK 🔥",
+    "🔥 Edward touched down. CUHZ fam fully plugged in ⚡",
+    "⚡ Welcome back Edward! Real ones always pull through 💎"
+];
 
 // !TJ for tjmisses — hook: "ain't no show like a TJ show"
 const TJ_QUOTES = [
@@ -534,22 +548,17 @@ const DAME_QUOTES = [
     "You already know what it is! Dame making moves! 💯"
 ];
 
+// PNX for PhoenixPNYC — spiritual + grounded tone, palette ☮️ 📡 ⚡.
+// Each line is a complete string — DO NOT re-prepend ☮️ in the handler (that was the old bug).
 const PNX_QUOTES = [
-    "☮️ PNX in the building! Peace and love to the cuhz! ✌️",
-    "☮️ Positive Network Xperience! Welcome to the vibes! ✨",
-    "☮️ PNX bringing that zen energy to Planet Cuhz. Stay peaceful! 🧘‍♂️",
-    "☮️ Peace, Love, and PNX! Glad you're here cuhz! ❤️",
-    "☮️ The vibes just got smoother. PNX is here! 🌊",
-    "☮️ Keep it peaceful, keep it PNX. 🕊️",
-    "☮️ PNX in the cut! Spreading good vibes only! ☮️",
-    "☮️ Salute to the peace-maker! PNX is online! 🫡",
-    "☮️ No stress, just PNX. Welcome back fam! ☀️",
-    "☮️ PNX: The frequency of Planet Cuhz. 📡",
-    "☮️ Inner peace, outer energy. PNX is here to stay! ⚡",
-    "☮️ Leveling up the harmony. PNX has entered! 🌌",
-    "☮️ Good vibes are contagious. Thanks for bringing them, PNX! ☯️",
-    "☮️ High frequency, low ego. PNX in the house! 🏠",
-    "☮️ 4 A Reason, 4 the Peace. PNX 4 Ever! 💎"
+    "☮️ PhoenixPNYC in the frequency — peace in, peace out 📡",
+    "📡 PNX slid in. Inner peace, outer energy ⚡",
+    "☮️ The peacekeeper's here. Stay grounded cuhz 📡",
+    "⚡ PNX touched down — high frequency, low ego ☮️",
+    "📡 Phoenix in the chat — good vibes broadcasting ☮️",
+    "☮️ Ayy PNX! Grounded energy, elevated vibe 📡",
+    "⚡ PNX in the building — the frequency of Planet CUHZ ☮️",
+    "☮️ Welcome back PNX. No stress, just signal 📡"
 ];
 
 const BERN_QUOTES = [
@@ -1579,6 +1588,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // 0.849b. New user commands — all tiers, 8 variants each, no repeats within last 2.
     const USER_VARIANT_POOLS = {
+        '!ec':      EC_QUOTES,
         '!tj':      TJ_QUOTES,
         '!spence':  SPENCE_QUOTES,
         '!snowy':   SNOWY_QUOTES,
@@ -1711,8 +1721,9 @@ async function handleMessage(channel, tags, message, self) {
         }
 
         if (msg === '!pnx') {
-            const randomPnx = PNX_QUOTES[Math.floor(Math.random() * PNX_QUOTES.length)];
-            client.say(channel, `☮️ ${randomPnx}`);
+            // Quotes already include their leading emoji — no prefix here (was the doubled-emoji bug).
+            const line = pickNoRepeat(`pnx:${cleanChannel}`, PNX_QUOTES, 3);
+            sendMessage(channel, line);
             return;
         }
 
@@ -1911,14 +1922,17 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!quote' || msg === '!motivation') {
-        const randomQuote = MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)];
-        client.say(channel, `🦁 ${randomQuote}`);
+        // Quotes already include their own author-framed emojis — no prefix here.
+        const line = pickNoRepeat(`quote:${cleanChannel}`, MOTIVATIONAL_QUOTES, 3);
+        sendMessage(channel, line);
         return;
     }
 
+    // !4 aliases to the !ac / Four a Reason pool (shared no-repeat key so the two
+    // commands don't accidentally fire the same line back-to-back).
     if (msg === '!4') {
-        const randomLucky = LUCKY_4_QUOTES[Math.floor(Math.random() * LUCKY_4_QUOTES.length)];
-        client.say(channel, `🍀 ${randomLucky}`);
+        const line = pickNoRepeat(`ac:${cleanChannel}`, AC_QUOTES, 3);
+        sendMessage(channel, line);
         return;
     }
 
