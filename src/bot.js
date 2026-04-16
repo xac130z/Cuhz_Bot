@@ -773,6 +773,15 @@ async function initializeTwitchClient() {
         logger.info(`Using channels from config:`, channelsToJoin);
     }
 
+    // Ensure ALL tiered channels are joined (basic channels may not be in dashboard)
+    const tieredChannels = Object.keys(CHANNEL_TIERS).map(ch => `#${ch.toLowerCase()}`);
+    for (const ch of tieredChannels) {
+        if (!channelsToJoin.includes(ch)) {
+            channelsToJoin.push(ch);
+            logger.info(`Adding tiered channel not in dashboard: ${ch}`);
+        }
+    }
+
     if (channelsToJoin.length === 0) {
         logger.warn('No channels configured to join!');
     }
