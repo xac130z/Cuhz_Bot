@@ -297,75 +297,77 @@ const EC_QUOTES = [
     "⚡ Welcome back Edward! Real ones always pull through 💎"
 ];
 
-// !TJ for tjmisses — hook: "ain't no show like a TJ show"
+// !TJ for tjmisses — hook: "ain't no show like a TJ show". Palette 🎬 🎙️ 🔥 ⚡ 💎.
 const TJ_QUOTES = [
-    "🎤 Ain't no show like a TJ show! @tjmisses in the building 🔥",
-    "🎤 The one, the only — @tjmisses. Ain't no show like a TJ show 💎",
+    "🎬 Ain't no show like a TJ show! @tjmisses in the building 🔥",
+    "🎙️ The one, the only — @tjmisses. Ain't no show like a TJ show 💎",
     "🔥 TJ JUST PULLED UP. Say it with me: ain't no show like a TJ show ⚡",
-    "🎤 Lights up, cameras on — @tjmisses is live. TJ show or no show 🌌",
+    "🎬 Lights up, cameras on — @tjmisses is live. TJ show or no show 🎙️",
     "💎 Ain't no show like a TJ show, and ain't no energy like TJ energy. Welcome cuhz 🔥",
-    "⚡ TJ just walked in and the whole vibe shifted. You already know — TJ show 🎤",
-    "🌌 @tjmisses in the frequency. Ain't no show like a TJ show, never has been 💎",
-    "🔥 TJ MISSES IN THE CHAT! Clear the stage — ain't no show like a TJ show 🎤"
+    "⚡ TJ just walked in and the whole vibe shifted. You already know — TJ show 🎙️",
+    "🎙️ @tjmisses on the mic. Ain't no show like a TJ show, never has been 💎",
+    "🔥 TJ MISSES IN THE CHAT! Clear the stage — ain't no show like a TJ show 🎬"
 ];
 
-// !spence — hype + respect
+// !spence — hype + respect, treat him like a solid vet. Palette 🔥 💪🏿 ⚡ 💎 🌌.
 const SPENCE_QUOTES = [
-    "👑 @spence in the chat — real recognize real. Welcome cuhz 💎",
+    "💪🏿 @spence in the chat — real recognize real. Welcome cuhz 💎",
     "🔥 SPENCE touched down. The standard just got higher ⚡",
     "💎 Spence slid through — respect given, respect earned. Welcome in 🌌",
     "⚡ @spence is here. Take notes, this one moves different 🔥",
-    "👑 Spence in the building — veteran energy, rookie hunger 💎",
+    "💪🏿 Spence in the building — veteran energy, rookie hunger 💎",
     "🌌 Ayy it's Spence! Good to see you cuhz, we been ready 🔥",
-    "🔥 Spence pulled up and the chat leveled up. That's how it goes 👑",
+    "🔥 Spence pulled up and the chat leveled up. That's how it goes 💪🏿",
     "💎 @spence — always a W when you roll through. Welcome home cuhz ⚡"
 ];
 
-// !snowy for snowy_wolfies_ttv — includes "can't ban the Snowman" callback
+// !snowy for snowy_wolfies_ttv — includes "can't ban the Snowman" callback.
+// Palette ❄️ 💖 🧙‍♀️ 💜 ⚡.
 const SNOWY_QUOTES = [
     "❄️ The Snowman has entered the chat! @snowy_wolfies_ttv on deck 💜",
     "❄️ Can't ban the Snowman — @snowy_wolfies_ttv here to stay 🧙‍♀️",
     "💜 Snowy in the building! Positivity dialed to a thousand ❄️",
-    "🧙‍♀️ Hogwarts Legacy royalty in the chat — @snowy_wolfies_ttv touched down ✨",
-    "❄️ The frequency just got cooler. Snowy's here cuhz 💜",
-    "💜 @snowy_wolfies_ttv SLID IN. Somebody alert the wolves 🐺",
-    "❄️ Snowman energy activated. Chat officially frosted with good vibes ✨",
-    "🐺 Snowy in the chat! Pack's rolling deep tonight 💜"
+    "🧙‍♀️ Hogwarts Legacy royalty in the chat — @snowy_wolfies_ttv touched down 💖",
+    "❄️ The frequency just got cooler. Snowy's here cuhz ⚡",
+    "💖 @snowy_wolfies_ttv SLID IN — chat officially upgraded ❄️",
+    "❄️ Can't ban the Snowman, can't dim the Snowman — Snowy's HERE 💜",
+    "⚡ Snowy in the chat! Hogwarts crew rolling deep tonight 🧙‍♀️"
 ];
 
-// !kasha for dangbabykasha — Gryffindor
+// !kasha for dangbabykasha — Gryffindor energy. Palette 🦁 🔥 ⚡ 💎.
 const KASHA_QUOTES = [
     "🦁 Gryffindor ROAR! @dangbabykasha just pulled up 🔥",
     "🦁 Kasha in the chat — bravery checked in ⚡",
     "🔥 @dangbabykasha SLID IN! The lion's den is full now 🦁",
-    "⚡ Kasha energy detected. Chat immediately got braver 🦁",
+    "⚡ Kasha energy detected. Chat immediately got braver 💎",
     "🦁 Our girl Kasha is here! Gryffindor stand up 🔥",
-    "🔥 @dangbabykasha touched down — courage on camera ⚡",
-    "🦁 Kasha in the building, and the sorting hat agrees — she BUILT different 🔥",
-    "⚡ Welcome in @dangbabykasha! Real ones know 🦁"
+    "💎 @dangbabykasha touched down — courage on camera ⚡",
+    "🦁 Kasha in the building, and the sorting hat agrees — she BUILT different 💎",
+    "🔥 Welcome in @dangbabykasha! Real ones know 🦁"
 ];
 
-// !qween for qweenstormygirlnz89
+// !qween for qweenstormygirlnz89 — Sims + basketball loyal regular.
+// Palette 👑 🏀 ✨ 💖 📡.
 const QWEEN_QUOTES = [
-    "👑 QWEEN STORMY in the chat! Sims slayer, vibe curator 🏀✨",
+    "👑 QWEEN STORMY in the chat! Sims slayer, vibe curator 🏀",
     "👑 @qweenstormygirlnz89 we see you cuhz — the frequency is up 📡",
     "✨ Qween Stormy pulled up. Chat officially upgraded 👑",
     "👑 Ayy it's Qween! Good to see you cuhz 💖",
     "💖 @qweenstormygirlnz89 slid through — royalty in the building 👑",
-    "👑 Qween energy only. Stormy here to run it ⚡",
-    "✨ Qween Stormy in the chat means we WINNING today 👑",
+    "👑 Qween energy only. Stormy here to run it 📡",
+    "✨ Qween Stormy in the chat means we WINNING today 🏀",
     "💖 Welcome back Qween — the throne was empty without you 👑"
 ];
 
-// !fvmous for realfvmousk — includes "4 RAIDY" callback
+// !fvmous for realfvmousk — includes "4 RAIDY" callback. Palette ⭐ 🚀 💎 🔥.
 const FVMOUS_QUOTES = [
     "⭐ FVMOUS in the building! @realfvmousk that raid energy unmatched 🚀",
     "⭐ 4 RAIDY! @realfvmousk dropped in with the heat 🔥",
     "🚀 Fvmous just touched down — CUHZ fam stand up ⭐",
     "🔥 @realfvmousk slid in with the 4 RAIDY energy. Let's GO ⭐",
-    "⭐ Fvmous here! Star power officially in the chat 🌟",
-    "🌟 @realfvmousk pulled up. Frequency got famous real quick ⭐",
-    "⭐ FVMOUS! 4 RAIDY 4 LIFE — welcome home cuhz 🚀",
+    "💎 Fvmous here! Star power officially in the chat ⭐",
+    "⭐ @realfvmousk pulled up. Frequency got famous real quick 💎",
+    "🚀 FVMOUS! 4 RAIDY 4 LIFE — welcome home cuhz 💎",
     "🔥 @realfvmousk in the chat — legends always pull through ⭐"
 ];
 
@@ -467,16 +469,29 @@ const WELCOME_BACK_QUOTES = [
     "🌌 Welcome back! Chat level immediately went up ⚡"
 ];
 
-// !gg for geniiknight — Slytherin
+// !gg for geniiknight — Slytherin energy. Palette 🐍 💚 ⚡ 🌌.
 const GG_QUOTES = [
     "🐍 Slytherin stand UP! @geniiknight just slid in 💚",
-    "🐍 GeniiKnight in the chat — the cunning ones always pull through 💚",
+    "🐍 GeniiKnight in the chat — the cunning ones always pull through ⚡",
     "💚 @geniiknight touched down. Slytherin pride on display 🐍",
-    "🐍 Genii in the building! Strategy + vibes in one package 💚",
+    "🌌 Genii in the building! Strategy + vibes in one package 💚",
     "💚 The knight has arrived — @geniiknight we been ready 🐍",
-    "🐍 Slytherin energy activated. @geniiknight setting the tone 💚",
-    "💚 Ayy it's Genii! The common room just got hype 🐍",
-    "🐍 @geniiknight slid in quiet but loud — that's the move 💚"
+    "🐍 Slytherin energy activated. @geniiknight setting the tone ⚡",
+    "💚 Ayy it's Genii! The common room just got hype 🌌",
+    "⚡ @geniiknight slid in quiet but loud — that's the move 🐍"
+];
+
+// !cuhz / !planet — definitive Planet CUHZ brand statement (not user-specific).
+// Palette 🌌 💎 📡 ⚡. Themes: ecosystem, family, frequency.
+const CUHZ_QUOTES = [
+    "🌌 Planet CUHZ — a creator ecosystem built on love, loyalty, and levelin' up. You already in the frequency 💎",
+    "💎 This is Planet CUHZ. Real fam, real frequency, real family 🌌",
+    "📡 Tap in. Planet CUHZ is the frequency — and you tuned in cuhz ⚡",
+    "🌌 Planet CUHZ runs on one thing: the fam holdin' each other UP 💎",
+    "⚡ Welcome to Planet CUHZ — where creators support creators, no cap 📡",
+    "💎 Planet CUHZ = the ecosystem. Frequency tuned, family locked in 🌌",
+    "📡 You ever feel the energy hit different? That's the CUHZ frequency ⚡",
+    "🌌 Planet CUHZ for life. Family over everything, every single time 💎"
 ];
 
 
@@ -1595,10 +1610,15 @@ async function handleMessage(channel, tags, message, self) {
         '!sw':      SNOWY_QUOTES,
         '!kasha':   KASHA_QUOTES,
         '!qween':   QWEEN_QUOTES,
+        // NOTE: !storm alias intentionally NOT wired here — the existing Pro/Premium
+        // !storm handler (with session-tracked first-use vs. repeat) lives downstream
+        // and would be hijacked. Use !qween for the new pool.
         '!fvmous':  FVMOUS_QUOTES,
         '!fam':     FVMOUS_QUOTES,
         '!gg':      GG_QUOTES,
         '!geni':    GG_QUOTES,
+        '!cuhz':    CUHZ_QUOTES,
+        '!planet':  CUHZ_QUOTES,
     };
     if (USER_VARIANT_POOLS[msg]) {
         const pool = USER_VARIANT_POOLS[msg];
