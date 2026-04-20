@@ -152,7 +152,7 @@ const USER_COMMANDS = {
     '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
     '!famous': 'Real Famous K stepping in. Flash the cameras! 📸',
     '!rebound': 'Rebound Mindset. Bounce back stronger every time. 🏀',
-    '!snow': 'can’t ban the snow man ☃️',
+    // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
     '!thorn': 'Watch out for the thorns! 🌹',
     '!zuri': 'Zuri Owen in the house! Welcome family! 🏰',
     '!planet': 'Planet CUHZ is in the building! The mothership has landed. 🌍🌌',
@@ -734,7 +734,7 @@ const L_MESSAGES = [
 
 // --- Basic Tier Custom Shoutouts (accessible in ALL tiers) ---
 const BASIC_USER_COMMANDS = {
-    '!snow': 'can\'t ban the snow man ☃️',
+    // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
     '!tay': 'It\'s giving 2K legend energy — ohthatztayy locked in! 🕹️🏀',
     '!yoo': 'Yoo! Welcome to the stream. 👋'
 };
@@ -1647,6 +1647,7 @@ async function handleMessage(channel, tags, message, self) {
         '!spence':  SPENCE_QUOTES,
         '!snowy':   SNOWY_QUOTES,
         '!sw':      SNOWY_QUOTES,
+        '!snow':    SNOWY_QUOTES,
         '!kasha':   KASHA_QUOTES,
         '!qween':   QWEEN_QUOTES,
         // NOTE: !storm alias intentionally NOT wired here — the existing Pro/Premium
