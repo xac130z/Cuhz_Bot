@@ -24,7 +24,7 @@ const CHANNEL_TIERS = {
     'four_a_reason':         TIERS.PREMIUM,
     'rico2ez':               TIERS.PREMIUM,
     'planetcuhz':            TIERS.PREMIUM,
-    'vgxmahni':              TIERS.BASIC,
+    'thatgirlmahni_':        TIERS.BASIC,
     'qweenstormygirlnz89':   TIERS.BASIC,
     'razredg1':              TIERS.BASIC,
     'snowy_wolfies_ttv':     TIERS.BASIC,
@@ -636,7 +636,7 @@ const MAHNI_QUOTES = [
     "Streamer. Artist. Supporter. Mahni does it all and makes it look easy 💎",
     "Mahni's music hits different — that's not opinion, that's fact 🎧💯",
     "She supports her people like no other. Mahni is the real MVP 🫡❤️",
-    "VGX Mahni with the champion mindset! Can't stop, won't stop 🏆🚀",
+    "Mahni with the champion mindset! Can't stop, won't stop 🏆🚀",
     "Mahni's got bars, beats, and a heart of gold. Respect the grind 🎤✨",
     "If you haven't heard Mahni's music yet, you're sleeping cuhz 😴🔊",
     "The queen of the vibes just walked in. Mahni is HERE 👑🌌",
@@ -650,7 +650,7 @@ const MAHNI_QUOTES = [
     "When the vibes need saving, Mahni pulls up with the soundtrack 🎧🦸‍♀️",
     "Mahni's grind is unmatched. Artist by day, supporter by heart ❤️🎤",
     "If loyalty had a face, it'd be Mahni. She holds it down for everyone 👑💪",
-    "VGX Mahni — the music speaks, the hustle screams, the heart inspires 🏆🌌"
+    "Mahni — the music speaks, the hustle screams, the heart inspires 🏆🌌"
 ];
 
 // --- CUHZ Vibe Commands (All Tiers) ---

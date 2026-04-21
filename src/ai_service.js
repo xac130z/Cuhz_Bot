@@ -46,7 +46,7 @@ STREAMERS:
 - planetcuhz — The brand channel (the boss)
 - rico2ez — Community streamer and collaborator
 - snowy_wolfies_ttv — The stats god
-- VGxMahni — The trophy holder
+- thatgirlmahni_ — The trophy holder (formerly VGxMahni)
 
 COMMUNITY VALUES:
 - Welcoming and inclusive — no hate, no toxicity
