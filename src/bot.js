@@ -142,7 +142,7 @@ const USER_COMMANDS = {
     '!bot': 'Just a bot doing bot things. 🤖',
     '!drizzy': 'Drizzy in the cut! No drizzle, just reign! ☔👑',
     // !ec — rotated handler; see EC_QUOTES + dispatch block.
-    '!four': 'The Captain is here. 🫡',
+    // !four — rotated handler; shares FOUR_QUOTES pool with !4 (see dispatch block).
     '!jay': 'HBN Jay bringing the heat! 300 level energy! 🔥',
     '!rell': 'Rell is here, the vibes are up! 🔥',
     '!jxy': 'Speak up! JxyTalk is in the room. 🎙️',
@@ -268,6 +268,24 @@ const AC_QUOTES = [
     "🌌 Haters stay in the stands — xAc130z in the arena. CUHZ we movin' ⚡",
     "💎 Greatness ain't a moment, it's a lifestyle. Welcome home xAc130z 🐍",
     "⚡ Every setback = setup for a comeback. Captain's back. LET'S WORK 🌌"
+];
+
+// !4 / !four — dedicated to @four_a_reason, leader of Planet CUHZ.
+// Themes: great streamer, 2K player, real friend, leader. Palette 🫡 🏀 🌌 💎 ⚡ 🚀 🔥.
+// 12 variants, no-repeat-last-3 via pickNoRepeat.
+const FOUR_QUOTES = [
+    "🫡 THE CAPTAIN IN THE CHAT! @four_a_reason leading the CUHZ frequency 🌌",
+    "🏀 2K legend in the building — @four_a_reason cookin' defenders like usual 🔥",
+    "💎 @four_a_reason — great streamer, realer friend, the blueprint for Planet CUHZ 🌌",
+    "🌌 Planet CUHZ runs because @four_a_reason pours into the fam every day. Salute 🫡",
+    "🚀 Captain's here. @four_a_reason built this ecosystem brick by brick 💎",
+    "🏀 @four_a_reason on 2K is a PROBLEM for defenders — CUHZ fam stand up 🔥",
+    "🫡 Four leads from the front every single day. Thank you cuhz ⚡",
+    "⚡ @four_a_reason — real friend to the fam, real leader to the movement 💎",
+    "🌌 The man, the myth, the mission. @four_a_reason running Planet CUHZ 🫡",
+    "💎 Nobody shows up for the CUHZ fam like @four_a_reason does. Respect 🫡",
+    "🚀 Captain Four pulled up — the frequency just got sharper. Let's GO 🌌",
+    "🏀 2K king + Planet CUHZ leader + day-one friend = @four_a_reason 💎"
 ];
 
 // 12 warm hype variants for Rocklin — palette 💎 🌹 💖 ✨ ⚡ 🔥 🌌 📡 🚀 only.
@@ -2026,10 +2044,11 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // !4 aliases to the !ac / Four a Reason pool (shared no-repeat key so the two
-    // commands don't accidentally fire the same line back-to-back).
-    if (msg === '!4') {
-        const line = pickNoRepeat(`ac:${cleanChannel}`, AC_QUOTES, 3);
+    // !4 / !four — dedicated to @four_a_reason. Own pool (FOUR_QUOTES), not an
+    // alias of !ac. Shared no-repeat key so !4 and !four don't fire the same
+    // line back-to-back.
+    if (msg === '!4' || msg === '!four') {
+        const line = pickNoRepeat(`four:${cleanChannel}`, FOUR_QUOTES, 3);
         sendMessage(channel, line);
         return;
     }
