@@ -15,16 +15,20 @@ const fs = require('fs');
 const path = require('path');
 
 // --- Tier System Definition ---
+// Canonical access list. Keys MUST be lowercase — lookups do `.toLowerCase()`
+// on the channel name before indexing this map. Any channel not listed falls
+// through to TIERS.BASIC by default (see the `|| TIERS.BASIC` guard in
+// handleMessage), but listing explicitly here makes intent clear.
 const TIERS = { BASIC: 'basic', PRO: 'pro', PREMIUM: 'premium' };
 const CHANNEL_TIERS = {
-    'four_a_reason': TIERS.PREMIUM,
-    'rico2ez': TIERS.PREMIUM,
-    'planetcuhz': TIERS.PREMIUM,
-    'xac130z': TIERS.PREMIUM,
-    'vgxmahni': TIERS.BASIC,
-    'qweenstormygirlnz89': TIERS.BASIC,
-    'ohthatztayy': TIERS.BASIC,
-    'snowy_wolfies_ttv': TIERS.BASIC
+    'four_a_reason':         TIERS.PREMIUM,
+    'rico2ez':               TIERS.PREMIUM,
+    'planetcuhz':            TIERS.PREMIUM,
+    'vgxmahni':              TIERS.BASIC,
+    'qweenstormygirlnz89':   TIERS.BASIC,
+    'razredg1':              TIERS.BASIC,
+    'snowy_wolfies_ttv':     TIERS.BASIC,
+    'ohthatztayy':           TIERS.BASIC
 };
 
 // --- Global Error Handlers (Prevention) ---
