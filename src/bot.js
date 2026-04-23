@@ -272,7 +272,7 @@ const AC_QUOTES = [
 
 // !4 / !four — dedicated to @four_a_reason, leader of Planet CUHZ.
 // Themes: great streamer, 2K player, real friend, leader. Palette 🫡 🏀 🌌 💎 ⚡ 🚀 🔥.
-// 12 variants, no-repeat-last-3 via pickNoRepeat.
+// 30 variants, no-repeat-last-3 via pickNoRepeat.
 const FOUR_QUOTES = [
     "🫡 THE CAPTAIN IN THE CHAT! @four_a_reason leading the CUHZ frequency 🌌",
     "🏀 2K legend in the building — @four_a_reason cookin' defenders like usual 🔥",
@@ -285,7 +285,25 @@ const FOUR_QUOTES = [
     "🌌 The man, the myth, the mission. @four_a_reason running Planet CUHZ 🫡",
     "💎 Nobody shows up for the CUHZ fam like @four_a_reason does. Respect 🫡",
     "🚀 Captain Four pulled up — the frequency just got sharper. Let's GO 🌌",
-    "🏀 2K king + Planet CUHZ leader + day-one friend = @four_a_reason 💎"
+    "🏀 2K king + Planet CUHZ leader + day-one friend = @four_a_reason 💎",
+    "🫡 Four IS the reason. Four a reason, 4 a season, 4 a lifetime 🌌",
+    "🔥 @four_a_reason doesn't just stream — he builds. Planet CUHZ was the vision 💎",
+    "🏀 Buckets on the stream, blueprints behind the scenes. That's Captain Four 🫡",
+    "⚡ The fam runs on Four's energy. Respect the grind cuhz 💎",
+    "🌌 @four_a_reason — certified 2K problem, certified CUHZ leader 🏀",
+    "🫡 Real captain. Real streamer. Real friend. @four_a_reason every time 💎",
+    "🚀 Behind every Planet CUHZ W, there's @four_a_reason holdin' it down 🌌",
+    "🏀 Four's handles on the sticks are ELITE. Pull up and watch the show 🔥",
+    "💎 @four_a_reason showed us what building a real community looks like 🌌",
+    "🫡 Captain Four don't cap, don't quit, don't stop. That's the standard ⚡",
+    "🔥 Four_a_Reason: the streamer who turned a handle into a MOVEMENT 🌌",
+    "🌌 Planet CUHZ ain't just a brand — it's Four's vision made real 💎",
+    "🏀 2K tournament? Four pullin' up. @four_a_reason stays busy 🚀",
+    "🫡 Every cuhz in here is here because Four opened the door. Appreciate him 💎",
+    "⚡ @four_a_reason — builder, leader, friend. The whole package 🌌",
+    "🚀 When Four's live, the frequency is LOCKED. That's how it's always been 🏀",
+    "💎 Captain Four keeps the CUHZ family tight. Real loyalty, both ways 🫡",
+    "🔥 @four_a_reason stays raising the bar — on stream and off. Legend cuhz 🌌"
 ];
 
 // 12 warm hype variants for Rocklin — palette 💎 🌹 💖 ✨ ⚡ 🔥 🌌 📡 🚀 only.
