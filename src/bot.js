@@ -1955,26 +1955,42 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
-    // 1.5. Dynamic Help System based on Tiers. Grouped + under Twitch's 500-char limit per line.
+    // 1.5. Dynamic Help System based on Tiers. Grouped + each sendMessage stays
+    // under Twitch's 500-char per-line limit. Audited against actual dispatch
+    // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
     if (msg === '!help' || msg === '!commands') {
-        // Utility — common to all tiers (differences called out inline).
-        const utility = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !discord !links !cuhz !planet !quote !hype !vibe';
-        // Personality/shoutouts — the user-specific pools.
-        const personality = '🎤 Shoutouts: !ac !4 !ec !rock !pnx !tj !spence !snowy !kasha !qween !fvmous !gg';
+        const utility   = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf';
+        const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
+        const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
+        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !mahni !storm !juan !rico !bern !dame';
+        const crew      = '🎤 Crew: !uni !balen !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !limit !reacts';
+        const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
+        const ai        = 'AI: !ask !code !whois !topchatters';
+
         if (isPremium) {
-            sendMessage(channel, utility + ' | AI: !ask !code !whois !topchatters | ' + personality);
-            sendMessage(channel, 'Mods: !chatreport !mood !give !title !game !so !raid !ban !timeout !settoday !cleartoday — Ask naturally for AI help 💎');
+            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements');
+            sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot');
+            sendMessage(channel, shoutouts);
+            sendMessage(channel, crew + ' | ' + ai);
+            sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
         } else if (tier === TIERS.PRO) {
-            sendMessage(channel, utility + ' | ' + personality + ' | Mods: !chatreport !so !raid !give !settoday !cleartoday');
+            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements');
+            sendMessage(channel, vibes + ' | ' + brand);
+            sendMessage(channel, shoutouts);
+            sendMessage(channel, crew + ' | ' + modsPro);
         } else {
-            sendMessage(channel, utility + ' | ' + personality + ' | Mods: !settoday !cleartoday — Stay CUHZ 🚀');
+            // Basic — limited shoutouts, no AI, no info-link dump
+            sendMessage(channel, utility);
+            sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        client.say(channel, 'Community Commands: !mahni !snow !tay !yoo !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !cuhz !planet !mahni !tay !yoo');
+        sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
 
@@ -1990,9 +2006,11 @@ async function handleMessage(channel, tags, message, self) {
             return;
         }
 
-        // 1.6. Directory Command
+        // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            client.say(channel, 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !cuhz !planet !mahni !storm !juan !rico !bern !dame');
+            sendMessage(channel, '🎤 Crew: !uni !balen !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !limit !reacts');
+            sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
         }
 
