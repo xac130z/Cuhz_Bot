@@ -573,6 +573,62 @@ const RAID_FAREWELLS = [
     "🚀 RAID TIME! @{target} — keep the frequency alive ⚡"
 ];
 
+// Incoming raid — fired automatically on tmi.js 'raided' event.
+// {raider} = raider's display name, {viewers} = raid party size.
+const RAID_INCOMING = [
+    "🚨 RAID INCOMING! @{raider} pulled up with {viewers} cuhz — WELCOME HOME 💎",
+    "🚨 @{raider} just raided with {viewers} cuhz! CUHZ fam show LOVE 🔥",
+    "🚨 The @{raider} crew just touched down — {viewers} strong! Let's GO 🚀",
+    "🚨 Raid alert! @{raider} brought the whole fam ({viewers} cuhz) 🌌",
+    "🚨 BIG RAID from @{raider} — {viewers} cuhz in the building! 💎",
+    "🚨 @{raider} and the fam ({viewers} cuhz) just ARRIVED — chat say hey 🔥",
+    "🚨 Raid from @{raider} ({viewers}) — the frequency just got LOUDER ⚡",
+    "🚨 @{raider} raidin' deep — {viewers} cuhz pullin' up. Welcome WELCOME 💎"
+];
+
+// Sub / resub / gift — fired automatically on tmi.js 'subscription'/'resub'/'subgift'.
+// {user} is the subscriber. {months} is the cumulative month count when applicable.
+const SUB_HYPE = [
+    "💎 @{user} JUST SUBBED! CUHZ fam grew by one — welcome to the family 🌌",
+    "💎 SUB ALERT! @{user} locked in. Real ones make real moves 🔥",
+    "💎 @{user} pulled the trigger! That's how we do it cuhz 🚀",
+    "🚀 @{user} signed UP — CUHZ family for life 💎",
+    "🌌 @{user} just made it OFFICIAL. Welcome to the fam ⚡",
+    "🔥 NEW SUB: @{user}! Cuhz, that's REAL support — appreciate you 💎",
+    "💎 @{user} put their name on it. Salute, cuhz 🫡",
+    "⚡ @{user} just boosted the frequency — sub locked in 💎"
+];
+
+const RESUB_HYPE = [
+    "💎 @{user} resubbed for {months} months! Day-one cuhz energy — appreciate you 🌌",
+    "💎 {months} MONTHS DEEP! @{user} keeps rollin' with the fam 🔥",
+    "🚀 @{user} renewed — {months} months of CUHZ love. We see you cuhz 💎",
+    "🌌 @{user} hit {months} months! Real loyalty looks like THIS ⚡",
+    "🔥 @{user} signed back up for the {months}-month milestone. Family forever 💎",
+    "💎 RESUB! @{user} ({months} mo) keeps the CUHZ flame lit. Salute 🫡"
+];
+
+const SUBGIFT_HYPE = [
+    "🎁 @{gifter} just gifted a sub to @{recipient}! THAT is CUHZ energy 💎",
+    "🎁 @{gifter} blessed @{recipient} with a sub — pay it forward, fam 🚀",
+    "🎁 SUBGIFT! @{gifter} → @{recipient}. Real ones lift real ones 💎",
+    "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
+];
+
+// New follower — manual chat command !nf (tmi.js doesn't emit follower events;
+// auto-detection requires Twitch EventSub which is outside the chat layer).
+// {user} = the new follower's @handle as typed.
+const NEW_FOLLOWER_HYPE = [
+    "💎 NEW FOLLOWER ALERT! @{user} just joined the CUHZ fam — welcome cuhz 🌌",
+    "🌌 @{user} hit follow! That's how the family grows 🔥",
+    "🔥 Welcome @{user}! Real ones tap that follow — appreciate you 💎",
+    "💎 @{user} locked in with a follow. CUHZ fam +1 ⚡",
+    "🚀 @{user} just followed — pull up a seat, you're home now 💎",
+    "🌌 NEW FOLLOWER: @{user}! Glad you're here cuhz 🔥",
+    "⚡ @{user} hit the follow button — the frequency just gained one more 💎",
+    "💎 Fresh follower @{user} — welcome to Planet CUHZ 🌌"
+];
+
 
 
 // --- Welcome Quotes (Dynamic) ---
@@ -1202,6 +1258,60 @@ function setupEventHandlers() {
     });
 
     client.on('message', handleMessage);
+
+    // --- Raid / Sub / Gift event handlers (auto-celebrate) ---
+    client.on('raided', (channel, raider, viewers) => {
+        try {
+            const cleanChannel = channel.replace('#', '').toLowerCase();
+            const line = pickNoRepeat(`raidin:${cleanChannel}`, RAID_INCOMING, 2)
+                .replace('{raider}', raider)
+                .replace('{viewers}', viewers);
+            sendMessage(channel, line);
+            logger.info(`🚨 Raid into ${channel} from ${raider} (${viewers} viewers)`);
+        } catch (err) {
+            logger.error('Raid event handler error:', err && err.message ? err.message : err);
+        }
+    });
+
+    client.on('subscription', (channel, username, method, msgText, userstate) => {
+        try {
+            const cleanChannel = channel.replace('#', '').toLowerCase();
+            const line = pickNoRepeat(`sub:${cleanChannel}`, SUB_HYPE, 2).replace('{user}', username);
+            sendMessage(channel, line);
+            logger.info(`💎 New sub in ${channel}: ${username}`);
+        } catch (err) {
+            logger.error('Subscription event handler error:', err && err.message ? err.message : err);
+        }
+    });
+
+    client.on('resub', (channel, username, monthsLegacy, msgText, userstate, methods) => {
+        try {
+            const cleanChannel = channel.replace('#', '').toLowerCase();
+            // Prefer the cumulative-months tag from userstate if present (tmi.js
+            // populates it for resubs). Fall back to the legacy positional arg.
+            const months = (userstate && userstate['msg-param-cumulative-months']) || monthsLegacy || 1;
+            const line = pickNoRepeat(`resub:${cleanChannel}`, RESUB_HYPE, 2)
+                .replace('{user}', username)
+                .replace('{months}', months);
+            sendMessage(channel, line);
+            logger.info(`💎 Resub in ${channel}: ${username} (${months} months)`);
+        } catch (err) {
+            logger.error('Resub event handler error:', err && err.message ? err.message : err);
+        }
+    });
+
+    client.on('subgift', (channel, username, streakMonths, recipient, methods, userstate) => {
+        try {
+            const cleanChannel = channel.replace('#', '').toLowerCase();
+            const line = pickNoRepeat(`subgift:${cleanChannel}`, SUBGIFT_HYPE, 2)
+                .replace('{gifter}', username)
+                .replace('{recipient}', recipient);
+            sendMessage(channel, line);
+            logger.info(`🎁 Subgift in ${channel}: ${username} → ${recipient}`);
+        } catch (err) {
+            logger.error('Subgift event handler error:', err && err.message ? err.message : err);
+        }
+    });
 }
 
 async function verifyJoin(channel) {
@@ -1983,6 +2093,17 @@ async function handleMessage(channel, tags, message, self) {
         } else {
             client.say(channel, `⚫ OFFLINE | Last Stream: ${new Date(stats.started_at).toLocaleDateString()} | Duration: ${stats.ended_at ? Math.round((new Date(stats.ended_at) - new Date(stats.started_at)) / 60000) + 'm' : 'Unknown'}`);
         }
+        return;
+    }
+
+    // !nf / !newfollower / !follow — manual new-follower hype (tmi.js doesn't
+    // expose follow events; auto-detection requires Twitch EventSub setup).
+    // Usage: !nf @username  (or just !nf — falls back to invoking user).
+    if (msg === '!nf' || msg.startsWith('!nf ') || msg === '!newfollower' || msg.startsWith('!newfollower ')) {
+        const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
+        const target = match && match.length >= 2 ? match[1].replace('@', '') : tags.username;
+        const line = pickNoRepeat(`nf:${cleanChannel}`, NEW_FOLLOWER_HYPE, 2).replace('{user}', target);
+        sendMessage(channel, line);
         return;
     }
 
