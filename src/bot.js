@@ -2141,23 +2141,32 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // !nf / !newfollower / !follow — manual new-follower hype (tmi.js doesn't
-    // expose follow events; auto-detection requires Twitch EventSub setup).
-    // Usage: !nf @username  (or just !nf — falls back to invoking user).
+    // !nf / !newfollower — manual new-follower hype. REQUIRES an @username so
+    // we don't accidentally celebrate the streamer (the typer) as the follower.
+    // Usage: !nf @username
     if (msg === '!nf' || msg.startsWith('!nf ') || msg === '!newfollower' || msg.startsWith('!newfollower ')) {
         const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
-        const target = match && match.length >= 2 ? match[1].replace('@', '') : tags.username;
+        // [0] is the command word ("nf" / "newfollower"), [1] is the target.
+        const target = match && match.length >= 2 ? match[1].replace('@', '') : null;
+        if (!target) {
+            sendMessage(channel, `🛟 Usage: !nf @username — give the new follower their flowers 💎`);
+            return;
+        }
         const line = pickNoRepeat(`nf:${cleanChannel}`, NEW_FOLLOWER_HYPE, 2).replace('{user}', target);
         sendMessage(channel, line);
         return;
     }
 
-    // !sub — manual sub celebration (chat command). The 'subscription' event
-    // listener still auto-fires on real subs; this lets anyone hype manually.
-    // Usage: !sub @username (or !sub — defaults to invoker).
+    // !sub — manual sub celebration. REQUIRES @username for the same reason as
+    // !nf above. The 'subscription' tmi.js event listener still auto-fires on
+    // real subs and uses the actual subber's username.
     if (msg === '!sub' || msg.startsWith('!sub ')) {
         const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
-        const target = match && match.length >= 2 ? match[1].replace('@', '') : tags.username;
+        const target = match && match.length >= 2 ? match[1].replace('@', '') : null;
+        if (!target) {
+            sendMessage(channel, `🛟 Usage: !sub @username — shout out the new sub 💎`);
+            return;
+        }
         const line = pickNoRepeat(`submanual:${cleanChannel}`, SUB_HYPE, 2).replace('{user}', target);
         sendMessage(channel, line);
         return;
