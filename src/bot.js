@@ -1312,6 +1312,8 @@ function setupEventHandlers() {
             logger.error('Subgift event handler error:', err && err.message ? err.message : err);
         }
     });
+
+    logger.info('🚨 Raid / sub / resub / subgift event handlers registered');
 }
 
 async function verifyJoin(channel) {
