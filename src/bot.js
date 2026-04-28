@@ -628,6 +628,16 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
 ];
 
+// Manual !raid (chat command, no args) — celebrate raid energy generically.
+// Different from RAID_INCOMING (auto on 'raided' event) which interpolates {viewers}.
+const RAID_HYPE_MANUAL = [
+    "🚨 RAID ALERT! CUHZ fam show INCOMING love 💎",
+    "🚨 We got raiders cuhz! Welcome WELCOME 🔥",
+    "🚨 The frequency just got LOUDER — CUHZ fam say hey 🌌",
+    "🚨 Pull up new cuhz! You're home now 💎",
+    "🚨 Raid energy detected — CUHZ fam locked in ⚡"
+];
+
 // New follower — manual chat command !nf (tmi.js doesn't emit follower events;
 // auto-detection requires Twitch EventSub which is outside the chat layer).
 // {user} = the new follower's @handle as typed.
@@ -1976,7 +1986,7 @@ async function handleMessage(channel, tags, message, self) {
     // under Twitch's 500-char per-line limit. Audited against actual dispatch
     // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
     if (msg === '!help' || msg === '!commands') {
-        const utility   = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf';
+        const utility   = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
         const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !mahni !storm !juan !rico !bern !dame';
@@ -2138,6 +2148,25 @@ async function handleMessage(channel, tags, message, self) {
         const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
         const target = match && match.length >= 2 ? match[1].replace('@', '') : tags.username;
         const line = pickNoRepeat(`nf:${cleanChannel}`, NEW_FOLLOWER_HYPE, 2).replace('{user}', target);
+        sendMessage(channel, line);
+        return;
+    }
+
+    // !sub — manual sub celebration (chat command). The 'subscription' event
+    // listener still auto-fires on real subs; this lets anyone hype manually.
+    // Usage: !sub @username (or !sub — defaults to invoker).
+    if (msg === '!sub' || msg.startsWith('!sub ')) {
+        const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
+        const target = match && match.length >= 2 ? match[1].replace('@', '') : tags.username;
+        const line = pickNoRepeat(`submanual:${cleanChannel}`, SUB_HYPE, 2).replace('{user}', target);
+        sendMessage(channel, line);
+        return;
+    }
+
+    // !raid — bare (no args) is a manual incoming-raid hype for everyone.
+    // The mod-only !raid <target> farewell stays at its existing site below.
+    if (msg === '!raid') {
+        const line = pickNoRepeat(`raidmanual:${cleanChannel}`, RAID_HYPE_MANUAL, 2);
         sendMessage(channel, line);
         return;
     }
