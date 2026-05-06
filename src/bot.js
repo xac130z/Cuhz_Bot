@@ -162,7 +162,7 @@ const USER_COMMANDS = {
     '!planet': 'Planet CUHZ is in the building! The mothership has landed. 🌍🌌',
     '!shock': 'Warning: High Voltage in the chat! ⚡',
     '!kay': 'Big Mula in the building! 💰',
-    '!limit': 'Taking it to the limit! 🚀',
+    // !limit — rotated handler; aliases to LIMIT_QUOTES via USER_VARIANT_POOLS.
     '!reacts': 'Reactions are LIVE! 👀',
     '!yoo': 'Yoo! Welcome to the stream. 👋',
     '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !bern !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
@@ -519,6 +519,19 @@ const GG_QUOTES = [
     "🐍 Slytherin energy activated. @geniiknight setting the tone ⚡",
     "💚 Ayy it's Genii! The common room just got hype 🌌",
     "⚡ @geniiknight slid in quiet but loud — that's the move 🐍"
+];
+
+// !limit for h0ffl1m1tzzz — community regular. Tag includes the full handle.
+// Palette 🚀 ⚡ 🔥 💯 💎. 8 variants, no-repeat-last-2. Tone: hype + love + family.
+const LIMIT_QUOTES = [
+    "🚀 LIMIT in the chat! @h0ffl1m1tzzz pulled up — no ceilings cuhz 💯",
+    "⚡ Taking it to the LIMIT — @h0ffl1m1tzzz just touched down 🔥",
+    "💯 No limits, no caps — @h0ffl1m1tzzz is HERE 🚀",
+    "🔥 @h0ffl1m1tzzz slid in — pushing past every ceiling cuhz ⚡",
+    "💎 LIMIT pulled up! Real ones go all the way 🚀",
+    "🚀 @h0ffl1m1tzzz in the building — that's how we MOVE 💯",
+    "⚡ Ayy it's Limit! Glad you here cuhz, we been ready 🔥",
+    "💯 @h0ffl1m1tzzz slid through — CUHZ fam fully assembled 💎"
 ];
 
 // !brady / !blitz for BradyBlitz — four_a_reason channel regular.
@@ -1834,6 +1847,7 @@ async function handleMessage(channel, tags, message, self) {
         '!geni':    GG_QUOTES,
         '!brady':   BRADY_QUOTES,
         '!blitz':   BRADY_QUOTES,
+        '!limit':   LIMIT_QUOTES,
         '!cuhz':    CUHZ_QUOTES,
         '!planet':  CUHZ_QUOTES,
     };
@@ -1989,8 +2003,8 @@ async function handleMessage(channel, tags, message, self) {
         const utility   = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !mahni !storm !juan !rico !bern !dame';
-        const crew      = '🎤 Crew: !uni !balen !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !limit !reacts';
+        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !mahni !storm !juan !rico !bern !dame';
+        const crew      = '🎤 Crew: !uni !balen !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
         const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
 
@@ -2009,14 +2023,14 @@ async function handleMessage(channel, tags, message, self) {
             // Basic — limited shoutouts, no AI, no info-link dump
             sendMessage(channel, utility);
             sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !cuhz !planet !mahni !tay !yoo');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !cuhz !planet !mahni !tay !yoo');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2035,8 +2049,8 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !cuhz !planet !mahni !storm !juan !rico !bern !dame');
-            sendMessage(channel, '🎤 Crew: !uni !balen !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !limit !reacts');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !cuhz !planet !mahni !storm !juan !rico !bern !dame');
+            sendMessage(channel, '🎤 Crew: !uni !balen !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
         }
