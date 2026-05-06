@@ -521,17 +521,17 @@ const GG_QUOTES = [
     "⚡ @geniiknight slid in quiet but loud — that's the move 🐍"
 ];
 
-// !limit for h0ffl1m1tzzz — community regular. Tag includes the full handle.
-// Palette 🚀 ⚡ 🔥 💯 💎. 8 variants, no-repeat-last-2. Tone: hype + love + family.
+// !limit for h0ffl1m1tzzz — community regular. Loves the rocket — 🚀 anchors
+// every line. Palette 🚀 ⚡ 🔥 💯 💎. 8 variants, no-repeat-last-2.
 const LIMIT_QUOTES = [
-    "🚀 LIMIT in the chat! @h0ffl1m1tzzz pulled up — no ceilings cuhz 💯",
-    "⚡ Taking it to the LIMIT — @h0ffl1m1tzzz just touched down 🔥",
-    "💯 No limits, no caps — @h0ffl1m1tzzz is HERE 🚀",
-    "🔥 @h0ffl1m1tzzz slid in — pushing past every ceiling cuhz ⚡",
-    "💎 LIMIT pulled up! Real ones go all the way 🚀",
-    "🚀 @h0ffl1m1tzzz in the building — that's how we MOVE 💯",
-    "⚡ Ayy it's Limit! Glad you here cuhz, we been ready 🔥",
-    "💯 @h0ffl1m1tzzz slid through — CUHZ fam fully assembled 💎"
+    "🚀 LIMIT in the chat! @h0ffl1m1tzzz pulled up — no ceilings cuhz 🚀",
+    "🚀 Taking it to the LIMIT — @h0ffl1m1tzzz just touched down 🚀💯",
+    "🚀🚀 No limits, no caps — @h0ffl1m1tzzz is HERE cuhz 🔥",
+    "🚀 @h0ffl1m1tzzz slid in — pushing past every ceiling ⚡",
+    "🚀 LIMIT pulled up! Real ones go ALL the way cuhz 💎🚀",
+    "🚀 @h0ffl1m1tzzz in the building — that's how we MOVE 🚀",
+    "🚀 Ayy it's Limit! Glad you here cuhz, we been ready 🔥🚀",
+    "🚀 @h0ffl1m1tzzz fully launched — CUHZ fam assembled 🚀💯"
 ];
 
 // !brady / !blitz for BradyBlitz — four_a_reason channel regular.
