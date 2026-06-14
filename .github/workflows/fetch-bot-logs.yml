@@ -1,0 +1,58 @@
+name: Fetch cuhz_bot logs
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-bot-logs
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout logs-archive branch
+        uses: actions/checkout@v4
+        with:
+          ref: logs-archive
+          fetch-depth: 1
+
+      - name: Checkout fetch script from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: _main
+          sparse-checkout: scripts/fetch-railway-logs.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch logs
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          STAMP=$(date -u +"%Y/%m/%d/%H-%M")
+          node _main/scripts/fetch-railway-logs.mjs \
+            --out "logs/$STAMP.jsonl" \
+            --cursor-file .last-cursor
+
+      - name: Commit
+        run: |
+          echo "_main/" > .git/info/exclude
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "cuhz-bot-logs"
+            git config user.email "logs@cuhz.bot"
+            git add logs .last-cursor
+            git commit -m "logs: snapshot $(date -u +%FT%TZ)"
+            git push
+          else
+            echo "nothing new to commit"
+          fi
