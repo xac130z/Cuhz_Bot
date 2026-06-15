@@ -8,7 +8,7 @@ const db = require('../src/database');
 
 // Sample commands
 const sampleCommands = {
-    '!discord': '💬 https://discord.gg/5rFRaeBuHn',
+    '!discord': '💬 https://discord.gg/H5rgPUFBc',
     '!cuhz': '🚀 https://planetcuhz.com',
     '!uptime': 'Stream uptime command',
     '!points': 'Check your points'
