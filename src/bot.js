@@ -560,6 +560,37 @@ const JOEE_QUOTES = [
     "🔥 @joeefresh91 in the frequency — fresh forever cuhz ❄️"
 ];
 
+// !p&b / !pb / !peace — peace and blessings to all the CUHZ fam.
+// Palette 🙏 ✌️ 🕊️ 💫 ✨ 🌌 💎 🔥 🌍 ☀️ 🌙 💚. 25 variants, no-repeat-last-2.
+// Tone: peaceful, blessings, love, family, cosmic — cuhz style.
+const PB_QUOTES = [
+    "🙏 Peace and blessings to all the CUHZ fam — light over everything ✨",
+    "✌️ P&B to every cuhz in the chat — we eating, we vibing, we winning 💫",
+    "🕊️ Peace and blessings cuhz — may your day move like the stars 🌌",
+    "💫 P&B fam — protect your peace, share your light 🙏",
+    "✨ Peace and blessings to the whole planet — CUHZ love unmatched 💚",
+    "🌌 P&B cuhz! May your week be light, your hustle be heavy 🔥",
+    "🙏 Peace and blessings to every soul tuned in — we family forever ✌️",
+    "💎 P&B cuhz — clean energy, clear mind, full heart 🕊️",
+    "🌍 Peace and blessings across the planet — CUHZ love global 💫",
+    "☀️ P&B fam! Bless up, level up, stay up 🙏",
+    "🌙 Peace and blessings under the moon — rest easy cuhz 💫",
+    "💚 P&B to all — your peace is a flex, protect it 🙏",
+    "🕊️ Peace and blessings cuhz — no smoke, all love ✨",
+    "🔥 P&B family! May your blessings outrun your obstacles 💎",
+    "✨ Peace and blessings to every cuhz scrolling through 🌌",
+    "🙏 P&B! Big love, bigger blessings, biggest mindset 💫",
+    "✌️ Peace and blessings cuhz — be the energy you wanna receive 🕊️",
+    "💫 P&B to the day-ones and the just-arrived — same family 💚",
+    "🌌 Peace and blessings cuhz — keep the circle tight, the love loud 🙏",
+    "💎 P&B! Move in peace, dream in color, win in faith ✨",
+    "🕊️ Peace and blessings — for your family, your bag, your peace of mind 🙏",
+    "☀️ P&B cuhz — sun on your face, blessings on your back 💫",
+    "🙏 Peace and blessings to all watching, all listening, all loving 💚",
+    "💫 P&B! Walk light, speak love, live blessed 🕊️",
+    "✨ Peace and blessings forever cuhz — we owe each other this love 🙏"
+];
+
 // !lyrical / !lyric for lyricalmindsetTTV — wordsmith / thoughtful / bars energy.
 // Palette 🎤 📝 ✍️ 🧠 💭 🔥 💎. 12 variants, no-repeat-last-2. Tone: praise + love + bars.
 const LYRICAL_QUOTES = [
@@ -1897,6 +1928,9 @@ async function handleMessage(channel, tags, message, self) {
         '!joeefresh':   JOEE_QUOTES,
         '!lyrical':     LYRICAL_QUOTES,
         '!lyric':       LYRICAL_QUOTES,
+        '!p&b':         PB_QUOTES,
+        '!pb':          PB_QUOTES,
+        '!peace':       PB_QUOTES,
         '!cuhz':    CUHZ_QUOTES,
         '!planet':  CUHZ_QUOTES,
     };
