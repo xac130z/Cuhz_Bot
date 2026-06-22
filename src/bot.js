@@ -560,6 +560,23 @@ const JOEE_QUOTES = [
     "🔥 @joeefresh91 in the frequency — fresh forever cuhz ❄️"
 ];
 
+// !lyrical / !lyric for lyricalmindsetTTV — wordsmith / thoughtful / bars energy.
+// Palette 🎤 📝 ✍️ 🧠 💭 🔥 💎. 12 variants, no-repeat-last-2. Tone: praise + love + bars.
+const LYRICAL_QUOTES = [
+    "🎤 LYRICAL just touched down — @lyricalmindsetttv brought the bars cuhz 📝",
+    "📝 @lyricalmindsetttv in the chat — wordsmith energy locked in 💎",
+    "✍️ Real mindset, real lyrics — @lyricalmindsetttv we love you cuhz 🔥",
+    "🧠 @lyricalmindsetttv pulled up — chat IQ just shot up 🎤",
+    "💭 Lyrical Mindset HERE — every line he drops hits different 📝",
+    "🔥 @lyricalmindsetttv slid in — bars, brains, and big bro energy 💎",
+    "🎤 Ayy it's Lyrical! Real wordplay, real wisdom — welcome home cuhz ✍️",
+    "📝 @lyricalmindsetttv in the building — quotables incoming 🧠",
+    "💎 Lyrical Mindset on deck — sharpest pen in the chat 🎤",
+    "✍️ @lyricalmindsetttv touched down — the bars AND the message 🔥",
+    "🧠 Lyrical in the frequency — mindset elevated, vibes elevated 💭",
+    "🔥 @lyricalmindsetttv here — day-one CUHZ poet, we appreciate you 📝"
+];
+
 // !brady / !blitz for BradyBlitz — four_a_reason channel regular.
 // Palette 🏈 🐐 ⚡ 🔥 💎. 8 variants, no-repeat-last-2. Tone: hype + LOVE.
 const BRADY_QUOTES = [
@@ -1878,6 +1895,8 @@ async function handleMessage(channel, tags, message, self) {
         '!joee':        JOEE_QUOTES,
         '!fresh':       JOEE_QUOTES,
         '!joeefresh':   JOEE_QUOTES,
+        '!lyrical':     LYRICAL_QUOTES,
+        '!lyric':       LYRICAL_QUOTES,
         '!cuhz':    CUHZ_QUOTES,
         '!planet':  CUHZ_QUOTES,
     };
