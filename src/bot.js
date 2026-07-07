@@ -159,7 +159,8 @@ const USER_COMMANDS = {
     // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
     '!thorn': 'Watch out for the thorns! 🌹',
     '!zuri': 'Zuri Owen in the house! Welcome family! 🏰',
-    '!planet': 'Planet CUHZ is in the building! The mothership has landed. 🌍🌌',
+    // !planet — rotated handler; aliases to CUHZ_QUOTES via USER_VARIANT_POOLS
+    // (the pool fires first for ALL tiers, so a static entry here is unreachable).
     '!shock': 'Warning: High Voltage in the chat! ⚡',
     '!kay': 'Big Mula in the building! 💰',
     // !limit — rotated handler; aliases to LIMIT_QUOTES via USER_VARIANT_POOLS.
@@ -634,6 +635,40 @@ const CUHZ_QUOTES = [
     "🌌 Planet CUHZ for life. Family over everything, every single time 💎"
 ];
 
+// User shoutout rotation pools — all tiers, no repeats within last 2 fires.
+// Hoisted to module scope so the map isn't rebuilt on every chat message.
+const USER_VARIANT_POOLS = {
+    '!ec':      EC_QUOTES,
+    '!tj':      TJ_QUOTES,
+    '!spence':  SPENCE_QUOTES,
+    '!snowy':   SNOWY_QUOTES,
+    '!sw':      SNOWY_QUOTES,
+    '!snow':    SNOWY_QUOTES,
+    '!kasha':   KASHA_QUOTES,
+    '!qween':   QWEEN_QUOTES,
+    // NOTE: !storm alias intentionally NOT wired here — the existing Pro/Premium
+    // !storm handler (with session-tracked first-use vs. repeat) lives downstream
+    // and would be hijacked. Use !qween for the new pool.
+    '!fvmous':  FVMOUS_QUOTES,
+    '!fam':     FVMOUS_QUOTES,
+    '!gg':      GG_QUOTES,
+    '!geni':    GG_QUOTES,
+    '!brady':       BRADY_QUOTES,
+    '!blitz':       BRADY_QUOTES,
+    '!limit':       LIMIT_QUOTES,
+    '!balen':       BALEN_QUOTES,
+    '!joee':        JOEE_QUOTES,
+    '!fresh':       JOEE_QUOTES,
+    '!joeefresh':   JOEE_QUOTES,
+    '!lyrical':     LYRICAL_QUOTES,
+    '!lyric':       LYRICAL_QUOTES,
+    '!p&b':         PB_QUOTES,
+    '!pb':          PB_QUOTES,
+    '!peace':       PB_QUOTES,
+    '!cuhz':    CUHZ_QUOTES,
+    '!planet':  CUHZ_QUOTES,
+};
+
 // Canonical social links. Kept in bot.js (config.js is env-only) so the user has
 // one place to edit when they add IG/TikTok/YT. Linktree covers the long tail.
 const SOCIAL_LINKS = {
@@ -1010,7 +1045,9 @@ async function fetchChannelPersona(channel) {
         ]);
 
         const persona = {
-            commands: { ...PUBLIC_COMMANDS, ...cmdRes.data.commands },
+            // PUBLIC_COMMANDS spread LAST so code-maintained built-ins (e.g. !discord)
+            // always win over stale DB-seeded rows; DB still adds custom commands
+            commands: { ...cmdRes.data.commands, ...PUBLIC_COMMANDS },
             timers: timerRes.data.timers && timerRes.data.timers.length > 0 ? [...timerRes.data.timers] : [...defaultTimers],
             interval: timerRes.data.interval || 60,
             settings: setRes.data || { auto_welcome: 1, auto_marketing: 1 },
@@ -1902,38 +1939,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // 0.849b. New user commands — all tiers, 8 variants each, no repeats within last 2.
-    const USER_VARIANT_POOLS = {
-        '!ec':      EC_QUOTES,
-        '!tj':      TJ_QUOTES,
-        '!spence':  SPENCE_QUOTES,
-        '!snowy':   SNOWY_QUOTES,
-        '!sw':      SNOWY_QUOTES,
-        '!snow':    SNOWY_QUOTES,
-        '!kasha':   KASHA_QUOTES,
-        '!qween':   QWEEN_QUOTES,
-        // NOTE: !storm alias intentionally NOT wired here — the existing Pro/Premium
-        // !storm handler (with session-tracked first-use vs. repeat) lives downstream
-        // and would be hijacked. Use !qween for the new pool.
-        '!fvmous':  FVMOUS_QUOTES,
-        '!fam':     FVMOUS_QUOTES,
-        '!gg':      GG_QUOTES,
-        '!geni':    GG_QUOTES,
-        '!brady':       BRADY_QUOTES,
-        '!blitz':       BRADY_QUOTES,
-        '!limit':       LIMIT_QUOTES,
-        '!balen':       BALEN_QUOTES,
-        '!joee':        JOEE_QUOTES,
-        '!fresh':       JOEE_QUOTES,
-        '!joeefresh':   JOEE_QUOTES,
-        '!lyrical':     LYRICAL_QUOTES,
-        '!lyric':       LYRICAL_QUOTES,
-        '!p&b':         PB_QUOTES,
-        '!pb':          PB_QUOTES,
-        '!peace':       PB_QUOTES,
-        '!cuhz':    CUHZ_QUOTES,
-        '!planet':  CUHZ_QUOTES,
-    };
+    // 0.849b. User rotation commands — pools defined in USER_VARIANT_POOLS (module scope).
     if (USER_VARIANT_POOLS[msg]) {
         const pool = USER_VARIANT_POOLS[msg];
         const line = pickNoRepeat(`user:${msg}:${cleanChannel}`, pool, 2);

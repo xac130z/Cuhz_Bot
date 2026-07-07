@@ -233,7 +233,7 @@ async function flushCommandUsage() {
 }
 
 // Flush command usage every 10 minutes
-setInterval(flushCommandUsage, 10 * 60 * 1000);
+setInterval(flushCommandUsage, 10 * 60 * 1000).unref(); // unref: don't hold the event loop open
 
 /**
  * Prune old chat_log entries (keep last 30 days to manage DB size)
@@ -254,7 +254,7 @@ async function pruneOldLogs() {
 }
 
 // Prune old logs once per day
-setInterval(pruneOldLogs, 24 * 3600000);
+setInterval(pruneOldLogs, 24 * 3600000).unref(); // unref: don't hold the event loop open
 
 module.exports = {
     recordMessage,

@@ -27,7 +27,7 @@ class DBAdapter {
       this.initPostgres();
 
       // Periodic health check every 5 minutes
-      setInterval(() => this._pgHealthCheck(), 5 * 60 * 1000);
+      setInterval(() => this._pgHealthCheck(), 5 * 60 * 1000).unref(); // unref: don't hold the event loop open
     } else {
       console.log('📁 Using local SQLite database...');
       const dataDir = path.resolve(__dirname, '../data');

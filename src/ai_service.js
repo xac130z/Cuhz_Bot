@@ -99,11 +99,11 @@ if (config.geminiApiKey) {
 
 // ─────────── BRAIN 2: THE BRAIN (Claude) ───────────
 let claudeClient = null;
-const CLAUDE_MODEL = 'claude-3-5-sonnet-20241022'; // Powerful but cheaper than Opus
+const CLAUDE_MODEL = 'claude-sonnet-5'; // replaces retired claude-3-5-sonnet-20241022
 
 if (config.anthropicApiKey) {
     claudeClient = new Anthropic({ apiKey: config.anthropicApiKey });
-    logger.info('🧠 THE BRAIN initialized — Claude 3.5 Sonnet');
+    logger.info('🧠 THE BRAIN initialized — Claude Sonnet 5');
 } else {
     logger.warn('⚠️ ANTHROPIC_API_KEY not set — The Brain (Claude) disabled');
 }
@@ -229,7 +229,10 @@ async function executeClaude(systemPrompt, userMessage) {
         const response = await claudeClient.messages.create({
             model: CLAUDE_MODEL,
             max_tokens: 200,
-            temperature: 0.8,
+            // Sonnet 5 rejects non-default temperature; thinking disabled keeps
+            // latency + token spend low for short chat replies
+            thinking: { type: 'disabled' },
+            output_config: { effort: 'low' },
             system: systemPrompt,
             messages: [
                 { role: 'user', content: userMessage }

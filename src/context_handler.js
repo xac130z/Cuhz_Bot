@@ -334,7 +334,7 @@ async function getCacheStats() {
 }
 
 // Clean expired cache every hour
-setInterval(cleanExpiredCache, 3600000);
+setInterval(cleanExpiredCache, 3600000).unref(); // unref: don't hold the event loop open (lets tests/shutdown exit)
 
 module.exports = {
     initChannel,
