@@ -50,7 +50,7 @@ async function testPersonalityIntegration() {
                 currentPersonality,
                 {
                     '!cuhz': '🚀 https://planetcuhz.com',
-                    '!discord': '💬 https://discord.gg/eJHTtnkFwK'
+                    '!discord': '💬 https://discord.gg/wt6Zc7Sgjx'
                 },
                 personalityConfig
             );

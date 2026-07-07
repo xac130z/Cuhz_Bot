@@ -333,7 +333,7 @@ class DBAdapter {
           const insertCmd = this.prepare('INSERT INTO commands (channel_id, trigger, response) VALUES (?, ?, ?)');
           await insertCmd.run(channelId, '!cuhz', '🚀 https://planetcuhz.com');
           await insertCmd.run(channelId, '!links', '🔗 https://linktr.ee/PlanetCUHZ');
-          await insertCmd.run(channelId, '!discord', '💬 https://discord.gg/eJHTtnkFwK');
+          await insertCmd.run(channelId, '!discord', '💬 https://discord.gg/wt6Zc7Sgjx');
 
           // Default timers
           const insertTimer = this.prepare('INSERT INTO timers (channel_id, message, interval_minutes) VALUES (?, ?, ?)');

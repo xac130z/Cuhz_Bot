@@ -37,7 +37,7 @@ const CUHZ_KNOWLEDGE = `
 ABOUT PLANET CUHZ:
 - Planet CUHZ is a cosmic creator ecosystem founded by planetcuhz
 - "Cuhz" means family/cousin — the community treats everyone like fam
-- Website: https://planetcuhz.com | Discord: https://discord.gg/eJHTtnkFwK
+- Website: https://planetcuhz.com | Discord: https://discord.gg/wt6Zc7Sgjx
 - Linktree: https://linktr.ee/PlanetCUHZ | Whitepaper: https://planetcuhz.com/whitepaper
 - The CUHZ Chain Generator is a community tool: https://cuhz-bot-dashboard-846.created.app/chain-generator
 
