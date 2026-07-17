@@ -28,7 +28,8 @@ const CHANNEL_TIERS = {
     'qweenstormygirlnz89':   TIERS.BASIC,
     'razredg1':              TIERS.BASIC,
     'snowy_wolfies_ttv':     TIERS.BASIC,
-    'ohthatztayy':           TIERS.BASIC
+    'ohthatztayy':           TIERS.BASIC,
+    'grouch392':             TIERS.BASIC
 };
 
 // --- Global Error Handlers (Prevention) ---
