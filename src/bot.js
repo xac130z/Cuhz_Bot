@@ -154,7 +154,8 @@ const USER_COMMANDS = {
     '!neb': 'Nebulous vibes... mysterious and cool. 🌫️',
     '!night': 'The OG bot is here. Respect the elders. 🤖',
     '!papi': 'Papi Cartier has arrived. Luxury vibes only. 💎',
-    '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
+    // !raz moved to BASIC_USER_COMMANDS — razredg1 is a basic-tier member and
+    // this map only fires in Pro/Premium, so his own channel couldn't use it.
     '!famous': 'Real Famous K stepping in. Flash the cameras! 📸',
     '!rebound': 'Rebound Mindset. Bounce back stronger every time. 🏀',
     // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
@@ -612,6 +613,19 @@ const LYRICAL_QUOTES = [
     "🔥 @lyricalmindsetttv here — day-one CUHZ poet, we appreciate you 📝"
 ];
 
+// !grouch for grouch392 — "Mr Get Too It", NBA 2K hooper energy. Palette 🏀 🔴 💪 🔥 🎮 💎.
+// 8 variants, no-repeat-last-2. Tone: hype + hoops + hustle.
+const GROUCH_QUOTES = [
+    "🏀 GROUCH in the building! @grouch392 — Mr Get Too It himself 🔴",
+    "🔴 @grouch392 pulled up! Buckets on buckets, no days off 🏀",
+    "💪 Mr Get Too It touched down — @grouch392 stay grinding cuhz 🔥",
+    "🎮 @grouch392 in the chat! Court vision on AND off the sticks 🏀",
+    "🔥 Grouch here! Real hooper, real one — welcome home cuhz 💎",
+    "🏀 Ayy it's Grouch! @grouch392 get TOO it every single day 💪",
+    "💎 @grouch392 slid in — 2K legend, CUHZ fam certified 🔴",
+    "🔴 Mr Get Too It in the frequency — @grouch392 we see the work 🏀"
+];
+
 // !brady / !blitz for BradyBlitz — four_a_reason channel regular.
 // Palette 🏈 🐐 ⚡ 🔥 💎. 8 variants, no-repeat-last-2. Tone: hype + LOVE.
 const BRADY_QUOTES = [
@@ -657,6 +671,7 @@ const USER_VARIANT_POOLS = {
     // in dispatch and always wins, so the pool entry was dead code.
     '!gg':      GG_QUOTES,
     '!geni':    GG_QUOTES,
+    '!grouch':      GROUCH_QUOTES,
     '!brady':       BRADY_QUOTES,
     '!blitz':       BRADY_QUOTES,
     '!limit':       LIMIT_QUOTES,
@@ -981,6 +996,7 @@ const L_MESSAGES = [
 // --- Basic Tier Custom Shoutouts (accessible in ALL tiers) ---
 const BASIC_USER_COMMANDS = {
     // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
+    '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
     '!tay': 'It\'s giving 2K legend energy — ohthatztayy locked in! 🕹️🏀',
     '!yoo': 'Yoo! Welcome to the stream. 👋'
 };
@@ -1631,8 +1647,12 @@ function startMoodAnalyzer(channel) {
                     const sentiment = await aiService.analyzeSentiment(messageBuffer);
                     const newPersonality = moodTracker.updateMood(channel, sentiment);
 
-                    // Check if hype injection is needed (with cooldown)
-                    if (moodTracker.needsHypeInjection(channel) && client && client.readyState() === 'OPEN') {
+                    // Check if hype injection is needed (with cooldown).
+                    // Premium-only: injection is an advertised Premium AI feature and
+                    // was leaking into basic channels. Mood analysis itself keeps
+                    // running for all tiers (feeds mod commands like !mood).
+                    const hypeTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
+                    if (hypeTier === TIERS.PREMIUM && moodTracker.needsHypeInjection(channel) && client && client.readyState() === 'OPEN') {
                         // Try AI-generated proactive message first, fall back to static hype
                         const recentContext = contextHandler.getContext(channel);
                         let hypeMsg = await aiService.generateProactiveMessage(channel, recentContext, sentiment.mood);
@@ -1688,8 +1708,15 @@ function startRotationalTimer(channel) {
                 const index = timerIndices.get(channel) || 0;
 
                 // If daily message is set, alternate it every other cycle
+                const timerTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
                 if (dailyMsg && index % 2 === 0) {
                     sendMessage(channel, dailyMsg);
+                } else if (timerTier === TIERS.BASIC && Array.isArray(persona.timers) && persona.timers.length > 0) {
+                    // Basic tier: rotate the channel's own timers (dashboard-set or
+                    // BASIC_TIMER_MESSAGES defaults) — these were loaded but never
+                    // sent before. Pro/Premium keep the TIMER_POOLS path unchanged.
+                    const line = pickNoRepeat(`timer:${channel}:persona`, persona.timers, Math.min(3, persona.timers.length - 1));
+                    if (line) sendMessage(channel, line);
                 } else {
                     // Pick a TIMER_POOLS category that isn't the one we fired last time.
                     const lastKey = `timerCat:${channel}`;
@@ -2135,7 +2162,7 @@ async function handleMessage(channel, tags, message, self) {
         const utility   = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !mahni !storm !juan !rico !bern !dame';
+        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !storm !juan !rico !bern !dame';
         const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
         const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
@@ -2153,16 +2180,16 @@ async function handleMessage(channel, tags, message, self) {
             sendMessage(channel, crew + ' | ' + modsPro);
         } else {
             // Basic — limited shoutouts, no AI, no info-link dump
-            sendMessage(channel, utility);
+            sendMessage(channel, utility + ' !claim');
             sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !cuhz !planet !mahni !tay !yoo');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !tay !yoo');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2181,7 +2208,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !cuhz !planet !mahni !storm !juan !rico !bern !dame');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !storm !juan !rico !bern !dame');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
@@ -2197,6 +2224,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // 2. Dynamic Commands
     if (msg.startsWith('!followage') || msg.startsWith('!following')) {
+        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         try {
             // 1. Determine target user (sender or specified user)
             const args = message.split(' ');
@@ -2281,6 +2309,7 @@ async function handleMessage(channel, tags, message, self) {
 
 
     if (msg === '!streamstats') {
+        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         const stats = await streamIntel.getStats(channel);
         if (!stats) {
             client.say(channel, "📊 No stream data available yet.");
@@ -2379,6 +2408,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!viewers') {
+        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         const stats = await streamIntel.getStats(channel);
         if (stats && stats.isLive) {
             client.say(channel, `👥 Current viewers: ${stats.viewers} (Peak: ${stats.peak_viewers || stats.viewers}) 🔴`);
@@ -2389,6 +2419,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!schedule' || msg === '!stream') {
+        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         client.say(channel, `@${tags.username} 🗓 Check the schedule tab & turn on notifications for updates!`);
         return;
     }
@@ -2553,6 +2584,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg.startsWith('!gamble ')) {
+        if (!isProOrPremium) return; // advertised as Pro/Premium only
         const args = message.split(' ');
         const amount = parseInt(args[1]);
 
