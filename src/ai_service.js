@@ -117,8 +117,10 @@ if (config.groqApiKey) {
     // Preferred: Groq (fast inference, OpenAI-compatible)
     qwenApiUrl = 'https://api.groq.com/openai/v1/chat/completions';
     qwenApiKey = config.groqApiKey;
-    qwenModel = 'qwen-2.5-72b-versatile';
-    logger.info('🔧 THE HANDS initialized — Qwen 2.5 via Groq');
+    // 'qwen-2.5-72b-versatile' is not a valid Groq model id (every call 404'd
+    // into the fallback cascade). Overridable via GROQ_MODEL if Groq's catalog moves.
+    qwenModel = process.env.GROQ_MODEL || 'qwen/qwen3-32b';
+    logger.info(`🔧 THE HANDS initialized — ${qwenModel} via Groq`);
 } else if (config.qwenApiKey) {
     // Fallback: DashScope direct
     qwenApiUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
@@ -341,38 +343,52 @@ function classifyVibe(message) {
  * @param {string} vibe - 'eyes', 'brain', or 'hands'
  * @returns {Promise<{text: string|null, model: string}>}
  */
+// ─────────── Per-call timeout guard ───────────
+// One hung provider call must not stall a chat reply; a timed-out brain
+// returns null and the cascade moves on.
+function withTimeout(promise, label) {
+    const ms = config.aiResponseTimeout || 8000;
+    return Promise.race([
+        promise,
+        new Promise(resolve => setTimeout(() => {
+            logger.warn(`⏱️ ${label} timed out after ${ms}ms`);
+            resolve(null);
+        }, ms).unref())
+    ]);
+}
+
 async function executeWithRouting(prompt, vibe = 'eyes') {
     let text = null;
     let modelUsed = 'none';
 
     // Try the intended brain first
     if (vibe === 'brain' && claudeClient) {
-        text = await executeClaude(CUHZ_SYSTEM_PROMPT, prompt);
+        text = await withTimeout(executeClaude(CUHZ_SYSTEM_PROMPT, prompt), 'Claude');
         if (text) modelUsed = 'claude';
     } else if (vibe === 'hands' && qwenApiUrl) {
-        text = await executeQwen(CUHZ_SYSTEM_PROMPT, prompt);
+        text = await withTimeout(executeQwen(CUHZ_SYSTEM_PROMPT, prompt), 'Qwen');
         if (text) modelUsed = 'qwen';
     } else if (vibe === 'eyes' && geminiModel) {
-        text = await executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`);
+        text = await withTimeout(executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`), 'Gemini');
         if (text) modelUsed = 'gemini';
     }
 
     // Fallback cascade: Gemini → Claude → Qwen
     if (!text) {
         if (modelUsed !== 'gemini') {
-            text = await executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`);
+            text = await withTimeout(executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`), 'Gemini');
             if (text) modelUsed = 'gemini';
         }
     }
     if (!text) {
         if (modelUsed !== 'claude' && claudeClient) {
-            text = await executeClaude(CUHZ_SYSTEM_PROMPT, prompt);
+            text = await withTimeout(executeClaude(CUHZ_SYSTEM_PROMPT, prompt), 'Claude');
             if (text) modelUsed = 'claude';
         }
     }
     if (!text) {
         if (modelUsed !== 'qwen' && qwenApiUrl) {
-            text = await executeQwen(CUHZ_SYSTEM_PROMPT, prompt);
+            text = await withTimeout(executeQwen(CUHZ_SYSTEM_PROMPT, prompt), 'Qwen');
             if (text) modelUsed = 'qwen';
         }
     }
@@ -448,14 +464,19 @@ JSON format:
 /**
  * Generate context-aware response — routes based on vibe
  */
-async function generateContextAwareResponse(channel, userMessage, recentMessages = [], currentMood = 'neutral', availableCommands = {}, personalityConfig = null, userProfile = null) {
+async function generateContextAwareResponse(channel, userMessage, recentMessages = [], currentMood = 'neutral', availableCommands = {}, personalityConfig = null, userProfile = null, streamState = null) {
     if (!geminiModel && !claudeClient && !qwenApiUrl) return null;
 
-    // Check cache
-    const cacheKey = userMessage.toLowerCase().trim();
+    // Check cache — keyed per channel so different communities never share
+    // canned replies, and skipped if the cached line was said recently in this
+    // channel (anti-repetition beats cache freshness).
+    const cacheKey = `${channel}:${userMessage.toLowerCase().trim()}`;
     const cached = responseCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        return cached.response;
+        if (!getRecentResponses(channel).includes(cached.response)) {
+            return cached.response;
+        }
+        responseCache.delete(cacheKey); // said it recently — force a fresh take
     }
 
     if (!canMakeRequest()) return null;
@@ -476,6 +497,11 @@ async function generateContextAwareResponse(channel, userMessage, recentMessages
             personalityInstructions = `\nPersonality: ${currentMood} | Tone: ${personalityConfig.tone} | Emojis: ${personalityConfig.useEmojis ? 'YES' : 'NO'} | Enthusiasm: ${personalityConfig.enthusiasmLevel}`;
         }
 
+        let streamContext = '';
+        if (streamState && streamState.isLive) {
+            streamContext = `\nStream is LIVE${streamState.game ? ` playing ${streamState.game}` : ''}${streamState.title ? ` — title: "${streamState.title}"` : ''}`;
+        }
+
         let userContext = '';
         if (userProfile) {
             userContext = `\nUser "${userProfile.username}": ${userProfile.total_messages || 0} msgs, score ${userProfile.relationship_score || 0}/100`;
@@ -488,7 +514,7 @@ async function generateContextAwareResponse(channel, userMessage, recentMessages
             ? `\nIMPORTANT: Do NOT repeat or closely paraphrase these recent responses:\n${recent.map(r => `- "${r}"`).join('\n')}\nBe creative and vary your language.`
             : '';
 
-        const prompt = `Current mood: ${currentMood}${personalityInstructions}${userContext}
+        const prompt = `Current mood: ${currentMood}${personalityInstructions}${streamContext}${userContext}
 
 Recent chat:\n${context}
 

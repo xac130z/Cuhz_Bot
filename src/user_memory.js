@@ -198,7 +198,8 @@ Recent messages: ${recentMsgs}
 
 Write a single friendly sentence about who this person seems to be. Be specific, mention their interests if apparent. Use casual/fun tone.`;
 
-        const result = await aiService.generateContextAwareResponse(prompt, [], 'neutral', {});
+        // Signature is (channel, userMessage, recentMessages, mood, commands)
+        const result = await aiService.generateContextAwareResponse('whois', prompt, [], 'neutral', {});
         if (result) {
             // Save the summary
             await db.prepare(`

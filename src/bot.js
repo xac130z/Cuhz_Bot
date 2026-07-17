@@ -165,9 +165,11 @@ const USER_COMMANDS = {
     '!shock': 'Warning: High Voltage in the chat! ⚡',
     '!kay': 'Big Mula in the building! 💰',
     // !limit — rotated handler; aliases to LIMIT_QUOTES via USER_VARIANT_POOLS.
-    '!reacts': 'Reactions are LIVE! 👀',
-    '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !bern !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
+    '!reacts': 'Reactions are LIVE! 👀'
+    // '!yoo' removed — duplicate of BASIC_USER_COMMANDS['!yoo'], which is checked
+    // first for all tiers, so this entry never fired.
+    // '!shoutouts' removed — dead code; the dedicated !shoutouts handlers further
+    // down in dispatch always intercept first, and this string had gone stale.
 };
 
 const HYPE_MESSAGES = [
@@ -651,7 +653,8 @@ const USER_VARIANT_POOLS = {
     // !storm handler (with session-tracked first-use vs. repeat) lives downstream
     // and would be hijacked. Use !qween for the new pool.
     '!fvmous':  FVMOUS_QUOTES,
-    '!fam':     FVMOUS_QUOTES,
+    // NOTE: '!fam' alias removed — the static vibe handler for !fam runs earlier
+    // in dispatch and always wins, so the pool entry was dead code.
     '!gg':      GG_QUOTES,
     '!geni':    GG_QUOTES,
     '!brady':       BRADY_QUOTES,
@@ -659,6 +662,7 @@ const USER_VARIANT_POOLS = {
     '!limit':       LIMIT_QUOTES,
     '!balen':       BALEN_QUOTES,
     '!joee':        JOEE_QUOTES,
+    '!joe':         JOEE_QUOTES,
     '!fresh':       JOEE_QUOTES,
     '!joeefresh':   JOEE_QUOTES,
     '!lyrical':     LYRICAL_QUOTES,
@@ -1376,10 +1380,26 @@ function setupEventHandlers() {
         logger.error(`🔌 Twitch IRC DISCONNECTED: ${reason}`);
     });
 
-    // Periodic IRC connection health check
-    setInterval(() => {
+    // Periodic IRC connection health check — actively reconnects after 3
+    // consecutive bad checks (tmi's built-in reconnect can give up for good;
+    // without this the bot becomes a zombie that still passes /health).
+    let badHealthChecks = 0;
+    setInterval(async () => {
         if (client && client.readyState() !== 'OPEN') {
-            logger.warn(`🔌 Twitch IRC connection state: ${client.readyState()} — may need reconnect`);
+            badHealthChecks++;
+            logger.warn(`🔌 Twitch IRC connection state: ${client.readyState()} (${badHealthChecks}/3 before forced reconnect)`);
+            if (badHealthChecks >= 3) {
+                badHealthChecks = 0;
+                logger.warn('🔌 Forcing tmi reconnect...');
+                try {
+                    await client.connect();
+                    logger.info('🔌 Forced reconnect succeeded');
+                } catch (err) {
+                    logger.error(`🔌 Forced reconnect failed: ${err.message ?? err}`);
+                }
+            }
+        } else {
+            badHealthChecks = 0;
         }
     }, 60000);
 
@@ -1530,6 +1550,20 @@ function saveStreamStates() {
 
 // Load on startup
 loadStreamStates();
+
+// --- Graceful shutdown (Railway sends SIGTERM on every deploy) ---
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`👋 ${signal} received — saving state and disconnecting...`);
+    try { saveStreamStates(); } catch (e) { logger.error(`Shutdown state save failed: ${e.message}`); }
+    try { if (client) await client.disconnect(); } catch (e) { /* already down */ }
+    try { if (db.pgPool) await db.pgPool.end(); } catch (e) { /* pool already closed */ }
+    process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 async function updateStreamState(channel) {
     const status = await checkStreamStatus(channel);
@@ -1873,6 +1907,10 @@ async function handleMessage(channel, tags, message, self) {
             // Get user profile for personalization
             const userProfile = await userMemory.getProfile(tags.username);
 
+            // Stream context (game/title/live) makes AI replies concretely
+            // smarter with zero extra messages.
+            const streamState = streamStates.get(cleanChannel) || null;
+
             const aiResponse = await contextHandler.handleContextAwareResponse(
                 channel,
                 tags.username,
@@ -1880,7 +1918,8 @@ async function handleMessage(channel, tags, message, self) {
                 currentPersonality,
                 persona.commands,
                 personalityConfig,
-                userProfile   // Pass user profile for AI personalization
+                userProfile,  // Pass user profile for AI personalization
+                streamState   // Pass live stream info (game/title) for grounding
             );
 
             if (aiResponse) {
@@ -2096,19 +2135,19 @@ async function handleMessage(channel, tags, message, self) {
         const utility   = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !storm !juan !rico !bern !dame';
-        const crew      = '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
+        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !mahni !storm !juan !rico !bern !dame';
+        const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
         const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
 
         if (isPremium) {
-            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements');
+            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
             sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot');
             sendMessage(channel, shoutouts);
             sendMessage(channel, crew + ' | ' + ai);
             sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
         } else if (tier === TIERS.PRO) {
-            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements');
+            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
             sendMessage(channel, vibes + ' | ' + brand);
             sendMessage(channel, shoutouts);
             sendMessage(channel, crew + ' | ' + modsPro);
@@ -2116,14 +2155,14 @@ async function handleMessage(channel, tags, message, self) {
             // Basic — limited shoutouts, no AI, no info-link dump
             sendMessage(channel, utility);
             sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !cuhz !planet !mahni !tay !yoo');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !cuhz !planet !mahni !tay !yoo');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2142,8 +2181,8 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !cuhz !planet !mahni !storm !juan !rico !bern !dame');
-            sendMessage(channel, '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !cuhz !planet !mahni !storm !juan !rico !bern !dame');
+            sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
         }
@@ -2865,7 +2904,17 @@ app.post('/leave-channel', verifyDashboardRequest, async (req, res) => {
     }
 });
 
+// Public healthcheck — minimal on purpose. The old payload leaked 500 log
+// entries (chat content + usernames) and full stream state to anyone.
 app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        connected: client ? client.readyState() === 'OPEN' : false
+    });
+});
+
+// Rich diagnostics moved behind dashboard auth.
+app.get('/health/full', verifyDashboardRequest, (req, res) => {
     res.json({
         status: 'ok',
         connected: client ? client.readyState() === 'OPEN' : false,

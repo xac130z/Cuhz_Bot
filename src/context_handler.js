@@ -164,7 +164,7 @@ function matchExistingCommand(message, availableCommands) {
  * @param {Object} userProfile - User profile data for personalization (optional)
  * @returns {Promise<string|null>}
  */
-async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands, personalityConfig = null, userProfile = null) {
+async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands, personalityConfig = null, userProfile = null, streamState = null) {
     // First check if it's even a question/request
     if (!isQuestionOrRequest(message)) {
         return null;
@@ -182,8 +182,8 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
         return `@${username} ${commandMatch}`;
     }
 
-    // Check cache for similar queries
-    const cachedResponse = await getCachedResponse(message);
+    // Check cache for similar queries (per channel — communities don't share replies)
+    const cachedResponse = await getCachedResponse(channel, message);
     if (cachedResponse) {
         logger.info('💾 Using cached context response');
         return `@${username} ${cachedResponse}`;
@@ -201,12 +201,13 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
             currentMood,
             availableCommands,
             personalityConfig,
-            userProfile  // Pass user profile for personalization
+            userProfile,  // Pass user profile for personalization
+            streamState   // Pass live stream info (game/title) for grounding
         );
 
         if (aiResponse) {
             // Save to cache
-            await cacheResponse(message, aiResponse);
+            await cacheResponse(channel, message, aiResponse);
             // Record response for cooldown tracking
             recordResponse(username);
             return `@${username} ${aiResponse}`;
@@ -224,7 +225,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
  * @param {string} query
  * @returns {Promise<string|null>}
  */
-async function getCachedResponse(query) {
+async function getCachedResponse(channel, query) {
     try {
         const normalizedQuery = query.toLowerCase().trim();
         const now = new Date().toISOString();
@@ -232,10 +233,10 @@ async function getCachedResponse(query) {
         const result = await db.prepare(`
             SELECT response 
             FROM context_cache 
-            WHERE LOWER(query) = ? 
+            WHERE channel = ? AND LOWER(query) = ? 
             AND (expires_at IS NULL OR expires_at > ?)
             LIMIT 1
-        `).get(normalizedQuery, now);
+        `).get(channel, normalizedQuery, now);
 
         return result ? result.response : null;
     } catch (error) {
@@ -250,20 +251,20 @@ async function getCachedResponse(query) {
  * @param {string} response
  * @param {number} ttlHours - Time to live in hours
  */
-async function cacheResponse(query, response, ttlHours = 4) {
+async function cacheResponse(channel, query, response, ttlHours = 1) {
     try {
         const normalizedQuery = query.toLowerCase().trim();
         const expiresAt = new Date(Date.now() + ttlHours * 3600000).toISOString();
 
-        // Delete existing cache entry for this query first to avoid duplicates
+        // Delete existing cache entry for this channel+query first to avoid duplicates
         await db.prepare(`
-            DELETE FROM context_cache WHERE LOWER(query) = ?
-        `).run(normalizedQuery);
+            DELETE FROM context_cache WHERE channel = ? AND LOWER(query) = ?
+        `).run(channel, normalizedQuery);
 
         await db.prepare(`
             INSERT INTO context_cache (channel, query, response, expires_at)
-            VALUES ('*', ?, ?, ?)
-        `).run(normalizedQuery, response, expiresAt);
+            VALUES (?, ?, ?, ?)
+        `).run(channel, normalizedQuery, response, expiresAt);
 
         logger.info(`💾 Cached context response for: "${query}"`);
     } catch (error) {
