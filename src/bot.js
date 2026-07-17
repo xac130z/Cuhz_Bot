@@ -1198,8 +1198,8 @@ async function getFollowData(broadcasterId, userId) {
         const response = await axios.get(`${apiBase}/channels/followers`, {
             params: {
                 broadcaster_id: broadcasterId,
-                user_id: userId,
-                moderator_id: botUserId // Required for this endpoint
+                user_id: userId
+                // no moderator_id param — Twitch infers the moderator from the token
             },
             headers: {
                 'Client-ID': twitchClientId,
@@ -1218,8 +1218,11 @@ async function getFollowData(broadcasterId, userId) {
         // Log the actual error for debugging
         if (error.response) {
             logger.error(`❌ Follow API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
-            if (error.response.status === 401) {
-                logger.error('⚠️ OAuth token missing "moderator:read:followers" scope. Regenerate token with this scope.');
+            if (error.response.status === 401 || error.response.status === 403) {
+                logger.error('⚠️ OAuth token missing "moderator:read:followers" scope (or bot not modded in this channel). Regenerate token with this scope.');
+                // Distinguish auth failure from "not following" so the chat reply
+                // doesn't falsely claim the viewer isn't a follower.
+                return { authError: true };
             }
         } else {
             logger.error(`❌ Follow API error: ${error.message}`);
@@ -2172,6 +2175,11 @@ async function handleMessage(channel, tags, message, self) {
 
             // 3. Check follow status
             const followData = await getFollowData(channelUser.id, targetUser.id);
+
+            if (followData && followData.authError) {
+                client.say(channel, `⚠️ Follow lookup needs the bot re-authorized (missing follower scope) — ping @planetcuhz to fix it!`);
+                return;
+            }
 
             if (followData) {
                 const start = new Date(followData.followed_at);
