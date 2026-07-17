@@ -1396,6 +1396,20 @@ function setupEventHandlers() {
         logger.error(`🔌 Twitch IRC DISCONNECTED: ${reason}`);
     });
 
+    // Twitch tells us (via NOTICE) when our messages get dropped — e.g.
+    // followers-only mode in a channel where the bot doesn't follow/isn't
+    // modded. Without this the bot is silently mute and nobody knows why.
+    client.on('notice', (channel, msgid, message) => {
+        const muted = ['msg_followersonly', 'msg_followersonly_zero', 'msg_followersonly_followed',
+            'msg_subsonly', 'msg_emoteonly', 'msg_slowmode', 'msg_timedout', 'msg_banned',
+            'msg_rejected', 'msg_rejected_mandatory', 'msg_verified_email', 'msg_requires_verified_phone_number'];
+        if (muted.includes(msgid)) {
+            logger.error(`🔇 MESSAGE BLOCKED in ${channel} [${msgid}]: ${message} — mod the bot (/mod ${config.username}) or adjust chat mode`);
+        } else {
+            logger.warn(`📢 Twitch NOTICE in ${channel} [${msgid}]: ${message}`);
+        }
+    });
+
     // Periodic IRC connection health check — actively reconnects after 3
     // consecutive bad checks (tmi's built-in reconnect can give up for good;
     // without this the bot becomes a zombie that still passes /health).
