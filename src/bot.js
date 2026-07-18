@@ -770,14 +770,26 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
 ];
 
-// Manual !raid (chat command, no args) — celebrate raid energy generically.
+// Manual !raid (chat command, no args) — raid welcome + follow pitch.
+// Cleaned up from phoenixpnyc's raid call: "Hit follow, here at least twice
+// daily, catch highlights on IG, TikTok and YouTube." 15 variants, no-repeat-3.
 // Different from RAID_INCOMING (auto on 'raided' event) which interpolates {viewers}.
 const RAID_HYPE_MANUAL = [
-    "🚨 RAID ALERT! CUHZ fam show INCOMING love 💎",
-    "🚨 We got raiders cuhz! Welcome WELCOME 🔥",
-    "🚨 The frequency just got LOUDER — CUHZ fam say hey 🌌",
-    "🚨 Pull up new cuhz! You're home now 💎",
-    "🚨 Raid energy detected — CUHZ fam locked in ⚡"
+    "🚨 RAID SQUAD! Hit that follow — we're live at least twice a day, and the highlights hit IG, TikTok & YouTube 💎",
+    "🔥 Welcome raiders! Smash the follow cuhz — live here twice daily, highlights on IG, TikTok & YouTube 🌌",
+    "🚨 New faces in the frequency! Follow up — we run it back at least twice a day + clips on IG, TikTok & YouTube ⚡",
+    "💎 Raid energy! Tap that follow so you never miss us — live twice daily, highlights posted on IG, TikTok & YouTube 🔥",
+    "🌌 Pull up and stay cuhz! Follow the channel — we're here at least twice a day, catch the recap on IG, TikTok & YouTube 🚨",
+    "⚡ RAID ALERT! One follow keeps you locked in — twice-daily streams + all the best moments on IG, TikTok & YouTube 💎",
+    "🔥 Welcome to the planet, raiders! Hit follow — live at least 2x a day, highlights land on IG, TikTok & YouTube 🌍",
+    "🚨 Y'all made it! Drop a follow cuhz — we go live twice daily and the clips live on IG, TikTok & YouTube ✨",
+    "💎 Raiders = family now. Follow up! At least two streams a day, highlights on IG, TikTok & YouTube 🚀",
+    "🌌 The frequency just grew! Hit follow so you're here for the next one — live 2x daily, clips on IG, TikTok & YouTube 🔥",
+    "⚡ Welcome welcome! Follow the channel cuhz — we stream at least twice a day and post the heat to IG, TikTok & YouTube 💎",
+    "🚨 Raid gang! That follow button is free — twice-daily lives + highlight reels on IG, TikTok & YouTube 🌌",
+    "🔥 Ayy the raid pulled UP! Follow to lock in — live at least twice a day, catch replays on IG, TikTok & YouTube ⚡",
+    "💫 New cuhz alert! Hit follow before you dip — we're live 2x daily and the highlights stay posted on IG, TikTok & YouTube 💎",
+    "🚀 RAID TOUCHDOWN! Follow the movement — at least two streams a day, best moments on IG, TikTok & YouTube 🌌"
 ];
 
 // New follower — manual chat command !nf (tmi.js doesn't emit follower events;
@@ -2369,7 +2381,7 @@ async function handleMessage(channel, tags, message, self) {
     // !raid — bare (no args) is a manual incoming-raid hype for everyone.
     // The mod-only !raid <target> farewell stays at its existing site below.
     if (msg === '!raid') {
-        const line = pickNoRepeat(`raidmanual:${cleanChannel}`, RAID_HYPE_MANUAL, 2);
+        const line = pickNoRepeat(`raidmanual:${cleanChannel}`, RAID_HYPE_MANUAL, 3);
         sendMessage(channel, line);
         return;
     }
