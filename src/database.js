@@ -270,6 +270,19 @@ class DBAdapter {
         unique_chatters INTEGER DEFAULT 0,
         mood_summary TEXT,
         created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Wave 6: Stream commerce — purchase thank-you dedupe =====
+      // entitlement_id (the site's billing_entitlements.id uuid) is the dedupe key
+      // so a Railway restart never double-announces a purchase. `created_at` is the
+      // entitlement's own timestamp (raw ISO from the site) and doubles as the
+      // persisted poll cursor — MAX(created_at) is where the watcher resumes.
+      `CREATE TABLE IF NOT EXISTS announced_purchases (
+        entitlement_id TEXT PRIMARY KEY,
+        twitch_login TEXT,
+        product TEXT,
+        created_at TEXT,
+        announced_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`
     ];
   }
