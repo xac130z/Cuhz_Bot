@@ -241,6 +241,70 @@ For detailed deployment steps, see [`.agent/workflows/deploy.md`](file:///Users/
 
 ---
 
+## 💎 Stream Commerce & Tier Sync (Wave 6)
+
+Bridges CUHZ Bot to the Planet Cuhz site's Stripe-backed entitlements so paid
+viewers get their promised in-chat perks — and, optionally, so verified purchases
+can get a thank-you. **Everything here is default-OFF behind flags and fails open
+to `community` on any error.** Honest states only: an unknown viewer is always
+`community`, prices come only from the code-owned `commerce_content.js` registry
+(never the AI), and the bot never claims a payment state from chat. NO crypto.
+
+### Two ladders, never touching
+- **CUHZ Bot tiers** (viewers): Community FREE · Silver $4.99/mo · Gold $14.99/mo,
+  plus the streamer Affiliate Pack $49.99/mo and quote-only Architect build.
+- **Site membership** (separate): Free · Pro $9.99/mo · Team $24.99/mo.
+
+Buying one never changes the other — bot tiers are their own DB entitlements
+(`bot_silver`/`bot_gold`/`bot_affiliate`) and deliberately don't touch site
+membership. `!mytier` reports only the bot ladder.
+
+### How it works
+- `src/tier_service.js` resolves a viewer's tier from the site's `bot-worker-sync`
+  edge function (batched, 10-min cache, 3s timeout, fail-open). Contract shapes
+  mirror that function exactly: `{ event:'entitlements', logins:[...] }` →
+  `{ viewers: { login: { products, bot_tier } } }`.
+- Perks (gated by tier resolution): Silver/Gold get free/discounted AI brains, a
+  `💎✅` Verified Cuhz badge, monthly point stipends (Silver +1,000 / Gold +5,000,
+  idempotent per month via `pointsService.claimBonus`), and Gold gets a custom
+  arrival + bounded priority on the AI limiter.
+- `src/commerce_content.js` owns the `!plans !silver !gold !affiliate !architect
+  !mytier !site !store !pro` command copy and the promo / thank-you line pools.
+- The purchase watcher polls `{ event:'entitlements_recent', since }` every 60s
+  (home channels, live-only, ≤1 shout-out per 5 min) and dedupes by
+  `entitlement_id` in the `announced_purchases` SQLite table so a restart never
+  double-announces.
+
+### New environment variables
+`SITE_API_*` are a **different trust domain** from the created.app dashboard's
+`BOT_API_SECRET`/`API_BASE` — never reuse or confuse them.
+
+| Var | Meaning |
+| --- | --- |
+| `SITE_API_URL` | Supabase functions base, e.g. `https://<project-ref>.functions.supabase.co` |
+| `SITE_API_SECRET` | The **value** of the site's `bot-worker-sync` `BOT_API_SECRET` secret |
+| `ENABLE_TIER_SYNC` | `false` — resolve viewer tiers + grant perks/stipends |
+| `ENABLE_COMMERCE_COMMANDS` | `false` — the `!plans` command family + promo rotation line (Premium only) |
+| `ENABLE_PURCHASE_SHOUTOUTS` | `false` — consent-gated purchase thank-yous in home channels |
+| `ENABLE_GOLD_POINTS_2X` | `false` — reserved; do NOT enable until the perk is published on the ladder |
+
+### Owner go-live order (do this by hand — nothing auto-deploys)
+1. In Supabase, confirm the Stripe bot-tier price ids are configured (checkout
+   stops returning `PRICE_NOT_CONFIGURED`), then `supabase functions deploy
+   bot-worker-sync` (it now serves the two read-only tier events; no new secret).
+2. In **Railway**, set `SITE_API_URL` and `SITE_API_SECRET` on the bot.
+3. Flip `ENABLE_TIER_SYNC=true`, redeploy, and soak — verify `!mytier` and that
+   Silver/Gold perks resolve. Any site hiccup silently falls back to community.
+4. Flip `ENABLE_COMMERCE_COMMANDS=true`, redeploy, and soak — verify `!plans`,
+   the promo rotation line (Premium only), and the site-pointed `!store`/`!build`.
+5. Decide the consent posture, then optionally flip `ENABLE_PURCHASE_SHOUTOUTS=true`
+   and redeploy. Leave `ENABLE_GOLD_POINTS_2X=false` until that perk is published.
+
+Each flag is independent and secure-off; a Railway redeploy is always the owner's
+hand on the button.
+
+---
+
 ## 🧭 Future Roadmap
 
 1. **Dynamic Help**: Update `!help` to pull directly from a CMS or external config.
