@@ -18,6 +18,15 @@ const safetyPolicy = require('./safety_policy');
 const streamContent = require('./stream_content');
 const commerceContent = require('./commerce_content');
 const tierService = require('./tier_service');
+const keywordListener = require('./keyword_listener');
+
+// Single keyword-intent listener instance (Wave 6, default-OFF). Owns its own
+// cooldown state. Bot names cover the login + the customer-facing "CUHZ Bot"
+// spellings so it never talks back to itself. Fully inert until
+// ENABLE_KEYWORD_REPLIES is on and the bot.js hook (end of handleMessage) calls it.
+const keywordReplies = keywordListener.createListener({
+    botNames: [config.username, 'cuhz bot', 'cuhzbot']
+});
 
 // --- Tier System Definition ---
 // Canonical access list. Keys MUST be lowercase — lookups do `.toLowerCase()`
@@ -2959,6 +2968,26 @@ async function handleMessage(channel, tags, message, self) {
         } catch (error) {
             logger.error('Webhook error:', error.message);
         }
+    }
+
+    // --- Keyword-intent replies (Wave 6, default-OFF: ENABLE_KEYWORD_REPLIES) ---
+    // Runs LAST, after every command handler has had its chance (they all return
+    // early) and after webhook forwarding, so it only ever sees genuine non-command
+    // chat that nothing else answered. Home/selling surfaces only (isProOrPremium)
+    // — never Basic channels, which are other streamers' chats. All prices stay in
+    // commerce_content.js; these lines only point to !plans / !mytier / !help /
+    // planetcuhz.com. Hard cooldowns + bot/self + intent detection live in
+    // keyword_listener.js; sendMessage() re-applies validateOutbound + the queue.
+    if (config.enableKeywordReplies && isProOrPremium && !isCommand) {
+        const kwState = streamStates.get(channel);
+        const kwIsLive = kwState ? kwState.isLive : false;
+        const kw = keywordReplies.evaluate({
+            username: tags.username,
+            message,
+            isLive: kwIsLive,
+            useMockApi: config.useMockApi
+        });
+        if (kw.reply) sendMessage(channel, kw.reply);
     }
 }
 

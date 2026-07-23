@@ -36,6 +36,10 @@ module.exports = {
     // Unpublished perk — the ladder promises stipends, not multipliers. Stays OFF
     // until the owner publishes it; never advertise an unpublished perk.
     enableGoldPoints2x: process.env.ENABLE_GOLD_POINTS_2X === 'true',
+    // Keyword-intent replies (Wave 6): a short, code-owned cuhz-voice line on
+    // NON-command chat when a small intent set is detected. Secure-off like every
+    // other flag here — no keyword ever gets a reply until the owner flips it.
+    enableKeywordReplies: process.env.ENABLE_KEYWORD_REPLIES === 'true',
 
     // Testing / Mocking
     useMockApi: process.env.USE_MOCK_API === 'true',
