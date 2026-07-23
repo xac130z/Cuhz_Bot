@@ -287,6 +287,7 @@ membership. `!mytier` reports only the bot ladder.
 | `ENABLE_COMMERCE_COMMANDS` | `false` — the `!plans` command family + promo rotation line (Premium only) |
 | `ENABLE_PURCHASE_SHOUTOUTS` | `false` — consent-gated purchase thank-yous in home channels |
 | `ENABLE_GOLD_POINTS_2X` | `false` — reserved; do NOT enable until the perk is published on the ladder |
+| `ENABLE_KEYWORD_REPLIES` | `false` — one short, code-owned keyword-intent reply on non-command chat (home surfaces, live-only, hard-cooldowned) |
 
 ### Owner go-live order (do this by hand — nothing auto-deploys)
 1. In Supabase, confirm the Stripe bot-tier price ids are configured (checkout
@@ -302,6 +303,71 @@ membership. `!mytier` reports only the bot ladder.
 
 Each flag is independent and secure-off; a Railway redeploy is always the owner's
 hand on the button.
+
+### Putting CUHZ Bot in its own channel's chat
+
+The bot chooses which chats to join from the **`TWITCH_CHANNEL_NAME`** env var
+(`src/config.js` → `config.channels`, consumed in `src/bot.js` at client init).
+**To put CUHZ Bot in its own channel's chat, set `TWITCH_CHANNEL_NAME=<channel-login>`
+on Railway** (the channel login is the bare name, no `#` — the config adds it).
+
+**Multi-channel join IS supported.** `TWITCH_CHANNEL_NAME` is comma-separated, so
+`TWITCH_CHANNEL_NAME=cuhzbot,planetcuhz,somestreamer` joins all three (each entry
+is trimmed, lowercased, and `#`-prefixed automatically). Two other sources are
+merged on top of this at startup: any channels returned by the dashboard API, and
+every channel in the code's `CHANNEL_TIERS` map (force-joined even if not in the
+dashboard). If nothing is configured anywhere, the bot logs `No channels
+configured to join!` and sits idle. A Railway redeploy applies the change.
+
+### Keyword-intent replies (`ENABLE_KEYWORD_REPLIES`, default-OFF)
+
+`src/keyword_listener.js` adds an optional, code-owned reply on **non-command**
+chat. It runs last in the message path (after every command handler and webhook
+forwarding), only on **home/selling surfaces** (Pro/Premium — never Basic, which
+are other streamers' chats), and only when the flag is on.
+
+- **Intents** (word-boundary regexes, first match wins): `price` (`price`, `cost`,
+  `how much`, `subscribe`, `sub tier`), `help` (`help`, `how do i`, `how does`),
+  `what_question` (message starts with `what` **and** has a `?` or mentions the
+  bot), `bot_mention` (mentions the bot **and** has a `?`).
+- **Replies** come from a fixed registry in `keyword_listener.js` — short cuhz-voice
+  lines pointing only at `!plans` / `!mytier` / `!help` / `planetcuhz.com`. They
+  carry **no prices** (prices live only in `commerce_content.js`) and every line
+  passes `safety_policy.validateOutbound` (re-applied by `sendMessage`).
+- **Hard rails:** ≥45s cooldown per intent, ≥5min per user, ≤1 keyword reply per
+  60s overall, never replies to other bots/self (`KNOWN_BOTS` + the bot's own
+  names), never fires on a `!command`, and live-only (mirrors the marketing
+  rotation's live-gate; `USE_MOCK_API` stands in for live locally). A blocked
+  attempt never burns a cooldown.
+
+### Reviewing chat logs (Railway logs vs the DB)
+
+Two independent surfaces, for two different jobs:
+
+- **Railway logs = live ops.** `node fetch_chat_history.js` shells out to
+  `npx railway logs --limit 15000 --service "Twitch Bot"`, writes the raw stream to
+  `railway_logs_dump.txt`, and parses `PRIVMSG #<channel>` lines into a unique-chatter
+  list. Run `npx railway login` first (the script checks `npx railway status` and
+  exits if you're not authed). This shows the bot's recent **operational** stream —
+  connects, sends, errors, and whatever chat lines are still in the buffer — not a
+  durable, queryable history. (The `PROJECT_ID` / `ENV_ID` / `CHANNEL` / date
+  constants near the top of the script are hard-coded and edited by hand per pull.)
+- **DB (`chat_log`) = "Cuhz language" study.** When `STORE_CHAT_CONTENT=true`,
+  `userMemory.recordMessage` (`src/user_memory.js`) inserts each message into the
+  **`chat_log`** table (`channel, username, message, is_command, created_at`;
+  indexes `idx_chat_log_channel_time`, `idx_chat_log_username`). Raw storage is
+  **opt-in and pruned** to `CHAT_RETENTION_DAYS` (1–30, default 7). Related tables:
+  **`user_profiles`** (per-user totals, `last_seen`, follower/sub flags) and
+  **`mood_history`**. Query it with the DB adapter (`src/database.js`): SQLite at
+  `data/bot.db` locally, or the Railway Postgres `DATABASE_URL` in prod — e.g.
+  `SELECT username, message, created_at FROM chat_log WHERE channel = '#planetcuhz'
+  AND is_command = 0 ORDER BY created_at DESC LIMIT 200;`.
+
+**Recommended flow:** use **Railway logs for live ops** (is the bot up, is it
+sending, what errored right now), and use the **DB / `fetch_chat_history` path for
+"Cuhz language" study** (how the community actually talks, for tuning replies) —
+but only while `STORE_CHAT_CONTENT` is intentionally on, and mind the retention
+window.
 
 ---
 
