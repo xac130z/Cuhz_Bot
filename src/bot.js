@@ -1661,6 +1661,14 @@ async function updateStreamState(channel) {
 function startMoodAnalyzer(channel) {
     if (!config.enableMoodDetection) return;
 
+    // AI guardrail: Gemini sentiment analysis runs ONLY in Premium channels
+    // (planetcuhz, four_a_reason, rico2ez). No AI calls for any other stream.
+    const analyzerTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
+    if (analyzerTier !== TIERS.PREMIUM) {
+        logger.info(`🛡️ Mood analyzer skipped for ${channel} (AI is Premium-only)`);
+        return;
+    }
+
     logger.info(`🤖 Mood analyzer initialized for ${channel}`);
 
     // Analyze mood every 2 minutes
@@ -2510,6 +2518,7 @@ async function handleMessage(channel, tags, message, self) {
     // --- Mod Intelligence Commands ---
 
     if (msg === '!chatreport' && isMod) {
+        if (!isPremium) return; // AI guardrail — Premium channels only
         const health = await modIntel.getChatHealth(channel);
         if (health) {
             client.say(channel, `🛡️ Chat Report: Mood=${health.mood} (${health.energy}% Energy, ${health.toxicity}% Toxicity) | Activity=${health.messagesLastHour} msgs by ${health.activeChatters} users (Last Hour)`);
@@ -2520,6 +2529,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg.startsWith('!userreport ') && isMod) {
+        if (!isPremium) return; // AI guardrail — Premium channels only
         const target = message.split(' ')[1]?.replace('@', '');
         if (target) {
             client.say(channel, `🔍 Analyzing ${target}... specific report generating... standby...`);
