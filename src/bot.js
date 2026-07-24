@@ -24,6 +24,7 @@ const CHANNEL_TIERS = {
     'four_a_reason':         TIERS.PREMIUM,
     'rico2ez':               TIERS.PREMIUM,
     'planetcuhz':            TIERS.PREMIUM,
+    'cuhz_bot':              TIERS.PREMIUM, // the bot's own stream
     'thatgirlmahni_':        TIERS.BASIC,
     'qweenstormygirlnz89':   TIERS.BASIC,
     'razredg1':              TIERS.BASIC,
