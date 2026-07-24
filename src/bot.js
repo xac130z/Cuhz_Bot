@@ -509,16 +509,16 @@ const TIMER_POOLS = {
         "🔗 Tap in across platforms → https://linktr.ee/PlanetCUHZ"
     ],
     tools: [
-        "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Try the Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Make your own CUHZ chain → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Chain tool — free to use → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Chain Generator is live → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Build a chain in seconds → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 CUHZ chains for the culture → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Mint ya vibe — Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Chain tool — drop in and cook → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ The Chain Generator is how we move → https://cuhz-bot-dashboard-846.created.app/chain-generator"
+        "🔗 CUHZ Chain Studio → https://planetcuhz.com/chain",
+        "⛓️ Try the Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain",
+        "🔗 Make your own CUHZ chain → https://planetcuhz.com/chain",
+        "⛓️ Chain Studio — free to use, nothing leaves your browser → https://planetcuhz.com/chain",
+        "🔗 Chain Studio is live — pick from 10 finishes → https://planetcuhz.com/chain",
+        "⛓️ Build a chain in seconds → https://planetcuhz.com/chain",
+        "🔗 CUHZ chains for the culture → https://planetcuhz.com/chain",
+        "⛓️ Drape the chain, pick a finish, download the PNG → https://planetcuhz.com/chain",
+        "🔗 Chain Studio — drop in and cook → https://planetcuhz.com/chain",
+        "⛓️ The Chain Studio is how we move → https://planetcuhz.com/chain"
     ],
     rules: [
         "📌 Be respectful. No hate. No spam. Stay CUHZ.",
@@ -1048,7 +1048,7 @@ const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
     "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-    "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
+    "⛓️ CUHZ Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain"
 ];
 
 const BASIC_TIMER_MESSAGES = [
@@ -2142,7 +2142,7 @@ async function handleMessage(channel, tags, message, self) {
         const prompt = message.replace(/^!chain\s+/i, '').trim();
         if (prompt) {
             if (!config.apiBase || !config.botApiSecret) {
-                client.say(channel, `🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
+                client.say(channel, `🔗 CUHZ Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain`);
             } else {
                 try {
                     const res = await axios.post(`${config.apiBase}/api/bot/command`, {
@@ -2156,11 +2156,11 @@ async function handleMessage(channel, tags, message, self) {
                     if (res.data && res.data.handled && res.data.reply) {
                         client.say(channel, res.data.reply);
                     } else {
-                        client.say(channel, `🔗 Chain generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
+                        client.say(channel, `🔗 Chain Studio → https://planetcuhz.com/chain`);
                     }
                 } catch (err) {
                     logger.error('Error in !chain handler:', err.message);
-                    client.say(channel, `🔗 Try it at: https://cuhz-bot-dashboard-846.created.app/chain-generator`);
+                    client.say(channel, `🔗 Try it free at: https://planetcuhz.com/chain`);
                 }
             }
         }

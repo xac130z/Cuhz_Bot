@@ -6,11 +6,27 @@ const APPROVED_LINKS = Object.freeze({
     website: 'https://planetcuhz.com',
     privacy: 'https://planetcuhz.com/privacy',
     whitepaper: 'https://planetcuhz.com/whitepaper',
+    // Canonical planetcuhz.com surfaces (SITE TRUTH PACK links registry).
+    chainStudio: 'https://planetcuhz.com/chain',
+    botRequest: 'https://planetcuhz.com/bot',
+    pricing: 'https://planetcuhz.com/pricing',
+    botTiers: 'https://planetcuhz.com/pricing#bot',
+    store: 'https://planetcuhz.com/store',
+    solutions: 'https://planetcuhz.com/solutions',
+    solutionsIntake: 'https://planetcuhz.com/solutions#start',
+    creatorToolkit: 'https://planetcuhz.com/tools',
+    community: 'https://planetcuhz.com/community',
+    protocol: 'https://planetcuhz.com/protocol',
+    memberApp: 'https://planetcuhz.com/app',
     discord: 'https://discord.com/invite/wt6Zc7Sgjx',
     voiceDiscord: 'https://discord.gg/eNxDKkxQdN',
     linktree: 'https://linktr.ee/PlanetCUHZ',
-    dashboard: 'https://cuhz-bot-dashboard-846.created.app',
-    chainGenerator: 'https://cuhz-bot-dashboard-846.created.app/chain-generator'
+    x: 'https://x.com/PlanetCuhz',
+    xCommunity: 'https://x.com/i/communities/1933710165359923481',
+    twitch: 'https://www.twitch.tv/planetcuhz',
+    // Bot ops dashboard (different trust domain; see config.js). The Chain
+    // Studio moved to planetcuhz.com/chain — never link created.app for chains.
+    dashboard: 'https://cuhz-bot-dashboard-846.created.app'
 });
 
 const APPROVED_HOSTS = new Set([
@@ -19,15 +35,30 @@ const APPROVED_HOSTS = new Set([
     'discord.com',
     'discord.gg',
     'linktr.ee',
+    'x.com',
+    'www.x.com',
     'cuhz-bot-dashboard-846.created.app',
     'twitch.tv',
     'www.twitch.tv'
 ]);
 
+// Site-authority facts (SITE TRUTH PACK, verified against the real page code).
+// Deliberately price-free: exact numbers live only in commerce_content.js —
+// these lines establish WHERE the truth lives so the model never invents it.
 const PUBLIC_FACTS = Object.freeze([
     'CUHZ Bot is the official Twitch bot for the Planet CUHZ creator community.',
+    'Planet CUHZ (planetcuhz.com) is a Twitch-native NBA 2K creator community — the Cuhzunity — that also runs as an AI studio.',
     'Planet CUHZ helps creators learn, build, and level up together.',
     'CUHZ Bot can share approved links and answer short stream-related questions.',
+    'The CUHZ Chain Studio is free at planetcuhz.com/chain — no login; upload a pic, drape the chain, pick a finish, download the PNG.',
+    'The Chain Studio has ten finishes: Gold, Blue, Black, Silver, Iced, Fire, Electric, Frozen, Neon, and the signature Planet Cuhz spectrum.',
+    'CUHZ Bot is free forever on the Community tier — streamers request it at planetcuhz.com/bot with Twitch sign-in (no channel name to type), then type /mod CuhzBot in chat.',
+    'CUHZ Bot tiers are Community (free), Silver Supporter, Gold Executive, Affiliate Pack (for streamers), and the Architect custom build — Architect is quote-only, never a number.',
+    'Bot tiers run alongside Planet CUHZ site membership (Free, Pro, Team) — one never replaces the other, and CUHZ points never expire.',
+    'Store items at planetcuhz.com/store (Chain Full Pack, Emote Pack Vol. 1, Orbit Overlay Kit) are buyable in the store; merch runs as Cuhzunity drops coordinated in Discord.',
+    'The AI studio builds, redesigns, and fixes streamer sites and stream tools — briefs go to planetcuhz.com/solutions and the studio replies with an exact quote before any build.',
+    'The Cuhzunity lives on a voice-only Discord and on X @PlanetCuhz; the NBA 2K Protocol at planetcuhz.com/protocol finds your 5.',
+    'Everything is plain USD — no coins, no tokens, no wallets, ever.',
     'Purchases happen only on an approved HTTPS checkout page; CUHZ Bot never collects payment details in chat.',
     'CUHZ Bot tiers and prices are listed only at planetcuhz.com/pricing — CUHZ Bot never quotes a price the site does not show. For plans and prices, point people to the !plans command.'
 ]);

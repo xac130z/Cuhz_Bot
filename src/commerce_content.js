@@ -29,7 +29,7 @@ const COMMERCE_COMMANDS = Object.freeze({
     '!affiliate': '🛰️ Affiliate Pack — $49.99/mo: full CUHZ Bot in your channel running YOUR links + socials, mod intel (!chatreport / !mood), automated marketing rotation. Run the pack → https://planetcuhz.com/pricing#bot',
     // Architect is QUOTE-ONLY by design — never emit a number here.
     '!architect': '🛠️ Architect Custom Build — your own bot: your name, avatar, lore, private AI, dedicated instance. You own it. Quote only — start the convo → https://planetcuhz.com/solutions#start',
-    '!site': '🌌 Planet CUHZ HQ → https://planetcuhz.com · Plans !plans · Store !store · Chain Studio → https://planetcuhz.com/chain',
+    '!site': '🌌 Planet CUHZ HQ → https://planetcuhz.com · Plans !plans · Store !store · Chain Studio (10 finishes, free, no login) → https://planetcuhz.com/chain',
     // Voice-only Discord — the same invite the site footer links (SOCIAL_LINKS).
     // A community invite, not a sale: no price, no urgency. Aliases: !voice, !family.
     '!discord': '🎙️ Pull up to the CUHZ voice fam — our voice-only Discord is where the cuhzins actually link up, cousin to cuhz → https://discord.gg/eNxDKkxQdN',

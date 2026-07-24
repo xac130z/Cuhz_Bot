@@ -56,6 +56,10 @@ function run() {
         for (const bad of FORBIDDEN_CRYPTO) {
             assert.ok(!lower.includes(bad), `crypto term "${bad}" found in: ${line}`);
         }
+
+        // 4b. The retired created.app chain generator never resurfaces in
+        // commerce copy — the Chain Studio lives at planetcuhz.com/chain.
+        assert.ok(!lower.includes('created.app'), `stale created.app link found in: ${line}`);
     }
 
     // 5. Customer-facing spelling is "CUHZ Bot".
@@ -74,6 +78,13 @@ function run() {
     // 7. Architect is quote-only — never a number.
     assert.doesNotMatch(commerce.COMMERCE_COMMANDS['!architect'], /\$\s*\d/);
     assert.match(commerce.COMMERCE_COMMANDS['!architect'], /quote only/i);
+
+    // 7b. !site carries the truth-pack Chain Studio facts: ten finishes, free,
+    // and the real planetcuhz.com/chain surface.
+    assert.match(commerce.COMMERCE_COMMANDS['!site'], /10 finishes/);
+    assert.match(commerce.COMMERCE_COMMANDS['!site'], /free/i);
+    assert.ok(commerce.COMMERCE_COMMANDS['!site'].includes('https://planetcuhz.com/chain'));
+    assert.ok(commerce.COMMERCE_COMMANDS['!store'].includes('https://planetcuhz.com/store'));
 
     // 8. Dispatch shape mirrors stream_content.launchCommandResponse.
     assert.strictEqual(commerce.commerceCommandResponse('!plans'), commerce.COMMERCE_COMMANDS['!plans']);

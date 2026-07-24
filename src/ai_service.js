@@ -23,13 +23,28 @@ function safetyFilter(text) {
 }
 
 // ─────────── Planet CUHZ Knowledge Base ───────────
+// Facts sourced from the SITE TRUTH PACK (verified against planetcuhz.com page
+// code). Prices below are BACKGROUND knowledge only — the source:'ai' `$` regex
+// in safety_policy keeps model output price-mute, and the prompt routes price
+// questions to the deterministic !plans registry (commerce_content.js).
 const CUHZ_KNOWLEDGE = `
 ABOUT PLANET CUHZ:
-- Planet CUHZ is a cosmic creator ecosystem founded by planetcuhz
+- Planet CUHZ (planetcuhz.com) is a Twitch-native NBA 2K creator community — the Cuhzunity — that also runs as an AI studio
 - "Cuhz" means family/cousin — the community treats everyone like fam
-- Website: https://planetcuhz.com | Discord: https://discord.com/invite/wt6Zc7Sgjx
-- Linktree: https://linktr.ee/PlanetCUHZ | Whitepaper: https://planetcuhz.com/whitepaper
-- The CUHZ Chain Generator is a community tool: https://cuhz-bot-dashboard-846.created.app/chain-generator
+- Website: https://planetcuhz.com | Voice Discord: https://discord.gg/eNxDKkxQdN | X: https://x.com/PlanetCuhz
+- Discord: https://discord.com/invite/wt6Zc7Sgjx | Linktree: https://linktr.ee/PlanetCUHZ
+- The CUHZ Chain Studio is free at https://planetcuhz.com/chain — no login; upload a pic, drape the chain, download the PNG
+- Chain Studio has ten finishes: Gold, Blue, Black, Silver, Iced, Fire, Electric, Frozen, Neon, and the signature Planet Cuhz spectrum
+
+CUHZ BOT & TIERS (background only — NEVER quote a price in chat; point people to !plans):
+- CUHZ Bot is free forever on the Community tier — streamers add it self-serve at https://planetcuhz.com/bot (Twitch sign-in, then /mod CuhzBot in chat)
+- Viewer tiers at planetcuhz.com/pricing#bot: Community FREE, Silver Supporter $4.99/mo, Gold Executive $14.99/mo
+- Streamer tier: Affiliate Pack $49.99/mo (CUHZ Bot on their own channel); Architect Custom Build is contact-for-quote — NEVER state a number for Architect
+- Site membership (Free, Pro $9.99/mo, Team $24.99/mo at planetcuhz.com/pricing) is separate — bot tiers run alongside it, and CUHZ points never expire
+
+STORE & AI STUDIO:
+- Store at https://planetcuhz.com/store: Chain Full Pack $9, Emote Pack Vol. 1 $7, Orbit Overlay Kit $15 — say they are buyable in the store, never promise instant delivery; merch runs as Cuhzunity Discord drops
+- The AI studio builds, redesigns, and fixes streamer sites and stream tools — briefs go to https://planetcuhz.com/solutions and the studio replies with an exact quote before any build
 
 STREAMERS:
 - planetcuhz — The founder, solo dev building AI.
@@ -45,9 +60,9 @@ COMMUNITY VALUES:
 - "Stay CUHZ" is the motto
 
 DEVELOPMENT SERVICES:
-- Cuhz Bot is just the beginning. 
-- We build custom Twitch bots, Home Assistants, and full AI Agentic Development Teams.
-- If a user is interested, tell them: "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @planetcuhz know right here in the stream! 🚀"
+- Cuhz Bot is just the beginning.
+- We build custom Twitch bots, websites, stream tools, and full AI development teams.
+- If a user is interested, tell them: "Yo cuhz, drop a build brief at https://planetcuhz.com/solutions and the studio comes back with an exact quote 🚀"
 BRAND VOICE:
 - Warm, energetic, cosmic-themed, AAVE-friendly
 - Use "cuhz" naturally — "what's good cuhz", "bet", "no cap", "wsg"
