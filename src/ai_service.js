@@ -6,7 +6,7 @@ const config = require('./config');
 // =============================================
 //  TRI-BRAIN AI SERVICE
 //
-//  👁️  THE EYES  — Gemini 2.0 Flash (Speed, Chat, Sentiment)
+//  👁️  THE EYES  — Gemini Flash (Speed, Chat, Sentiment)
 //  🧠 THE BRAIN — Claude (Complex decisions, moderation, persona)
 //  🔧 THE HANDS — Qwen 2.5 via Groq (Code, logic, technical)
 //
@@ -88,11 +88,14 @@ const safetySettings = [
 
 if (config.geminiApiKey) {
     genAI = new GoogleGenerativeAI(config.geminiApiKey);
+    // Default gemini-3.6-flash (verified available + working on the project key);
+    // override with GEMINI_MODEL env var if Google's catalog moves.
+    const geminiModelId = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
     geminiModel = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
+        model: geminiModelId,
         safetySettings,
     });
-    logger.info('👁️ THE EYES initialized — Gemini 2.0 Flash');
+    logger.info(`👁️ THE EYES initialized — ${geminiModelId}`);
 } else {
     logger.warn('⚠️ GEMINI_API_KEY not set — The Eyes (Gemini) disabled');
 }
