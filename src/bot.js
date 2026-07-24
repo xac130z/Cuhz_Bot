@@ -1037,7 +1037,10 @@ const BASIC_BLOCKED_COMMANDS = new Set([
     // Wave 6 — commerce family: Basic channels are other streamers' chats; we
     // don't sell there (beyond the existing !getcuhzbot line).
     '!plans', '!silver', '!gold', '!affiliate', '!architect',
-    '!mytier', '!site', '!pro', '!membership', '!store', '!shop'
+    '!mytier', '!site', '!pro', '!membership', '!store', '!shop',
+    // Voice-fam Discord aliases (!discord already listed above) — same
+    // selling-surface gating: Basic channels are other streamers' chats.
+    '!voice', '!family'
 ]);
 
 const TIMER_MESSAGES = [
@@ -2249,14 +2252,14 @@ async function handleMessage(channel, tags, message, self) {
         const commerceHelp = '💎 CUHZ Bot Tiers: !plans !silver !gold !affiliate !mytier !store';
 
         if (isPremium) {
-            sendMessage(channel, utility + ' !discord !links !claim !achievements');
+            sendMessage(channel, utility + ' !discord !voice !links !claim !achievements');
             sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot');
             sendMessage(channel, shoutouts);
             sendMessage(channel, crew + ' | ' + ai);
             sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
             if (commerceEnabled) sendMessage(channel, commerceHelp);
         } else if (tier === TIERS.PRO) {
-            sendMessage(channel, utility + ' !discord !links !claim !achievements');
+            sendMessage(channel, utility + ' !discord !voice !links !claim !achievements');
             sendMessage(channel, vibes + ' | ' + brand);
             sendMessage(channel, shoutouts);
             sendMessage(channel, crew + ' | ' + modsPro);

@@ -7,6 +7,7 @@ const APPROVED_LINKS = Object.freeze({
     privacy: 'https://planetcuhz.com/privacy',
     whitepaper: 'https://planetcuhz.com/whitepaper',
     discord: 'https://discord.com/invite/wt6Zc7Sgjx',
+    voiceDiscord: 'https://discord.gg/eNxDKkxQdN',
     linktree: 'https://linktr.ee/PlanetCUHZ',
     dashboard: 'https://cuhz-bot-dashboard-846.created.app',
     chainGenerator: 'https://cuhz-bot-dashboard-846.created.app/chain-generator'
@@ -16,6 +17,7 @@ const APPROVED_HOSTS = new Set([
     'planetcuhz.com',
     'www.planetcuhz.com',
     'discord.com',
+    'discord.gg',
     'linktr.ee',
     'cuhz-bot-dashboard-846.created.app',
     'twitch.tv',

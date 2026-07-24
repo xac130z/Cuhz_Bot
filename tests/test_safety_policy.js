@@ -19,6 +19,12 @@ function run() {
     assert.strictEqual(policy.isApprovedUrl('http://planetcuhz.com'), false);
     assert.strictEqual(policy.isApprovedUrl('https://planetcuhz.com.evil.example'), false);
 
+    // Voice-only Discord (discord.gg) — the invite the site footer links — is
+    // an approved host, and the registered APPROVED_LINKS entry passes the gate.
+    assert.strictEqual(policy.isApprovedUrl('https://discord.gg/eNxDKkxQdN'), true);
+    assert.strictEqual(policy.isApprovedUrl(policy.APPROVED_LINKS.voiceDiscord), true);
+    assert.strictEqual(policy.isApprovedUrl('http://discord.gg/eNxDKkxQdN'), false); // http rejected
+
     const phishingOutput = policy.validateOutbound('Pay here: https://evil.example/checkout', { source: 'ai' });
     assert.strictEqual(phishingOutput.allowed, false);
     assert.strictEqual(phishingOutput.reason, 'unapproved_link');

@@ -82,6 +82,26 @@ function run() {
     assert.strictEqual(commerce.commerceCommandResponse('!notacommand'), null);
     assert.strictEqual(commerce.commerceCommandResponse('!SILVER extra args'), commerce.COMMERCE_COMMANDS['!silver']);
 
+    // 8b. !discord voice-fam command + its aliases resolve to the same voice line.
+    assert.ok(commerce.COMMERCE_COMMANDS['!discord'], '!discord command must exist');
+    assert.strictEqual(commerce.commerceCommandResponse('!discord'), commerce.COMMERCE_COMMANDS['!discord']);
+    assert.strictEqual(commerce.commerceCommandResponse('!voice'), commerce.COMMERCE_COMMANDS['!discord']); // alias
+    assert.strictEqual(commerce.commerceCommandResponse('!family'), commerce.COMMERCE_COMMANDS['!discord']); // alias
+    assert.strictEqual(commerce.commerceCommandResponse('!FAMILY come thru'), commerce.COMMERCE_COMMANDS['!discord']);
+    assert.ok(commerce.isCommerceCommand('!discord') && commerce.isCommerceCommand('!voice') && commerce.isCommerceCommand('!family'));
+    for (const name of ['!discord', '!voice', '!family']) {
+        assert.ok(commerce.COMMERCE_COMMAND_NAMES.includes(name), `${name} must be in COMMERCE_COMMAND_NAMES`);
+    }
+
+    // 8c. The voice line points at the exact voice-only Discord the site uses,
+    // and that URL is on the safety allowlist (discord.gg host approved).
+    const voiceLine = commerce.COMMERCE_COMMANDS['!discord'];
+    assert.ok(voiceLine.includes('https://discord.gg/eNxDKkxQdN'), 'voice line must use the site voice Discord invite');
+    assert.strictEqual(policy.isApprovedUrl('https://discord.gg/eNxDKkxQdN'), true);
+    for (const url of policy.extractUrls(voiceLine)) {
+        assert.strictEqual(policy.isApprovedUrl(url), true, `unapproved URL in voice line: ${url}`);
+    }
+
     // 9. !mytier lines are tier-correct and mention the user.
     assert.match(commerce.myTierLine('gold', 'cuhzy'), /Gold Executive/);
     assert.match(commerce.myTierLine('gold', 'cuhzy'), /@cuhzy/);

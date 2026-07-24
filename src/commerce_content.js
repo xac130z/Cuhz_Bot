@@ -30,6 +30,9 @@ const COMMERCE_COMMANDS = Object.freeze({
     // Architect is QUOTE-ONLY by design — never emit a number here.
     '!architect': '🛠️ Architect Custom Build — your own bot: your name, avatar, lore, private AI, dedicated instance. You own it. Quote only — start the convo → https://planetcuhz.com/solutions#start',
     '!site': '🌌 Planet CUHZ HQ → https://planetcuhz.com · Plans !plans · Store !store · Chain Studio → https://planetcuhz.com/chain',
+    // Voice-only Discord — the same invite the site footer links (SOCIAL_LINKS).
+    // A community invite, not a sale: no price, no urgency. Aliases: !voice, !family.
+    '!discord': '🎙️ Pull up to the CUHZ voice fam — our voice-only Discord is where the cuhzins actually link up, cousin to cuhz → https://discord.gg/eNxDKkxQdN',
     '!pro': '🚀 Planet CUHZ site membership (separate from CUHZ Bot tiers): Free · Pro $9.99/mo · Team $24.99/mo — 2K tools, squad features, coaching perks → https://planetcuhz.com/pricing',
     '!membership': '🚀 Planet CUHZ site membership (separate from CUHZ Bot tiers): Free · Pro $9.99/mo · Team $24.99/mo — 2K tools, squad features, coaching perks → https://planetcuhz.com/pricing',
     '!store': '🛒 CUHZ digital store: CUHZ Chain Full Pack $9 · Emote Pack $7 · Overlay Kit $15 → https://planetcuhz.com/store'
@@ -47,7 +50,11 @@ const MYTIER_LINES = Object.freeze({
 const PROMO_LINES = Object.freeze([
     '💎 CUHZ Bot runs on tiers now: Silver $4.99/mo, Gold $14.99/mo — unlimited AI brains, stipends, priority. No pressure, it\'s all there → type !plans',
     '🤖 Streamers: Affiliate Pack $49.99/mo puts CUHZ Bot in YOUR chat with your links. Curious? !affiliate',
-    '🛒 Emotes, overlays, the Chain Full Pack — real prices, no games → !store'
+    '🛒 Emotes, overlays, the Chain Full Pack — real prices, no games → !store',
+    // Community lines — no price, no urgency. Still one-per-cycle (same pool, one pick).
+    '🎙️ The CUHZ voice fam runs off-stream too — hop in the voice-only Discord and link with the cuhzins → type !discord',
+    '💬 Real convos, cousin to cuhz — the CUHZ family lives in the voice Discord. Pull up, it\'s free → https://discord.gg/eNxDKkxQdN',
+    '👥 Building together is the whole point. Join the CUHZ voice fam → !voice'
 ]);
 
 // --- Gold custom arrival pool (plan §A.3) -----------------------------------
@@ -99,12 +106,14 @@ function _clean(user) {
 function commerceCommandResponse(command) {
     const key = String(command || '').trim().toLowerCase().split(/\s+/)[0];
     if (key === '!shop') return COMMERCE_COMMANDS['!store'];
+    if (key === '!voice' || key === '!family') return COMMERCE_COMMANDS['!discord'];
     return COMMERCE_COMMANDS[key] || null;
 }
 
 function isCommerceCommand(command) {
     const key = String(command || '').trim().toLowerCase().split(/\s+/)[0];
-    return key === '!shop' || key === '!mytier' || Object.prototype.hasOwnProperty.call(COMMERCE_COMMANDS, key);
+    return key === '!shop' || key === '!mytier' || key === '!voice' || key === '!family'
+        || Object.prototype.hasOwnProperty.call(COMMERCE_COMMANDS, key);
 }
 
 function myTierLine(tier, user) {
@@ -137,7 +146,9 @@ function upgradeLine(user) {
 // (Basic channels are other streamers' chats — we don't sell there).
 const COMMERCE_COMMAND_NAMES = Object.freeze([
     '!plans', '!silver', '!gold', '!affiliate', '!architect',
-    '!mytier', '!site', '!pro', '!membership', '!store', '!shop'
+    '!mytier', '!site', '!pro', '!membership', '!store', '!shop',
+    // Voice-fam Discord (community invite) + its aliases.
+    '!discord', '!voice', '!family'
 ]);
 
 module.exports = {
