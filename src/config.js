@@ -33,6 +33,11 @@ module.exports = {
     enableTierSync: process.env.ENABLE_TIER_SYNC === 'true',
     enableCommerceCommands: process.env.ENABLE_COMMERCE_COMMANDS === 'true',
     enablePurchaseShoutouts: process.env.ENABLE_PURCHASE_SHOUTOUTS === 'true',
+    // Roster-sync (Wave 6 self-serve join): poll the site's bot-worker-sync
+    // desired-state and auto-join approved channels / part revoked ones. Secure-off
+    // by default — the bot joins NOTHING new from the site until the owner flips it.
+    // Env TWITCH_CHANNEL_NAME channels stay PROTECTED (never parted) regardless.
+    enableRosterSync: process.env.ENABLE_ROSTER_SYNC === 'true',
     // Unpublished perk — the ladder promises stipends, not multipliers. Stays OFF
     // until the owner publishes it; never advertise an unpublished perk.
     enableGoldPoints2x: process.env.ENABLE_GOLD_POINTS_2X === 'true',

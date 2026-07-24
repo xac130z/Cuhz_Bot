@@ -288,6 +288,7 @@ membership. `!mytier` reports only the bot ladder.
 | `ENABLE_PURCHASE_SHOUTOUTS` | `false` — consent-gated purchase thank-yous in home channels |
 | `ENABLE_GOLD_POINTS_2X` | `false` — reserved; do NOT enable until the perk is published on the ladder |
 | `ENABLE_KEYWORD_REPLIES` | `false` — one short, code-owned keyword-intent reply on non-command chat (home surfaces, live-only, hard-cooldowned) |
+| `ENABLE_ROSTER_SYNC` | `false` — self-serve join: auto-join channels streamers approve on the site, part revoked ones (see below) |
 
 ### Owner go-live order (do this by hand — nothing auto-deploys)
 1. In Supabase, confirm the Stripe bot-tier price ids are configured (checkout
@@ -318,6 +319,49 @@ merged on top of this at startup: any channels returned by the dashboard API, an
 every channel in the code's `CHANNEL_TIERS` map (force-joined even if not in the
 dashboard). If nothing is configured anywhere, the bot logs `No channels
 configured to join!` and sits idle. A Railway redeploy applies the change.
+
+### Self-serve roster-sync (`ENABLE_ROSTER_SYNC`, default-OFF)
+
+`src/roster_service.js` makes the **planetcuhz.com self-serve flow real**: a
+streamer requests CUHZ Bot on the site → the site records an `approved`
+`bot_request` → the bot **auto-joins that channel** (and **parts** it when the
+streamer revokes). It reconciles the site's desired-state against the channels
+the bot is actually in, so no human has to edit env vars per streamer.
+
+- **Contract (`bot-worker-sync`, exact field names).** It polls `GET
+  /bot-worker-sync` (Bearer `SITE_API_SECRET`) for the desired list:
+  `{ channels: [ { id, twitch_user_id, twitch_login, status, is_mod,
+  channel_bot_granted, can_send, blocked_reason, last_seen_at } ] }` (status in
+  `approved` | `active`). It reports lifecycle back with the same shapes the
+  edge function accepts: `{ id, event:'joined', twitch_login, is_mod, can_send }`,
+  `{ id, event:'parted' }`, `{ id, event:'error', message }`, and a batch
+  `{ event:'heartbeat', ids:[...] }` (≤500) every ~60s.
+- **Reconcile loop.** Every ~30s (jittered): desired-but-not-joined → **join**
+  (+ report `joined`); joined-but-`approved` → confirm `joined` so the site flips
+  it `active`; in-our-roster-but-no-longer-desired → **part** (+ report `parted`).
+- **Join pacing.** JOINs are held under Twitch's limit (**≤15 JOINs / 10s**,
+  ≤10 per cycle, spaced) with a per-channel exponential backoff on failure (a
+  failed join reports `error` and does **not** enter the roster).
+- **PROTECTED env channels.** Every channel in `TWITCH_CHANNEL_NAME` is
+  **never parted** by roster-sync, even if it is absent from desired-state.
+  Roster-sync only ever parts channels it *itself* joined via the site.
+- **Fail-open.** If the site is unreachable/misconfigured, the bot **keeps its
+  current roster**, never crashes chat, and retries with exponential backoff. A
+  site outage never joins or parts anything.
+- **Persisted roster.** The last-known roster (login + the site's request `id`)
+  lives in the SQLite/Postgres `roster_channels` table, so a Railway restart can
+  still emit an honest `parted` for a channel revoked while the bot was down.
+  Env channels are never stored here.
+
+**Channel-tier note (important):** channels joined via roster-sync default to the
+**Basic / free experience**. Roster-sync **never** adds a channel to
+`CHANNEL_TIERS`, and the message path already falls through to `TIERS.BASIC` for
+any unlisted channel (`CHANNEL_TIERS[channel] || TIERS.BASIC`). So a self-serve
+channel gets **no Pro/Premium surfaces** — no marketing rotation, no `!plans`
+commerce family (Premium-gated), no premium-only behaviors — unless it is
+explicitly promoted in `CHANNEL_TIERS`, or a viewer's own paid entitlement lifts
+*that viewer* via `tier_service.js`. Pro surfaces are never auto-granted to a
+channel just because the bot joined it.
 
 ### Keyword-intent replies (`ENABLE_KEYWORD_REPLIES`, default-OFF)
 

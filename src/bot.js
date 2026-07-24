@@ -18,6 +18,7 @@ const safetyPolicy = require('./safety_policy');
 const streamContent = require('./stream_content');
 const commerceContent = require('./commerce_content');
 const tierService = require('./tier_service');
+const rosterService = require('./roster_service');
 const keywordListener = require('./keyword_listener');
 
 // Single keyword-intent listener instance (Wave 6, default-OFF). Owns its own
@@ -1445,6 +1446,21 @@ async function initializeTwitchClient() {
         isLive: (ch) => { const s = streamStates.get(ch); return !!(s && s.isLive); },
         hasChatted: hasChattedThisSession,
         sendMessage
+    });
+
+    // Wave 6 — roster-sync (self-serve join). Flag-gated (ENABLE_ROSTER_SYNC),
+    // fail-open, and default-OFF: when the flag is off it schedules nothing. When
+    // on, it polls the site's bot-worker-sync desired-state and auto-joins the
+    // channels streamers approve on planetcuhz.com (parting revoked ones), paced
+    // within Twitch's JOIN limits. Env TWITCH_CHANNEL_NAME channels are PROTECTED
+    // and never parted. Roster-joined channels are NOT added to CHANNEL_TIERS, so
+    // they get the Basic/free experience — no Pro/Premium surfaces are granted.
+    rosterService.start({
+        client,
+        join: (ch) => client.join(ch),
+        part: (ch) => client.part(ch),
+        getJoined: () => client.getChannels(),
+        protectedChannels: config.channels
     });
 }
 

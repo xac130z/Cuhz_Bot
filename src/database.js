@@ -283,6 +283,19 @@ class DBAdapter {
         product TEXT,
         created_at TEXT,
         announced_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Wave 6: Roster-sync — self-serve channel roster =====
+      // Persisted last-known roster of channels CUHZ Bot joined via the website
+      // self-serve flow (bot-worker-sync desired-state). `request_id` is the
+      // site's bot_requests.id, kept so that after a Railway restart the bot can
+      // still emit an honest `parted` for a channel that was revoked while it was
+      // down. Env / TWITCH_CHANNEL_NAME channels are NEVER stored here — they are
+      // protected and joined at startup, not managed by roster-sync.
+      `CREATE TABLE IF NOT EXISTS roster_channels (
+        twitch_login TEXT PRIMARY KEY,
+        request_id TEXT,
+        joined_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`
     ];
   }
