@@ -113,6 +113,27 @@ function run() {
         assert.strictEqual(policy.isApprovedUrl(url), true, `unapproved URL in voice line: ${url}`);
     }
 
+    // 8d. !pod podcast command + its aliases resolve to the same podcast line.
+    assert.ok(commerce.COMMERCE_COMMANDS['!pod'], '!pod command must exist');
+    assert.strictEqual(commerce.commerceCommandResponse('!pod'), commerce.COMMERCE_COMMANDS['!pod']);
+    assert.strictEqual(commerce.commerceCommandResponse('!podcast'), commerce.COMMERCE_COMMANDS['!pod']); // alias
+    assert.strictEqual(commerce.commerceCommandResponse('!pcp'), commerce.COMMERCE_COMMANDS['!pod']); // alias
+    assert.strictEqual(commerce.commerceCommandResponse('!PCP tune in'), commerce.COMMERCE_COMMANDS['!pod']);
+    assert.ok(commerce.isCommerceCommand('!pod') && commerce.isCommerceCommand('!podcast') && commerce.isCommerceCommand('!pcp'));
+    for (const name of ['!pod', '!podcast', '!pcp']) {
+        assert.ok(commerce.COMMERCE_COMMAND_NAMES.includes(name), `${name} must be in COMMERCE_COMMAND_NAMES`);
+    }
+
+    // 8e. The podcast line points at the real planetcuhz.com/podcast surface,
+    // and that URL is on the safety allowlist (approved host + APPROVED_LINKS).
+    const podLine = commerce.COMMERCE_COMMANDS['!pod'];
+    assert.ok(podLine.includes('https://planetcuhz.com/podcast'), 'pod line must use the site podcast surface');
+    assert.strictEqual(policy.isApprovedUrl('https://planetcuhz.com/podcast'), true);
+    assert.strictEqual(policy.APPROVED_LINKS.podcast, 'https://planetcuhz.com/podcast');
+    for (const url of policy.extractUrls(podLine)) {
+        assert.strictEqual(policy.isApprovedUrl(url), true, `unapproved URL in pod line: ${url}`);
+    }
+
     // 9. !mytier lines are tier-correct and mention the user.
     assert.match(commerce.myTierLine('gold', 'cuhzy'), /Gold Executive/);
     assert.match(commerce.myTierLine('gold', 'cuhzy'), /@cuhzy/);

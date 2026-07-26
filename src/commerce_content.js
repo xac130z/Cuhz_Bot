@@ -33,6 +33,9 @@ const COMMERCE_COMMANDS = Object.freeze({
     // Voice-only Discord — the same invite the site footer links (SOCIAL_LINKS).
     // A community invite, not a sale: no price, no urgency. Aliases: !voice, !family.
     '!discord': '🎙️ Pull up to the CUHZ voice fam — our voice-only Discord is where the cuhzins actually link up, cousin to cuhz → https://discord.gg/eNxDKkxQdN',
+    // Planet CUHZ Podcast — a content plug, not a sale: no price, no urgency.
+    // Aliases: !podcast, !pcp. Points at the real planetcuhz.com/podcast surface.
+    '!pod': '🎙️ PCP — the Planet CUHZ Podcast (not that PCP, cuhz). Episode 001 is live → https://planetcuhz.com/podcast',
     '!pro': '🚀 Planet CUHZ site membership (separate from CUHZ Bot tiers): Free · Pro $9.99/mo · Team $24.99/mo — 2K tools, squad features, coaching perks → https://planetcuhz.com/pricing',
     '!membership': '🚀 Planet CUHZ site membership (separate from CUHZ Bot tiers): Free · Pro $9.99/mo · Team $24.99/mo — 2K tools, squad features, coaching perks → https://planetcuhz.com/pricing',
     '!store': '🛒 CUHZ digital store: CUHZ Chain Full Pack $9 · Emote Pack $7 · Overlay Kit $15 → https://planetcuhz.com/store'
@@ -54,7 +57,9 @@ const PROMO_LINES = Object.freeze([
     // Community lines — no price, no urgency. Still one-per-cycle (same pool, one pick).
     '🎙️ The CUHZ voice fam runs off-stream too — hop in the voice-only Discord and link with the cuhzins → type !discord',
     '💬 Real convos, cousin to cuhz — the CUHZ family lives in the voice Discord. Pull up, it\'s free → https://discord.gg/eNxDKkxQdN',
-    '👥 Building together is the whole point. Join the CUHZ voice fam → !voice'
+    '👥 Building together is the whole point. Join the CUHZ voice fam → !voice',
+    // Content plug — no price, no urgency, no invented stats. One pick per cycle.
+    '🎙️ The Planet CUHZ Podcast is up — PCP, and nah not that one cuhz. Tune in → type !pod'
 ]);
 
 // --- Gold custom arrival pool (plan §A.3) -----------------------------------
@@ -107,12 +112,14 @@ function commerceCommandResponse(command) {
     const key = String(command || '').trim().toLowerCase().split(/\s+/)[0];
     if (key === '!shop') return COMMERCE_COMMANDS['!store'];
     if (key === '!voice' || key === '!family') return COMMERCE_COMMANDS['!discord'];
+    if (key === '!podcast' || key === '!pcp') return COMMERCE_COMMANDS['!pod'];
     return COMMERCE_COMMANDS[key] || null;
 }
 
 function isCommerceCommand(command) {
     const key = String(command || '').trim().toLowerCase().split(/\s+/)[0];
     return key === '!shop' || key === '!mytier' || key === '!voice' || key === '!family'
+        || key === '!podcast' || key === '!pcp'
         || Object.prototype.hasOwnProperty.call(COMMERCE_COMMANDS, key);
 }
 
@@ -148,7 +155,9 @@ const COMMERCE_COMMAND_NAMES = Object.freeze([
     '!plans', '!silver', '!gold', '!affiliate', '!architect',
     '!mytier', '!site', '!pro', '!membership', '!store', '!shop',
     // Voice-fam Discord (community invite) + its aliases.
-    '!discord', '!voice', '!family'
+    '!discord', '!voice', '!family',
+    // Planet CUHZ Podcast (content plug) + its aliases.
+    '!pod', '!podcast', '!pcp'
 ]);
 
 module.exports = {

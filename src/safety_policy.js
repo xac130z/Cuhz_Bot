@@ -16,6 +16,7 @@ const APPROVED_LINKS = Object.freeze({
     solutionsIntake: 'https://planetcuhz.com/solutions#start',
     creatorToolkit: 'https://planetcuhz.com/tools',
     community: 'https://planetcuhz.com/community',
+    podcast: 'https://planetcuhz.com/podcast',
     protocol: 'https://planetcuhz.com/protocol',
     memberApp: 'https://planetcuhz.com/app',
     discord: 'https://discord.gg/eNxDKkxQdN',

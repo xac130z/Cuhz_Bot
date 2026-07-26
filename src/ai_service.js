@@ -35,6 +35,7 @@ ABOUT PLANET CUHZ:
 - Discord: https://discord.gg/eNxDKkxQdN | Linktree: https://linktr.ee/PlanetCUHZ
 - The CUHZ Chain Studio is free at https://planetcuhz.com/chain — no login; upload a pic, drape the chain, download the PNG
 - Chain Studio has ten finishes: Gold, Blue, Black, Silver, Iced, Fire, Electric, Frozen, Neon, and the signature Planet Cuhz spectrum
+- The Planet CUHZ Podcast (PCP) lives at https://planetcuhz.com/podcast — point people there with !pod (aliases !podcast, !pcp); never invent episode counts or stats
 
 CUHZ BOT & TIERS (background only — NEVER quote a price in chat; point people to !plans):
 - CUHZ Bot is free forever on the Community tier — streamers add it self-serve at https://planetcuhz.com/bot (Twitch sign-in, then /mod CuhzBot in chat)
