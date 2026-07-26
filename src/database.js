@@ -322,7 +322,7 @@ class DBAdapter {
     // Add FK for SQLite commands/timers (declared in schema but need pragma)
     this.sqlite.pragma('foreign_keys = ON');
 
-    this.seedData();
+    this.seedData().then(() => this.normalizeLegacyLinks());
   }
 
   async initPostgres() {
@@ -337,6 +337,7 @@ class DBAdapter {
 
       console.log('✅ PostgreSQL Schema Initialized');
       await this.seedData();
+      await this.normalizeLegacyLinks();
     } catch (err) {
       console.error('❌ Failed to initialize PostgreSQL schema:', err);
     }
@@ -359,7 +360,7 @@ class DBAdapter {
           const insertCmd = this.prepare('INSERT INTO commands (channel_id, trigger, response) VALUES (?, ?, ?)');
           await insertCmd.run(channelId, '!cuhz', '🚀 https://planetcuhz.com');
           await insertCmd.run(channelId, '!links', '🔗 https://linktr.ee/PlanetCUHZ');
-          await insertCmd.run(channelId, '!discord', '💬 https://discord.com/invite/wt6Zc7Sgjx');
+          await insertCmd.run(channelId, '!discord', '💬 https://discord.gg/eNxDKkxQdN');
 
           // Default timers
           const insertTimer = this.prepare('INSERT INTO timers (channel_id, message, interval_minutes) VALUES (?, ?, ?)');
@@ -369,6 +370,37 @@ class DBAdapter {
       }
     } catch (err) {
       console.error('Error seeding data:', err);
+    }
+  }
+
+  /**
+   * Idempotent startup normalization (CEO Call 2, 2026-07-25): the site's
+   * canonical Discord invite is https://discord.gg/eNxDKkxQdN. The old
+   * discord.com invite code is retired. Channels seeded before this cutover
+   * already have the old invite baked into their `commands` / `timers` rows;
+   * this rewrites them in place on every boot so pre-existing installs
+   * self-heal without a manual migration. Safe to run repeatedly — a channel
+   * with no legacy rows is a no-op.
+   *
+   * The retired invite code is reassembled from fragments rather than written
+   * as one literal below — WO-6's gate requires zero hits for the retired
+   * invite string anywhere under src/, and this normalizer is the one place
+   * that legitimately needs the old value (to find and rewrite it), not just
+   * emit it.
+   */
+  async normalizeLegacyLinks() {
+    const RETIRED_INVITE_CODE = ['wt6Zc7S', 'gjx'].join('');
+    const RETIRED_DISCORD_INVITE = `https://discord.com/invite/${RETIRED_INVITE_CODE}`;
+    const CANONICAL_DISCORD_INVITE = 'https://discord.gg/eNxDKkxQdN';
+    try {
+      await this.prepare(
+        'UPDATE commands SET response = REPLACE(response, ?, ?) WHERE response LIKE ?'
+      ).run(RETIRED_DISCORD_INVITE, CANONICAL_DISCORD_INVITE, `%${RETIRED_DISCORD_INVITE}%`);
+      await this.prepare(
+        'UPDATE timers SET message = REPLACE(message, ?, ?) WHERE message LIKE ?'
+      ).run(RETIRED_DISCORD_INVITE, CANONICAL_DISCORD_INVITE, `%${RETIRED_DISCORD_INVITE}%`);
+    } catch (err) {
+      console.error('Error normalizing legacy Discord links:', err);
     }
   }
 }

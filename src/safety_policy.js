@@ -18,7 +18,7 @@ const APPROVED_LINKS = Object.freeze({
     community: 'https://planetcuhz.com/community',
     protocol: 'https://planetcuhz.com/protocol',
     memberApp: 'https://planetcuhz.com/app',
-    discord: 'https://discord.com/invite/wt6Zc7Sgjx',
+    discord: 'https://discord.gg/eNxDKkxQdN',
     voiceDiscord: 'https://discord.gg/eNxDKkxQdN',
     linktree: 'https://linktr.ee/PlanetCUHZ',
     x: 'https://x.com/PlanetCuhz',

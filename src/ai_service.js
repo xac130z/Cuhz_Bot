@@ -31,8 +31,8 @@ const CUHZ_KNOWLEDGE = `
 ABOUT PLANET CUHZ:
 - Planet CUHZ (planetcuhz.com) is a Twitch-native NBA 2K creator community — the Cuhzunity — that also runs as an AI studio
 - "Cuhz" means family/cousin — the community treats everyone like fam
-- Website: https://planetcuhz.com | Voice Discord: https://discord.gg/eNxDKkxQdN | X: https://x.com/PlanetCuhz
-- Discord: https://discord.com/invite/wt6Zc7Sgjx | Linktree: https://linktr.ee/PlanetCUHZ
+- Website: https://planetcuhz.com | X: https://x.com/PlanetCuhz
+- Discord: https://discord.gg/eNxDKkxQdN | Linktree: https://linktr.ee/PlanetCUHZ
 - The CUHZ Chain Studio is free at https://planetcuhz.com/chain — no login; upload a pic, drape the chain, download the PNG
 - Chain Studio has ten finishes: Gold, Blue, Black, Silver, Iced, Fire, Electric, Frozen, Neon, and the signature Planet Cuhz spectrum
 

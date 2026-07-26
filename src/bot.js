@@ -166,7 +166,7 @@ function drainQueue(key) {
 const PUBLIC_COMMANDS = {
     '!cuhz': '🚀 https://planetcuhz.com',
     '!links': '🔗 https://linktr.ee/PlanetCUHZ',
-    '!discord': '💬 Join the CUHZ fam → https://discord.com/invite/wt6Zc7Sgjx',
+    '!discord': '💬 Join the CUHZ fam → https://discord.gg/eNxDKkxQdN',
     '!whatiscuhz': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!faq': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!whitepaper': '📄 https://planetcuhz.com/whitepaper',
@@ -485,16 +485,16 @@ const TIMER_POOLS = {
         "🌌 CUHZ fam, first time here? → https://planetcuhz.com"
     ],
     discord: [
-        "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 CUHZ fam on Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Real convos happening in Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Don't lurk, join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Link up with the fam → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Where the CUHZ planning happens → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Free to join, hard to leave → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Slide in the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 CUHZ Discord — come say what's up → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Planet CUHZ Discord is active 24/7 → https://discord.com/invite/wt6Zc7Sgjx"
+        "💬 Join the Discord → https://discord.gg/eNxDKkxQdN",
+        "💬 CUHZ fam on Discord → https://discord.gg/eNxDKkxQdN",
+        "💬 Real convos happening in Discord → https://discord.gg/eNxDKkxQdN",
+        "💬 Don't lurk, join the Discord → https://discord.gg/eNxDKkxQdN",
+        "💬 Link up with the fam → https://discord.gg/eNxDKkxQdN",
+        "💬 Where the CUHZ planning happens → https://discord.gg/eNxDKkxQdN",
+        "💬 Free to join, hard to leave → https://discord.gg/eNxDKkxQdN",
+        "💬 Slide in the Discord → https://discord.gg/eNxDKkxQdN",
+        "💬 CUHZ Discord — come say what's up → https://discord.gg/eNxDKkxQdN",
+        "💬 Planet CUHZ Discord is active 24/7 → https://discord.gg/eNxDKkxQdN"
     ],
     socials: [
         "🔗 All links → https://linktr.ee/PlanetCUHZ",
@@ -722,7 +722,7 @@ const USER_VARIANT_POOLS = {
 const SOCIAL_LINKS = {
     website:  'https://planetcuhz.com',
     linktree: 'https://linktr.ee/PlanetCUHZ',
-    discord:  'https://discord.com/invite/wt6Zc7Sgjx',
+    discord:  'https://discord.gg/eNxDKkxQdN',
     // Drop IG/TikTok/YT URLs in here when ready.
     instagram: null,
     tiktok:    null,
@@ -1047,14 +1047,14 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
-    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
+    "💬 Join the Discord → https://discord.gg/eNxDKkxQdN",
     "⛓️ CUHZ Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain"
 ];
 
 const BASIC_TIMER_MESSAGES = [
     '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream! → twitch.tv/four_a_reason 🚀',
     '🌌 Planet CUHZ — the creator ecosystem where we all level up together 💎',
-    '💬 Join the CUHZ fam on Discord → https://discord.com/invite/wt6Zc7Sgjx',
+    '💬 Join the CUHZ fam on Discord → https://discord.gg/eNxDKkxQdN',
     '🔥 Type !hype, !vibe, or !w to show love in the chat!'
 ];
 

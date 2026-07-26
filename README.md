@@ -434,4 +434,10 @@ window.
 
 ---
 
+## 🧭 Canon
+
+`docs/CANON.mirror.json` is a **read-only, version-stamped mirror** of the single source of truth for Planet CUHZ prices, tiers, links, and brand — `SITE/canon/canon.json` (site repo: `vqnc-labs-website`, path `Planet Cuhz/Planet Cuhz Website/canon/canon.json`). Do not hand-edit the mirror; a product fact (price, tier, link, spelling, mark) is born and changed only in the site's `canon.json`, then propagated here on the next sync wave. If this bot's links/prices ever disagree with the canon, that's a bug in the bot, never in the canon. Canonical Discord invite: `https://discord.gg/eNxDKkxQdN`.
+
+---
+
 *Built for the CUHZ community. 🌌*
