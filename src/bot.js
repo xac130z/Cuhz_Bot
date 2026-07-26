@@ -20,6 +20,7 @@ const commerceContent = require('./commerce_content');
 const tierService = require('./tier_service');
 const rosterService = require('./roster_service');
 const keywordListener = require('./keyword_listener');
+const followageService = require('./followage_service');
 
 // Single keyword-intent listener instance (Wave 6, default-OFF). Owns its own
 // cooldown state. Bot names cover the login + the customer-facing "CUHZ Bot"
@@ -1285,6 +1286,19 @@ async function getFollowData(broadcasterId, userId) {
     }
 }
 
+// Helix auth bundle for followage_service — reuses the same validated identity
+// (fetchClientId) every other Helix helper here relies on. Returns null when the
+// token can't be validated so the service can reply honestly instead of erroring.
+async function getHelixAuth() {
+    if (!twitchClientId) await fetchClientId();
+    if (!twitchClientId) return null;
+    return {
+        clientId: twitchClientId,
+        token: config.oauthToken.replace('oauth:', ''),
+        botUserId
+    };
+}
+
 async function updateChannelInfo(broadcasterId, data) {
     if (!twitchClientId) await fetchClientId();
     if (!twitchClientId) return false;
@@ -2328,46 +2342,28 @@ async function handleMessage(channel, tags, message, self) {
 
     // 2. Dynamic Commands
     if (msg.startsWith('!followage') || msg.startsWith('!following')) {
+        // '!followage' sits on BASIC_BLOCKED_COMMANDS: Basic channels are other
+        // streamers' chats — silent skip there, matching the static-command gate.
+        if (!isProOrPremium) return;
         try {
-            // 1. Determine target user (sender or specified user)
-            const args = message.split(' ');
-            const targetUsername = args[1] ? args[1].replace('@', '') : tags.username;
-
-            // 2. Get IDs for Channel and Target User
-            const channelUser = await getTwitchUser(channel.replace('#', ''));
-            const targetUser = await getTwitchUser(targetUsername);
-
-            if (!channelUser || !targetUser) {
-                logger.warn(`Could not resolve IDs for followage check: Ch=${channel} User=${targetUsername}`);
-                client.say(channel, `⚠️ Can't look up follow data right now — the bot may need re-authorization. Try again later!`);
-                return;
-            }
-
-            // 3. Check follow status
-            const followData = await getFollowData(channelUser.id, targetUser.id);
-
-            if (followData) {
-                const start = new Date(followData.followed_at);
-                const now = new Date();
-                const diffTime = Math.abs(now - start);
-
-                const years = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365));
-                const months = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24 * 30));
-                const days = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 30)) / (1000 * 60 * 60 * 24));
-                const hours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-
-                let timeStr = "";
-                if (years > 0) timeStr += `${years}y `;
-                if (months > 0) timeStr += `${months}m `;
-                if (days > 0) timeStr += `${days}d `;
-                if (timeStr === "") timeStr = `${hours}h`; // Fallback for very new follows
-
-                client.say(channel, `@${targetUsername} has been following for ${timeStr.trim()}! 📅`);
-            } else {
-                client.say(channel, `@${targetUsername} is not following ${channel} (yet)!`);
-            }
+            // Target: the sender, or "!followage @somebody". The tmi tags already
+            // carry the sender's Twitch id, so the self-lookup needs no /users call.
+            const args = message.trim().split(/\s+/);
+            const requested = args[1] ? args[1].replace(/^@/, '') : null;
+            const result = await followageService.getFollowage({
+                channelLogin: channel.replace('#', ''),
+                targetLogin: (requested || tags.username || '').toLowerCase(),
+                targetUserId: requested ? null : (tags['user-id'] || null),
+                targetDisplay: requested || tags['display-name'] || tags.username,
+                auth: getHelixAuth
+            });
+            // buildReply is honest by design: no_permission and API errors get
+            // their own lines — a failed lookup is NEVER reported as "not following".
+            sendMessage(channel, followageService.buildReply(result));
         } catch (err) {
-            logger.error('Error in !followage:', err.message);
+            // getFollowage never throws by contract; this is a last-resort belt.
+            logger.error('Error in !followage:', err && err.message ? err.message : err);
+            sendMessage(channel, `The follow-checker glitched for a sec, cuhz — run it back in a minute 🔧`);
         }
         return;
     }
