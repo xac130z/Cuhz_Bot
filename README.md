@@ -275,6 +275,33 @@ membership. `!mytier` reports only the bot ladder.
   `entitlement_id` in the `announced_purchases` SQLite table so a restart never
   double-announces.
 
+### CUHZ points — the model (Wave 6 points fix)
+
+Loyalty points for the community — never currency, never crypto, no cash value.
+The full model is documented in the `src/points_service.js` header; the short
+version:
+
+- **One global balance** per Twitch username across every channel the bot is in.
+  Each ledger row records the channel it happened in (`points_ledger.channel`,
+  added by a boot-time migration-in-code) purely for auditability.
+- **Earn (real configured rates, single source `pointsService.EARN`):** +1 per
+  chat message · +10 activity bonus at most once per 10 minutes while you keep
+  chatting · +300 one-time `!claim` follow bonus · monthly Silver +1,000 / Gold
+  +5,000 stipends (idempotent per calendar month via `claimBonus`).
+- **Spend (`pointsService.COSTS`):** `!ask` 10 · `!ask -brain` 50 · `!code` 25,
+  with the published tier perks (Silver: base `!ask` free, brain 80% off → 10;
+  Gold: all free) applied in `bot.js`. `deductPoints` is atomic — the balance
+  check lives inside the UPDATE, so spends can never overdraw.
+- **Persistence:** `users.points` is the balance cache, `points_ledger` the
+  append-only source of truth; both survive restarts and every query is
+  dialect-safe on sqlite AND Postgres. Points never expire and never reset.
+- **What was broken before this fix:** the "passive paycheck" parsed UTC DB
+  timestamps as local time and never fired (and only paid users who went silent
+  10–30 min); `!top` used SQLite-only `datetime()` and was dead on Railway
+  Postgres; `!pointsinfo` advertised rates that didn't match the code; deduct
+  and claim had check-then-write races. `!points` / `!pointsinfo` copy is now
+  built from the `EARN`/`COSTS` constants so displayed rates can't drift again.
+
 ### New environment variables
 `SITE_API_*` are a **different trust domain** from the created.app dashboard's
 `BOT_API_SECRET`/`API_BASE` — never reuse or confuse them.

@@ -181,7 +181,9 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!'
+    // Built from the service's EARN/COSTS constants so the advertised rates can
+    // never drift from the code again (the old hand-typed line said "!ask 10-20").
+    '!pointsinfo': pointsService.buildPointsInfoLine()
 };
 
 const USER_COMMANDS = {
@@ -1888,37 +1890,20 @@ async function handleMessage(channel, tags, message, self) {
     try {
         const usernameL = username.toLowerCase();
         const now = new Date();
-        const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
 
-        // 1. Check Passive Paycheck (Active for 10 mins -> +10 points)
-        // We check last_seen before updating it to see how long since last active
+        // 1. Snapshot last_seen BEFORE the earn path updates it — the
+        //    welcome-back gate below needs the pre-message value.
         const user = await db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
 
-        if (user) {
-            const lastSeenTime = new Date(user.last_seen).getTime();
-            const timeDiff = now.getTime() - lastSeenTime;
+        // 2. CUHZ points earn path — one call owns the whole model (see the
+        //    points_service.js header): +1 per message, +10 activity bonus at
+        //    most once per 10 min while chatting, and the users upsert
+        //    (points / messages_sent / last_seen) in a single statement.
+        //    Replaces the old "passive paycheck", which parsed UTC DB
+        //    timestamps as local time and never actually fired.
+        await pointsService.recordChatActivity(usernameL, channel);
 
-            // If they've been chatting actively (last msg was within 10-20 mins ago)
-            // AND it's been at least 10 minutes since last activity logged
-            if (timeDiff > 10 * 60 * 1000 && timeDiff < 30 * 60 * 1000) {
-                await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
-            }
-        }
-
-        // 2. Earn Active Point (+1 per message)
-        await pointsService.addPoints(usernameL, 1, 'chat_message');
-
-        // 3. Update User Stats (Last Seen, Msg Count)
-        const upsertUser = db.prepare(`
-            INSERT INTO users (username, points, messages_sent, last_seen)
-            VALUES (?, 1, 1, CURRENT_TIMESTAMP)
-            ON CONFLICT(username) DO UPDATE SET
-                messages_sent = messages_sent + 1,
-                last_seen = CURRENT_TIMESTAMP
-        `);
-        await upsertUser.run(usernameL);
-
-        // 4. Check Achievements (Async) — decoupled from points so a failure here
+        // 3. Check Achievements (Async) — decoupled from points so a failure here
         //    can't break point awarding, and routed through the send queue.
         loyaltySystem.checkAchievements(usernameL).then(newAchievements => {
             if (newAchievements && newAchievements.length > 0) {
@@ -2382,16 +2367,16 @@ async function handleMessage(channel, tags, message, self) {
             // 2. Verify Follow
             const followData = await getFollowData(channelUser.id, targetUser.id);
             if (!followData) {
-                client.say(channel, `🚫 You must be following the channel to claim your 300 point bonus!`);
+                client.say(channel, `🚫 You must be following the channel to claim your ${pointsService.EARN.FOLLOW_BONUS} point bonus!`);
                 return;
             }
 
             // 3. Attempt to Claim (Logic in pointsService handles "one time only" check)
-            const success = await pointsService.claimBonus(tags.username, 'follower_bonus', 300);
+            const success = await pointsService.claimBonus(tags.username, 'follower_bonus', pointsService.EARN.FOLLOW_BONUS, channel);
 
             if (success) {
                 const balance = await pointsService.getBalance(tags.username);
-                client.say(channel, `🎉 FOLLOW BONUS CLAIMED! @${tags.username} received 300 points! Balance: ${balance} 💎`);
+                client.say(channel, `🎉 FOLLOW BONUS CLAIMED! @${tags.username} received ${pointsService.EARN.FOLLOW_BONUS} points! Balance: ${balance} 💎`);
             } else {
                 client.say(channel, `🚫 Nice try cuhz! You already claimed your follower bonus.`);
             }
@@ -2635,9 +2620,10 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // --- Points & Economy Commands ---
+    // (Model lives in points_service.js: global balance, real EARN/COSTS rates.)
     if (msg === '!points' || msg === '!balance') {
         const balance = await pointsService.getBalance(tags.username);
-        sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ points in the bank`);
+        sendMessage(channel, pointsService.buildPointsLine(tags.username, balance));
         return;
     }
 
@@ -2657,9 +2643,14 @@ async function handleMessage(channel, tags, message, self) {
         const target = args[1]?.replace('@', '');
         const amount = parseInt(args[2]);
 
-        if (target && !isNaN(amount)) {
-            await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`);
-            client.say(channel, `💸 @${tags.username} gave ${amount} points to @${target}!`);
+        // Positive amounts only, and only announce a grant that actually landed.
+        if (target && Number.isFinite(amount) && amount > 0) {
+            const granted = await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`, channel);
+            if (granted) {
+                client.say(channel, `💸 @${tags.username} gave ${amount} points to @${target}!`);
+            }
+        } else {
+            client.say(channel, `Usage: !give @user <positive amount>`);
         }
         return;
     }
@@ -2685,11 +2676,16 @@ async function handleMessage(channel, tags, message, self) {
 
         const win = Math.random() < 0.5;
         if (win) {
-            await pointsService.addPoints(tags.username, amount, 'gamble_win');
+            await pointsService.addPoints(tags.username, amount, 'gamble_win', channel);
             client.say(channel, `🎰 WINNER! @${tags.username} doubled up to ${balance + amount} points! 🟢`);
         } else {
-            await pointsService.deductPoints(tags.username, amount, 'gamble_loss');
-            client.say(channel, `🎰 RIP @${tags.username}... you lost ${amount} points. 🔴`);
+            // Atomic deduct — if the balance moved since the check above, stay honest.
+            const lost = await pointsService.deductPoints(tags.username, amount, 'gamble_loss', channel);
+            if (lost) {
+                client.say(channel, `🎰 RIP @${tags.username}... you lost ${amount} points. 🔴`);
+            } else {
+                client.say(channel, `🚫 You're broke cuhz! That balance moved before the dice did.`);
+            }
         }
         return;
     }
@@ -2699,14 +2695,14 @@ async function handleMessage(channel, tags, message, self) {
     // !ask -brain -> Claude (50 pts)
     if (msg.startsWith('!ask ') && isVerifiedStream) {
         let question = message.substring(5).trim();
-        let cost = 10;
+        let cost = pointsService.COSTS.ASK_EYES;
         let brain = 'eyes'; // Default Gemini
         let brainName = 'The Eyes (Gemini)';
 
         if (question.startsWith('-brain')) {
             brain = 'brain'; // Claude
             brainName = 'The Brain (Claude)';
-            cost = 50;
+            cost = pointsService.COSTS.ASK_BRAIN;
             question = question.substring(6).trim();
         }
 
@@ -2717,12 +2713,12 @@ async function handleMessage(channel, tags, message, self) {
             cost = 0;
         } else if (brain === 'brain') {
             if (viewerTier === 'gold') cost = 0;
-            else if (viewerTier === 'silver') cost = 10;
+            else if (viewerTier === 'silver') cost = pointsService.COSTS.ASK_BRAIN_SILVER;
         }
 
         if (question) {
             const reasonSuffix = viewerTier === 'community' ? '' : `_${viewerTier}`;
-            const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}${reasonSuffix}`);
+            const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}${reasonSuffix}`, channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
                 client.say(channel, `🚫 Broke User Alert: You need ${cost} points for ${brainName} but only have ${balance}. Chat more to earn!`);
@@ -2746,13 +2742,13 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg.startsWith('!code ') && isVerifiedStream) {
         const query = message.substring(6).trim();
-        // Gold: zero-cost !code. Silver/community pay the standard 25.
-        let cost = 25;
+        // Gold: zero-cost !code. Silver/community pay the standard COSTS.CODE_HANDS.
+        let cost = pointsService.COSTS.CODE_HANDS;
         if (viewerTier === 'gold') cost = 0;
 
         if (query) {
             const reasonSuffix = viewerTier === 'community' ? '' : `_${viewerTier}`;
-            const success = await pointsService.deductPoints(tags.username, cost, `ask_hands${reasonSuffix}`);
+            const success = await pointsService.deductPoints(tags.username, cost, `ask_hands${reasonSuffix}`, channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
                 client.say(channel, `🚫 You need ${cost} points for The Hands (Code) but only have ${balance}.`);

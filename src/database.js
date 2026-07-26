@@ -215,11 +215,16 @@ class DBAdapter {
       )`,
 
       // ===== Phase 2: Cuhz Economy =====
+      // Append-only source of truth for CUHZ points (see points_service.js
+      // header for the full model). Balances are GLOBAL per username; `channel`
+      // records where each earn/spend happened, purely for auditability.
+      // Existing installs get `channel` via _ensurePointsLedgerChannel().
       `CREATE TABLE IF NOT EXISTS points_ledger (
         id ${SERIAL} ${PK},
         username TEXT NOT NULL,
         amount INTEGER NOT NULL,
         reason TEXT NOT NULL,
+        channel TEXT,
         created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`,
 
@@ -307,8 +312,34 @@ class DBAdapter {
       'CREATE INDEX IF NOT EXISTS idx_chat_log_username ON chat_log(username, created_at)',
       'CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username)',
       'CREATE INDEX IF NOT EXISTS idx_mood_history_channel ON mood_history(channel, created_at)',
-      'CREATE INDEX IF NOT EXISTS idx_achievements_username ON achievements(username)'
+      'CREATE INDEX IF NOT EXISTS idx_achievements_username ON achievements(username)',
+      // Points economy: (username, reason) serves the claimBonus idempotency
+      // lookup; (created_at) serves the weekly leaderboard rollup. The ledger
+      // gets a row per chat message, so these matter.
+      'CREATE INDEX IF NOT EXISTS idx_points_ledger_user_reason ON points_ledger(username, reason)',
+      'CREATE INDEX IF NOT EXISTS idx_points_ledger_created ON points_ledger(created_at)'
     ];
+  }
+
+  /**
+   * Migration-in-code (Wave 6 points fix): add points_ledger.channel to
+   * installs created before the column existed. CREATE TABLE IF NOT EXISTS
+   * can't retrofit columns, so this runs on every boot — a no-op once applied.
+   * Postgres has ADD COLUMN IF NOT EXISTS; sqlite needs the pragma check.
+   */
+  async _ensurePointsLedgerChannel() {
+    try {
+      if (this.type === 'postgres') {
+        await this.pgPool.query('ALTER TABLE points_ledger ADD COLUMN IF NOT EXISTS channel TEXT');
+      } else {
+        const cols = this.sqlite.prepare('PRAGMA table_info(points_ledger)').all();
+        if (!cols.some(c => c.name === 'channel')) {
+          this.sqlite.exec('ALTER TABLE points_ledger ADD COLUMN channel TEXT');
+        }
+      }
+    } catch (err) {
+      console.error('Error ensuring points_ledger.channel column:', err.message);
+    }
   }
 
   initSqlite() {
@@ -322,7 +353,9 @@ class DBAdapter {
     // Add FK for SQLite commands/timers (declared in schema but need pragma)
     this.sqlite.pragma('foreign_keys = ON');
 
-    this.seedData().then(() => this.normalizeLegacyLinks());
+    this._ensurePointsLedgerChannel()
+      .then(() => this.seedData())
+      .then(() => this.normalizeLegacyLinks());
   }
 
   async initPostgres() {
@@ -336,6 +369,7 @@ class DBAdapter {
       }
 
       console.log('✅ PostgreSQL Schema Initialized');
+      await this._ensurePointsLedgerChannel();
       await this.seedData();
       await this.normalizeLegacyLinks();
     } catch (err) {

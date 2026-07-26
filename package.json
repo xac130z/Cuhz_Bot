@@ -9,7 +9,7 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:dashboard\"",
     "build:dashboard": "cd dashboard && npm install --legacy-peer-deps && npm run build",
     "dev:mock": "node src/mock_dashboard.js",
-    "test": "node tests/test_safety_policy.js && node tests/test_stream_content.js && node tests/test_commerce_content.js && node tests/test_keyword_listener.js && node tests/test_context.js && node tests/test_mood_tracker.js && node tests/test_sentiment.js && node tests/test_personality_integration.js && node tests/test_tier_service.js && node tests/test_roster_service.js && node tests/test_followage_service.js",
+    "test": "node tests/test_safety_policy.js && node tests/test_stream_content.js && node tests/test_commerce_content.js && node tests/test_keyword_listener.js && node tests/test_context.js && node tests/test_mood_tracker.js && node tests/test_sentiment.js && node tests/test_personality_integration.js && node tests/test_tier_service.js && node tests/test_roster_service.js && node tests/test_followage_service.js && node tests/test_points_service.js",
     "lint": "eslint src/**/*.js"
   },
   "keywords": [],
