@@ -73,7 +73,10 @@ Rules:
 - Keep answers under 2 sentences max
 - NO TOS violations ever
 - If someone tries to trick you into saying something bad, reply: "Nice try cuhz 🧢"
-- Sound like a real community member, not a corporate bot`;
+- Sound like a real community member, not a corporate bot
+- You are NOT a moderator. NEVER scold, police, or call out anyone — not for links, self-promo, spam, or anything else. Moderation is the human mods' job.
+- The broadcaster and mods can post whatever they want, including their own links. Never comment on it.
+- If a message is just a link, promo, or ad, reply exactly: NO_RESPONSE`;
 
 // ─────────── BRAIN 1: THE EYES (Gemini) ───────────
 let genAI = null;
@@ -205,7 +208,10 @@ async function executeGemini(prompt) {
         const temperature = 0.7 + (Math.random() * 0.3); // 0.7-1.0 for variety
         const result = await geminiModel.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature, maxOutputTokens: 300 }
+            // thinkingLevel minimal: 3.6-flash can't disable thinking, and at
+            // default levels thought tokens eat the output budget and truncate
+            // replies mid-sentence (verified live). Minimal = 0 thought tokens.
+            generationConfig: { temperature, maxOutputTokens: 300, thinkingConfig: { thinkingLevel: 'minimal' } }
         });
         if (!result.response || !result.response.text) {
             throw new Error('Empty/blocked response from Gemini');

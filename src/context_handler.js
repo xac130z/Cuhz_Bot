@@ -82,6 +82,13 @@ function isCuhzRelated(message) {
 function isQuestionOrRequest(message) {
     const lowerMsg = message.toLowerCase().trim();
 
+    // Never treat links/promos as questions — URL query strings contain '?'
+    // and previously tripped the question detector (bot scolded the streamer
+    // for posting his own YouTube link). Links are never the bot's business.
+    if (/(https?:\/\/|www\.|\.com\/|\.gg\/|youtu\.be)/i.test(lowerMsg)) {
+        return false;
+    }
+
     // CUHZ keyword boost — lower threshold for CUHZ-related messages
     const hasCuhzKeyword = isCuhzRelated(message);
     const minLength = hasCuhzKeyword ? 8 : 15; // More lenient for CUHZ mentions
