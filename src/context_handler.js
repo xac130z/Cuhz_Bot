@@ -8,7 +8,7 @@ const CONTEXT_BUFFER_SIZE = 20;
 
 // Response cooldown: prevents bot from spamming same user
 const userResponseCooldowns = new Map(); // username -> last response timestamp
-const RESPONSE_COOLDOWN_MS = 45000; // 45 seconds between responses to same user
+const RESPONSE_COOLDOWN_MS = 60000; // 60 seconds between responses to same user
 
 // Bot identity for mention detection
 const BOT_USERNAME = (process.env.BOT_USERNAME || 'cuhz_bot').toLowerCase();
@@ -122,8 +122,11 @@ function isQuestionOrRequest(message) {
     // Direct bot mention is always worth responding to
     const mentionsBot = lowerMsg.includes(`@${BOT_USERNAME}`) || lowerMsg.includes('cuhz bot') || lowerMsg.includes('cuhzbot');
 
-    // Must have at least one strong signal
-    return mentionsBot || hasRequestPattern || (startsWithQuestion && hasQuestionMark) || (hasQuestionMark && lowerMsg.length > 20);
+    // Must have at least one strong signal. The old catch-all
+    // (hasQuestionMark && length > 20) made the bot butt into viewer-to-viewer
+    // conversations ("AIN'T NOBODY TALKING TO YOU CUHZBOT") — removed. A bare
+    // question mark now only qualifies when the question is about CUHZ itself.
+    return mentionsBot || hasRequestPattern || (startsWithQuestion && hasQuestionMark) || (hasQuestionMark && hasCuhzKeyword);
 }
 
 /**
@@ -186,6 +189,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
     // Try to match with existing commands first (faster, no API call)
     const commandMatch = matchExistingCommand(message, availableCommands);
     if (commandMatch) {
+        recordResponse(username); // every reply path must arm the cooldown
         return `@${username} ${commandMatch}`;
     }
 
@@ -193,6 +197,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
     const cachedResponse = await getCachedResponse(channel, message);
     if (cachedResponse) {
         logger.info('💾 Using cached context response');
+        recordResponse(username); // every reply path must arm the cooldown
         return `@${username} ${cachedResponse}`;
     }
 

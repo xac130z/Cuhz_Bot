@@ -211,6 +211,9 @@ async function executeGemini(prompt) {
             // thinkingLevel minimal: 3.6-flash can't disable thinking, and at
             // default levels thought tokens eat the output budget and truncate
             // replies mid-sentence (verified live). Minimal = 0 thought tokens.
+            // SDK passthrough verified (@google/generative-ai 0.24.1): request-level
+            // generationConfig is passed through and JSON.stringify'd verbatim to
+            // the v1beta wire — thinkingConfig is NOT stripped.
             generationConfig: { temperature, maxOutputTokens: 300, thinkingConfig: { thinkingLevel: 'minimal' } }
         });
         if (!result.response || !result.response.text) {
@@ -531,11 +534,13 @@ Commands: ${commandList}
 
 User says: "${userMessage}"
 
-Reply as Cuhz Bot (under 200 chars). If it's just casual chat with no question, reply: NO_RESPONSE${avoidBlock}`;
+Reply as Cuhz Bot (under 200 chars). If it's just casual chat with no question, reply: NO_RESPONSE
+Only respond if the message seems directed at you or asks about Planet CUHZ. If viewers are talking to each other, reply exactly: NO_RESPONSE${avoidBlock}`;
 
         const { text, model } = await executeWithRouting(prompt, vibe);
 
-        if (!text || text === 'NO_RESPONSE' || text.length === 0) return null;
+        // startsWith: models sometimes append punctuation ("NO_RESPONSE.")
+        if (!text || text.startsWith('NO_RESPONSE') || text.length === 0) return null;
 
         let response = safetyFilter(truncateForTwitch(text));
         responseCache.set(cacheKey, { response, timestamp: Date.now() });
