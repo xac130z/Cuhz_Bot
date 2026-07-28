@@ -52,6 +52,28 @@ async function recordMessage(channel, username, message, isCommand = false) {
 }
 
 /**
+ * Credit watch minutes to a user's profile (aggregate across all channels).
+ * Piggybacks on the presence-point ("passive paycheck") awards in bot.js —
+ * each award represents one ~10-minute active-viewing window.
+ * @param {string} username
+ * @param {number} minutes
+ */
+async function addWatchMinutes(username, minutes) {
+    try {
+        if (!minutes || minutes <= 0) return;
+        const usernameL = username.toLowerCase();
+        await db.prepare(`
+            INSERT INTO user_profiles (username, display_name, total_watch_minutes)
+            VALUES (?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET
+                total_watch_minutes = user_profiles.total_watch_minutes + ?
+        `).run(usernameL, username, minutes, minutes);
+    } catch (error) {
+        logger.error(`❌ Failed to add watch minutes for ${username}: ${error.message}`);
+    }
+}
+
+/**
  * Get user profile with computed fields
  * @param {string} username
  * @returns {Promise<Object|null>}
@@ -259,6 +281,7 @@ setInterval(pruneOldLogs, 24 * 3600000).unref(); // unref: don't hold the event 
 
 module.exports = {
     recordMessage,
+    addWatchMinutes,
     getProfile,
     updateRelationshipScore,
     getTopChatters,

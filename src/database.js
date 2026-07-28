@@ -285,6 +285,37 @@ class DBAdapter {
     ];
   }
 
+  /**
+   * Idempotent ALTER TABLE ... ADD COLUMN. CREATE TABLE IF NOT EXISTS never
+   * retrofits columns on existing deployments, so columns added to the schema
+   * after a table first shipped must also be listed here. Safe to run on every
+   * boot — "duplicate column" errors (sqlite + postgres) are swallowed.
+   */
+  async _ensureColumn(table, columnDef) {
+    const sql = `ALTER TABLE ${table} ADD COLUMN ${columnDef}`;
+    try {
+      if (this.type === 'sqlite') {
+        this.sqlite.exec(sql);
+      } else {
+        await this.pgPool.query(sql);
+      }
+      console.log(`🧱 Migrated: added column to ${table} (${columnDef})`);
+    } catch (err) {
+      const msg = (err.message || '').toLowerCase();
+      // sqlite: "duplicate column name: x" | postgres: 42701 / "already exists"
+      if (msg.includes('duplicate column') || msg.includes('already exists') || err.code === '42701') {
+        return; // Column already there — nothing to do
+      }
+      console.error(`❌ Failed to ensure column ${table}.${columnDef}:`, err.message);
+    }
+  }
+
+  /** Columns added after tables first shipped (see _ensureColumn). */
+  async _runMigrations() {
+    // !watchtime — watch-minute tracking (schema declares it, old tables lack it)
+    await this._ensureColumn('user_profiles', 'total_watch_minutes INTEGER DEFAULT 0');
+  }
+
   initSqlite() {
     const schema = this._getSchema('sqlite');
     const indexes = this._getIndexes();
@@ -296,6 +327,7 @@ class DBAdapter {
     // Add FK for SQLite commands/timers (declared in schema but need pragma)
     this.sqlite.pragma('foreign_keys = ON');
 
+    this._runMigrations();
     this.seedData();
   }
 
@@ -308,6 +340,8 @@ class DBAdapter {
       for (const stmt of [...schema, ...indexes]) {
         await this.pgPool.query(stmt);
       }
+
+      await this._runMigrations();
 
       console.log('✅ PostgreSQL Schema Initialized');
       await this.seedData();

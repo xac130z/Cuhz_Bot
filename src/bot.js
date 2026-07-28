@@ -50,11 +50,27 @@ let connectedChannels = new Set();
 
 // State
 let timerIndices = new Map(); // channel -> index
-let streamStates = new Map(); // channel -> { isLive: boolean, startedAt: Date, title: string }
+let streamStates = new Map(); // channel (streamKey format) -> { isLive: boolean, startedAt: Date, title: string }
+
+// Canonical streamStates key: strip the IRC '#' prefix and lowercase.
+// Writers historically keyed by the raw tmi name ('#chan') while some readers
+// used the stripped name ('chan') — every access MUST go through this helper.
+function streamKey(channel) {
+    return String(channel || '').replace('#', '').toLowerCase();
+}
 let channelConfigs = new Map(); // channel -> { timers: [], commands: {}, hype: [] }
 let dailyMessages = new Map(); // channel -> string (set via !settoday)
 let twitchClientId = null; // Fetched dynamically
 let botUserId = null; // Captured during validation
+
+// Webhook forwarding health (see "4. Webhook Forwarding" in handleMessage):
+// throttled error logging + circuit breaker so a dead endpoint can't spam logs.
+let _webhookConsecutiveFailures = 0;
+let _webhookPausedUntil = 0;      // epoch ms; webhooks skipped until this time
+let _webhookLastErrorLogAt = 0;   // epoch ms of last logged webhook error
+const WEBHOOK_FAILURE_THRESHOLD = 5;
+const WEBHOOK_PAUSE_MS = 30 * 60 * 1000;           // 30 minutes
+const WEBHOOK_ERROR_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 // Per-channel welcome tracking (First Contact is scoped to CHANNEL, not global).
 // Keyed by `${channel}:${username}` -> { firstContactAt: number, lastWelcomedAt: number }
@@ -653,6 +669,18 @@ const CUHZ_QUOTES = [
     "🌌 Planet CUHZ for life. Family over everything, every single time 💎"
 ];
 
+// !anti — 6 variants. Viewers were typing '!anti' with no handler. The full
+// username behind the 'antisoci...' log prefix couldn't be confirmed anywhere
+// in the repo/DB, so this pool is generic hype with NO @-mention on purpose.
+const ANTI_QUOTES = [
+    "⚡ Anti-hero energy in the chat — different breed, same CUHZ fam 💎",
+    "🌌 Movin' anti but the vibes stay pro cuhz 🔥",
+    "😤 Anti everything except the grind. Locked in 💎",
+    "⚡ The quiet ones watch everything — anti mode, full presence 👀",
+    "🌌 Anti the noise, pro the frequency. That's the CUHZ way 📡",
+    "🔥 Outside the wave but still in the fam — anti squad tapped in 💎"
+];
+
 // User shoutout rotation pools — all tiers, no repeats within last 2 fires.
 // Hoisted to module scope so the map isn't rebuilt on every chat message.
 const USER_VARIANT_POOLS = {
@@ -686,6 +714,7 @@ const USER_VARIANT_POOLS = {
     '!p&b':         PB_QUOTES,
     '!pb':          PB_QUOTES,
     '!peace':       PB_QUOTES,
+    '!anti':    ANTI_QUOTES,
     '!cuhz':    CUHZ_QUOTES,
     '!planet':  CUHZ_QUOTES,
 };
@@ -1573,7 +1602,8 @@ function loadStreamStates() {
             for (const [key, val] of Object.entries(parsed)) {
                 if (val.startedAt) val.startedAt = new Date(val.startedAt);
                 if (val.lastAnnounced) val.lastAnnounced = new Date(val.lastAnnounced);
-                streamStates.set(key, val);
+                // Older deploys saved '#chan' keys — normalize on rehydration.
+                streamStates.set(streamKey(key), val);
             }
             logger.info('Loaded stream states from disk.');
         }
@@ -1610,7 +1640,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 async function updateStreamState(channel) {
     const status = await checkStreamStatus(channel);
-    const current = streamStates.get(channel);
+    const current = streamStates.get(streamKey(channel));
     const wasLive = current && current.isLive;
 
     // Default game name if undefined
@@ -1633,7 +1663,7 @@ async function updateStreamState(channel) {
             lastAnnounced: shouldAnnounce ? new Date() : (current ? current.lastAnnounced : null)
         };
 
-        streamStates.set(channel, newState);
+        streamStates.set(streamKey(channel), newState);
         saveStreamStates(); // Persist immediately
 
         await streamIntel.updateStreamStatus(channel, newState);
@@ -1648,7 +1678,7 @@ async function updateStreamState(channel) {
     }
     // 2. Stream went OFFLINE
     else if (wasLive) {
-        streamStates.set(channel, { isLive: false, lastAnnounced: current.lastAnnounced });
+        streamStates.set(streamKey(channel), { isLive: false, lastAnnounced: current.lastAnnounced });
         saveStreamStates();
 
         await streamIntel.updateStreamStatus(channel, { isLive: false });
@@ -1732,7 +1762,7 @@ function startRotationalTimer(channel) {
             }
 
             // Smart Check: Only send if stream is LIVE
-            const state = streamStates.get(channel);
+            const state = streamStates.get(streamKey(channel));
             const isLive = state ? state.isLive : false; // Default to false if unknown to avoid spam
 
             // Allow sending if Mock API is enabled (for testing) OR actually live
@@ -1858,6 +1888,9 @@ async function handleMessage(channel, tags, message, self) {
             // AND it's been at least 10 minutes since last activity logged
             if (timeDiff > 10 * 60 * 1000 && timeDiff < 30 * 60 * 1000) {
                 await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
+                // !watchtime: each presence-point award = one ~10-minute active
+                // viewing window (the paycheck's own "active for 10 mins" unit).
+                await userMemory.addWatchMinutes(usernameL, 10);
             }
         }
 
@@ -1971,7 +2004,7 @@ async function handleMessage(channel, tags, message, self) {
 
             // Stream context (game/title/live) makes AI replies concretely
             // smarter with zero extra messages.
-            const streamState = streamStates.get(cleanChannel) || null;
+            const streamState = streamStates.get(streamKey(channel)) || null;
 
             const aiResponse = await contextHandler.handleContextAwareResponse(
                 channel,
@@ -2194,10 +2227,10 @@ async function handleMessage(channel, tags, message, self) {
     // under Twitch's 500-char per-line limit. Audited against actual dispatch
     // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
     if (msg === '!help' || msg === '!commands') {
-        const utility   = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf !sub !raid';
+        const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !storm !juan !rico !bern !dame';
+        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !storm !juan !rico !bern !dame !anti';
         const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
         const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
@@ -2217,14 +2250,14 @@ async function handleMessage(channel, tags, message, self) {
             // Basic — limited shoutouts, no AI, no info-link dump
             sendMessage(channel, utility + ' !claim');
             sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !tay !yoo !anti | Mods: !so !raid !settoday — Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !tay !yoo');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !tay !yoo !anti');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2243,7 +2276,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !storm !juan !rico !bern !dame');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
@@ -2259,12 +2292,19 @@ async function handleMessage(channel, tags, message, self) {
 
     // 2. Dynamic Commands
     if (msg.startsWith('!followage') || msg.startsWith('!following')) {
-        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
-        try {
-            // 1. Determine target user (sender or specified user)
-            const args = message.split(' ');
-            const targetUsername = args[1] ? args[1].replace('@', '') : tags.username;
+        // 1. Determine target user (sender or specified user)
+        const args = message.split(' ');
+        const targetUsername = args[1] ? args[1].replace('@', '') : tags.username;
 
+        // Log every attempt so production logs show usage (was fully silent before).
+        logger.info(`📅 !followage attempt in ${channel} for ${targetUsername} (by ${tags.username}, tier: ${tier})`);
+
+        if (!isProOrPremium) {
+            // Basic tier: friendly upsell instead of silence (in BASIC_BLOCKED_COMMANDS)
+            sendMessage(channel, `Follow-age is a Pro/Premium perk cuhz 💎`);
+            return;
+        }
+        try {
             // 2. Get IDs for Channel and Target User
             const channelUser = await getTwitchUser(channel.replace('#', ''));
             const targetUser = await getTwitchUser(targetUsername);
@@ -2420,7 +2460,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // Viewer version of !game (bare, no args). Mod version (!game <name>) stays below.
     if (msg === '!game') {
-        const state = streamStates.get(channel);
+        const state = streamStates.get(streamKey(channel));
         const gameName = state && state.game ? state.game : null;
         if (gameName) sendMessage(channel, `🎮 Currently playing ${gameName}`);
         else sendMessage(channel, `🎮 No game set right now cuhz — check back in a sec`);
@@ -2428,11 +2468,13 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!uptime') {
-        const state = streamStates.get(channel);
+        const state = streamStates.get(streamKey(channel));
         const channelName = channel.replace('#', '');
 
         if (state && state.isLive && state.startedAt) {
-            const diff = Date.now() - state.startedAt.getTime();
+            // startedAt may be a string if the state was rehydrated/serialized — coerce.
+            const startedAt = state.startedAt instanceof Date ? state.startedAt : new Date(state.startedAt);
+            const diff = Date.now() - startedAt.getTime();
             const hours = Math.floor(diff / (1000 * 60 * 60));
             const minutes = Math.floor((diff / (1000 * 60)) % 60);
             sendMessage(channel, `🔴 ${channelName} has been live for ${hours}h ${minutes}m — grinding 💎`);
@@ -2594,6 +2636,25 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!points' || msg === '!balance') {
         const balance = await pointsService.getBalance(tags.username);
         sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ points in the bank`);
+        return;
+    }
+
+    // !watchtime — all tiers. Aggregate watch minutes across every CUHZ channel,
+    // accrued alongside presence points (passive paycheck) in handleMessage.
+    if (msg === '!watchtime') {
+        try {
+            const profile = await userMemory.getProfile(tags.username);
+            const mins = profile && profile.total_watch_minutes ? profile.total_watch_minutes : 0;
+            if (mins > 0) {
+                const hours = Math.floor(mins / 60);
+                const minutes = mins % 60;
+                sendMessage(channel, `@${tags.username} has watched for ${hours}h ${minutes}m across the CUHZ fam 💎`);
+            } else {
+                sendMessage(channel, `@${tags.username} just started tracking! Hang out in chat and your watch time stacks up 💎`);
+            }
+        } catch (err) {
+            logger.error('Error in !watchtime:', err.message);
+        }
         return;
     }
 
@@ -2897,14 +2958,16 @@ async function handleMessage(channel, tags, message, self) {
     // Warriors command removed per user request
 
     if (msg === '!status' && tags.username === 'planetcuhz') {
-        const state = streamStates.get(channel);
+        const state = streamStates.get(streamKey(channel));
         const liveStatus = state ? (state.isLive ? 'LIVE 🔴' : 'OFFLINE ⚫') : 'UNKNOWN ⚪';
         client.say(channel, `✅ Bot Online. Stream: ${liveStatus}. Ver: Non-Crypto v1.2 (Smart Mode)`);
         return;
     }
 
     // 4. Webhook Forwarding
-    if (config.webhookUrl) {
+    // Never attempt when unset/empty; circuit breaker stops the 400-spam
+    // (124 errors/6h in production) after 5 consecutive failures.
+    if (config.webhookUrl && String(config.webhookUrl).trim() !== '' && Date.now() >= _webhookPausedUntil) {
         try {
             await axios.post(config.webhookUrl, {
                 platform: 'twitch',
@@ -2916,8 +2979,24 @@ async function handleMessage(channel, tags, message, self) {
                 headers: { 'Authorization': `Bearer ${config.webhookToken}` },
                 timeout: 5000
             });
+            _webhookConsecutiveFailures = 0; // healthy again
         } catch (error) {
-            logger.error('Webhook error:', error.message);
+            _webhookConsecutiveFailures++;
+
+            // Log the response body at most once per hour (not on every failure).
+            const now = Date.now();
+            if (now - _webhookLastErrorLogAt >= WEBHOOK_ERROR_LOG_INTERVAL_MS) {
+                _webhookLastErrorLogAt = now;
+                const body = error.response?.data !== undefined ? ` | response body: ${JSON.stringify(error.response.data)}` : '';
+                logger.error(`Webhook error: ${error.message}${body} (consecutive failures: ${_webhookConsecutiveFailures}; further webhook errors muted for 1h)`);
+            }
+
+            // Circuit breaker: 5 consecutive failures → pause for 30 minutes.
+            if (_webhookConsecutiveFailures >= WEBHOOK_FAILURE_THRESHOLD) {
+                _webhookPausedUntil = now + WEBHOOK_PAUSE_MS;
+                _webhookConsecutiveFailures = 0;
+                logger.warn(`🔌 Webhooks paused for 30 minutes after ${WEBHOOK_FAILURE_THRESHOLD} consecutive failures`);
+            }
         }
     }
 }
