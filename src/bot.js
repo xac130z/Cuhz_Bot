@@ -2362,6 +2362,12 @@ async function handleMessage(channel, tags, message, self) {
 
             // 2. Verify Follow
             const followData = await getFollowData(channelUser.id, targetUser.id);
+            if (followData && followData.authError) {
+                // Can't verify follows until the bot token has the follower scope —
+                // fail closed, don't hand out bonuses unverified.
+                client.say(channel, `⚠️ Can't verify follows right now — claim is paused until the bot gets re-authorized. Hold tight cuhz!`);
+                return;
+            }
             if (!followData) {
                 client.say(channel, `🚫 You must be following the channel to claim your 300 point bonus!`);
                 return;
@@ -2654,6 +2660,18 @@ async function handleMessage(channel, tags, message, self) {
             }
         } catch (err) {
             logger.error('Error in !watchtime:', err.message);
+        }
+        return;
+    }
+
+    // !weekly — 7-day points leaderboard (service existed, was never wired to a command)
+    if (msg === '!weekly') {
+        const top = await pointsService.getWeeklyTop(5);
+        if (top.length === 0) {
+            sendMessage(channel, `📊 No points earned this week yet — get chatting cuhz!`);
+        } else {
+            const list = top.map((r, i) => `${i + 1}. ${r.username} (${r.points})`).join(' | ');
+            sendMessage(channel, `🏆 This week's grind: ${list} 💎`);
         }
         return;
     }

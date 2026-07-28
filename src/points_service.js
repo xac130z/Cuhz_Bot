@@ -103,15 +103,18 @@ class PointsService {
      */
     async getWeeklyTop(limit = 5) {
         try {
+            // Cutoff computed in JS — datetime('now','-7 days') is SQLite-only
+            // and would crash on the production Postgres.
+            const since = new Date(Date.now() - 7 * 24 * 3600000).toISOString();
             const rows = await db.prepare(`
                 SELECT username, SUM(amount) AS points
                 FROM points_ledger
-                WHERE created_at >= datetime('now', '-7 days')
+                WHERE created_at >= ?
                 GROUP BY username
                 HAVING SUM(amount) > 0
                 ORDER BY SUM(amount) DESC
                 LIMIT ?
-            `).all(limit);
+            `).all(since, limit);
             return rows;
         } catch (err) {
             logger.error('Failed to get weekly top:', err);
