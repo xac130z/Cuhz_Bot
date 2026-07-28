@@ -132,8 +132,14 @@ function drainQueue(key) {
     }, wait);
 }
 
+// Per-user !gamble cooldown timestamps
+const _gambleCooldowns = new Map();
+
 // --- Content Data (Non-Crypto) ---
 const PUBLIC_COMMANDS = {
+    // NOTE: direct !cuhz dispatch is intercepted by USER_VARIANT_POOLS (hype pool);
+    // this entry stays because the context handler's Q&A matcher uses it to answer
+    // "what is planet cuhz?" with the website link. Intentional dual-registration.
     '!cuhz': '🚀 https://planetcuhz.com',
     '!links': '🔗 https://linktr.ee/PlanetCUHZ',
     '!discord': '💬 Join the CUHZ fam → https://discord.com/invite/wt6Zc7Sgjx',
@@ -2227,7 +2233,7 @@ async function handleMessage(channel, tags, message, self) {
     // under Twitch's 500-char per-line limit. Audited against actual dispatch
     // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
     if (msg === '!help' || msg === '!commands') {
-        const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !uptime !game !socials !commands !ping !nf !sub !raid';
+        const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
         const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !storm !juan !rico !bern !dame !anti';
@@ -2237,7 +2243,7 @@ async function handleMessage(channel, tags, message, self) {
 
         if (isPremium) {
             sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
-            sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot');
+            sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot !faq !roadmap !whitepaper !dashboard');
             sendMessage(channel, shoutouts);
             sendMessage(channel, crew + ' | ' + ai);
             sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
@@ -2701,6 +2707,11 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg.startsWith('!gamble ')) {
         if (!isProOrPremium) return; // advertised as Pro/Premium only
+        // 30s per-user cooldown — every gamble is 2 chat lines; no casino spam
+        const gKey = `gamble:${tags.username.toLowerCase()}`;
+        const gLast = _gambleCooldowns.get(gKey) || 0;
+        if (Date.now() - gLast < 30000) return;
+        _gambleCooldowns.set(gKey, Date.now());
         const args = message.split(' ');
         const amount = parseInt(args[1]);
 
