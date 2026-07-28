@@ -678,13 +678,62 @@ const CUHZ_QUOTES = [
 // !anti — 6 variants. Viewers were typing '!anti' with no handler. The full
 // username behind the 'antisoci...' log prefix couldn't be confirmed anywhere
 // in the repo/DB, so this pool is generic hype with NO @-mention on purpose.
+// !anti for antisocialtv_ — anti-hero energy. Palette ⚡ 🌌 😤 👀 💎.
+// 6 variants, no-repeat-last-2. Username confirmed from production logs.
 const ANTI_QUOTES = [
-    "⚡ Anti-hero energy in the chat — different breed, same CUHZ fam 💎",
-    "🌌 Movin' anti but the vibes stay pro cuhz 🔥",
-    "😤 Anti everything except the grind. Locked in 💎",
-    "⚡ The quiet ones watch everything — anti mode, full presence 👀",
-    "🌌 Anti the noise, pro the frequency. That's the CUHZ way 📡",
-    "🔥 Outside the wave but still in the fam — anti squad tapped in 💎"
+    "⚡ ANTI in the chat! @antisocialtv_ — different breed, same CUHZ fam 💎",
+    "🌌 @antisocialtv_ movin' anti but the vibes stay pro cuhz 🔥",
+    "😤 @antisocialtv_ — anti everything except the grind. Locked in 💎",
+    "⚡ The quiet ones watch everything — @antisocialtv_ in full presence 👀",
+    "🌌 Anti the noise, pro the frequency — @antisocialtv_ that's the CUHZ way 📡",
+    "🔥 @antisocialtv_ tapped in — outside the wave but forever in the fam 💎"
+];
+
+// !blessed / !dj for blesseddj_ — blessed + DJ energy. Palette 🎧 🎶 🙏 ✨ 💿 🔥.
+// 8 variants, no-repeat-last-2.
+const BLESSED_QUOTES = [
+    "🎧 BLESSED DJ in the mix! @blesseddj_ just pulled up — vibes secured 🙏",
+    "🎶 @blesseddj_ touched down! Track list blessed, chat blessed ✨",
+    "🙏 Blessed energy only — @blesseddj_ in the building cuhz 💿",
+    "🔥 DJ on deck! @blesseddj_ keep the frequency SPINNING 🎧",
+    "✨ @blesseddj_ slid in — every drop blessed, every vibe right 🎶",
+    "💿 The mix just got holy — @blesseddj_ we love you cuhz 🙏",
+    "🎧 Ayy it's Blessed! @blesseddj_ pull up and bless the airwaves 🔥",
+    "🎶 @blesseddj_ in the frequency — blessed hands, blessed sounds ✨"
+];
+
+// !phoenix for phoenixpnyc — rise-from-the-ashes + NYC energy. Palette 🔥 🦅 🗽 ✨ 💎.
+// 8 variants, no-repeat-last-2. Most active community chatter in the logs —
+// also the one who requested !watchtime.
+const PHOENIX_QUOTES = [
+    "🔥 PHOENIX RISING! @phoenixpnyc in the chat — NYC stand UP 🗽",
+    "🦅 @phoenixpnyc touched down from the ashes — can't keep a real one down 🔥",
+    "🗽 Empire state of CUHZ — @phoenixpnyc in the building ✨",
+    "🔥 @phoenixpnyc here! Day-one energy, watch-time LEGENDARY 💎",
+    "✨ The bird is BACK — @phoenixpnyc we see you cuhz 🦅",
+    "💎 @phoenixpnyc pulled up — rises every stream, never misses 🔥",
+    "🗽 NYC's finest in the frequency — @phoenixpnyc salute 🦅",
+    "🔥 Ayy Phoenix! @phoenixpnyc the chat just heated UP cuhz ✨"
+];
+
+// !uncle / !meaux for unclemeaux1906 — OG uncle energy. Palette 🎩 💯 😂 🔥 💎.
+const UNCLE_QUOTES = [
+    "🎩 UNCLE MEAUX in the building! @unclemeaux1906 — OG status 💯",
+    "💯 @unclemeaux1906 pulled up! Uncle wisdom activated cuhz 🎩",
+    "🔥 The family elder is HERE — @unclemeaux1906 respect the OG 💎",
+    "😂 @unclemeaux1906 slid in — jokes and gems only 🎩",
+    "🎩 Ayy it's Unc! @unclemeaux1906 the fam just got realer 💯",
+    "💎 @unclemeaux1906 in the frequency — 1906 vintage, timeless energy 🔥"
+];
+
+// !breezy for breezyxd23 — cool breeze energy. Palette 🌬️ 😎 🌊 ❄️ 💎.
+const BREEZY_QUOTES = [
+    "🌬️ BREEZY in the chat! @breezyxd23 just cooled the whole room 😎",
+    "😎 @breezyxd23 pulled up — smooth moves only cuhz 🌊",
+    "❄️ Chat temperature dropped — @breezyxd23 too cool for gravity 🌬️",
+    "🌊 @breezyxd23 slid in like a wave — effortless cuhz 💎",
+    "😎 Ayy Breezy! @breezyxd23 keep it smooth, keep it CUHZ 🌬️",
+    "💎 @breezyxd23 in the frequency — light work, heavy presence ❄️"
 ];
 
 // User shoutout rotation pools — all tiers, no repeats within last 2 fires.
@@ -721,6 +770,12 @@ const USER_VARIANT_POOLS = {
     '!pb':          PB_QUOTES,
     '!peace':       PB_QUOTES,
     '!anti':    ANTI_QUOTES,
+    '!blessed':     BLESSED_QUOTES,
+    '!dj':          BLESSED_QUOTES,
+    '!phoenix':     PHOENIX_QUOTES,
+    '!uncle':       UNCLE_QUOTES,
+    '!meaux':       UNCLE_QUOTES,
+    '!breezy':      BREEZY_QUOTES,
     '!cuhz':    CUHZ_QUOTES,
     '!planet':  CUHZ_QUOTES,
 };
@@ -2236,7 +2291,7 @@ async function handleMessage(channel, tags, message, self) {
         const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !storm !juan !rico !bern !dame !anti';
+        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !mahni !storm !juan !rico !bern !dame !anti';
         const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
         const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
@@ -2256,14 +2311,14 @@ async function handleMessage(channel, tags, message, self) {
             // Basic — limited shoutouts, no AI, no info-link dump
             sendMessage(channel, utility + ' !claim');
             sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !mahni !tay !yoo !anti | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !mahni !tay !yoo !anti | Mods: !so !raid !settoday — Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !tay !yoo !anti');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !cuhz !planet !mahni !tay !yoo !anti');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2282,7 +2337,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
