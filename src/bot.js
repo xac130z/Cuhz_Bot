@@ -861,6 +861,16 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
 ];
 
+// !top100points — four_a_reason ONLY. Four put the Top 100 Proving Grounds
+// scorers on camera and named every grinder. 5 variants, no-repeat-last-2.
+const TOP100_QUOTES = [
+    "🏆 Four put the TOP 100 in Proving Grounds points ON CAMERA — real ones get named. Salute @four_a_reason 👑 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "👑 100 hoopers, one man with the receipts. @four_a_reason showing love to every Proving Grounds grinder 🏀 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "🌹 Top 100 in Proving Grounds points — @four_a_reason gave every grinder their flowers on camera 🏀 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "🔥 Most chase the spotlight. @four_a_reason SHARES it — TOP 100 Proving Grounds scorers, all named 👑 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "💎 @four_a_reason counted the TOP 100 in Proving Grounds points so the grind don't go unseen. Legend behavior 🏆 https://www.youtube.com/watch?v=RnjofXgGo6k"
+];
+
 // Manual !raid (chat command, no args) — raid welcome + follow pitch.
 // Cleaned up from phoenixpnyc's raid call: "Hit follow, here at least twice
 // daily, catch highlights on IG, TikTok and YouTube." 15 variants, no-repeat-3.
@@ -2132,6 +2142,14 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.849. !rock — all tiers, 12 variants, no repeats within last 3 fires.
+    // !top100points — four_a_reason's channel only (his video, his shoutout)
+    if (msg === '!top100points' || msg === '!top100') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const line = pickNoRepeat(`top100:${cleanChannel}`, TOP100_QUOTES, 2);
+        sendMessage(channel, line);
+        return;
+    }
+
     if (msg === '!rock') {
         const line = pickNoRepeat(`rock:${cleanChannel}`, ROCK_QUOTES, 3);
         sendMessage(channel, line);
@@ -2299,7 +2317,7 @@ async function handleMessage(channel, tags, message, self) {
         if (isPremium) {
             sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
             sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot !faq !roadmap !whitepaper !dashboard');
-            sendMessage(channel, shoutouts);
+            sendMessage(channel, shoutouts + (cleanChannel === 'four_a_reason' ? ' !top100points' : ''));
             sendMessage(channel, crew + ' | ' + ai);
             sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
         } else if (tier === TIERS.PRO) {
