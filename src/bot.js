@@ -3085,8 +3085,11 @@ async function handleMessage(channel, tags, message, self) {
         const validation = await validateToken();
         const cap = moderation.capabilityReport(validation && validation.scopes);
         const mark = (ok) => ok ? '✅' : '⚠️';
-        sendMessage(channel, `🛡️ CUHZ Bot mod kit — enforcement: ${mark(cap.ban)} !ban !timeout [secs] !unban · ${mark(cap.clear)} !clear · ${mark(cap.slow)} !slow [secs] !slowoff · ${mark(cap.announce)} !announce <text>`);
-        sendMessage(channel, `🛡️ Stream: !title !game !so !raid · Intel: !chatreport !userreport !mood !botcheck · Points: !give · Setup: !settoday !cleartoday !refresh${(cap.ban && cap.clear && cap.slow) ? '' : ' — ⚠️ = bot token missing a scope (run !botcheck)'}`);
+        sendMessage(channel, `🛡️ CUHZ Bot mod kit — enforcement: ${mark(cap.ban)} !ban [reason] !timeout [secs] [reason] !unban !untimeout · ${mark(cap.clear)} !clear · ${mark(cap.slow)} !slow [secs] !slowoff · ${mark(cap.announce)} !announce <text>`);
+        sendMessage(channel, `🛡️ Stream: !title !game !so !raid · Intel: !chatreport !userreport !mood !personality !botcheck · Points: !give · Setup: !settoday !cleartoday !refresh${(cap.ban && cap.clear && cap.slow && cap.announce) ? '' : ' — ⚠️ = bot token missing that scope (run !botcheck)'}`);
+        // Tier/owner-gated extras: only listed where they'd actually run.
+        if (isProOrPremium) sendMessage(channel, `🛡️ Auto-shoutouts (Pro/Premium): !addstreamer <user> · !removestreamer <user> · !liststreamers`);
+        if (tags.username === 'planetcuhz') sendMessage(channel, `👑 Owner: !status · !aistats`);
         return;
     }
 
