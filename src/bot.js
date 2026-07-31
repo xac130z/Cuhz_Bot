@@ -11,6 +11,7 @@ const userMemory = require('./user_memory');
 const pointsService = require('./points_service');
 const loyaltySystem = require('./loyalty');
 const modIntel = require('./mod_intel');
+const moderation = require('./moderation_service');
 const fs = require('fs');
 const path = require('path');
 
@@ -1432,6 +1433,16 @@ async function initializeTwitchClient() {
     // 1. Fetch Client ID early for API calls
     await fetchClientId();
 
+    // Real Helix moderation (IRC /commands are dead since 2023-02) — see moderation_service.js
+    moderation.init({
+        db,
+        getTwitchUser,
+        getIds: async () => {
+            if (!twitchClientId || !botUserId) await fetchClientId();
+            return { clientId: twitchClientId, botUserId };
+        }
+    });
+
     // 2. Poll the dashboard for channels to join
     let channelsToJoin = [];
 
@@ -2311,7 +2322,7 @@ async function handleMessage(channel, tags, message, self) {
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
         const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !mahni !storm !juan !rico !bern !dame !anti';
         const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
-        const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
+        const modsPro   = '🛡️ Mods: !mod !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
 
         if (isPremium) {
@@ -2871,7 +2882,8 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg.startsWith('!announce ') && isMod) {
         const announcement = message.substring(10);
-        client.say(channel, `/announce ${announcement}`);
+        const res = await moderation.announce(channel, tags.username, announcement);
+        if (!res.ok) client.say(channel, res.message);
         return;
     }
 
@@ -2881,11 +2893,12 @@ async function handleMessage(channel, tags, message, self) {
         const rawTarget = match && match.length >= 2 ? match[1] : null; // [0] is "raid"
         if (!rawTarget) return;
         const target = rawTarget.replace('@', '').toLowerCase();
-        // Fire farewell template first (goes through the send queue so the /raid
-        // command that follows is spaced ≥1.5s after — no Twitch rate-limit blowup).
         const farewell = pickNoRepeat(`raid:${cleanChannel}`, RAID_FAREWELLS, 2).replace('{target}', target);
         sendMessage(channel, farewell);
-        sendMessage(channel, `/raid ${target}`);
+        // Twitch only lets the broadcaster's own token start a raid — prompt honestly
+        // instead of sending a dead /raid chat command (removed by Twitch in 2023).
+        const res = await moderation.raid(channel, tags.username, target);
+        sendMessage(channel, res.message);
         return;
     }
 
@@ -3015,45 +3028,65 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // --- Real Helix moderation (IRC /commands were removed by Twitch 2023-02;
+    // --- the old client.say('/ban …') pattern silently did nothing) ---
+
     if (msg.startsWith('!ban ') && isMod) {
-        const target = message.split(' ')[1];
-        if (target) client.say(channel, `/ban ${target}`);
+        const parts = message.split(' ');
+        const target = parts[1];
+        const reason = parts.slice(2).join(' ') || undefined;
+        if (!target) return;
+        const res = await moderation.banOrTimeout(channel, tags.username, target, null, reason);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg.startsWith('!timeout ') && isMod) {
         const parts = message.split(' ');
         const target = parts[1];
-        const duration = parts[2] || 600;
-        if (target) client.say(channel, `/timeout ${target} ${duration}`);
+        const duration = Math.max(1, Math.min(parseInt(parts[2], 10) || 600, 1209600)); // Twitch max 14d
+        const reason = parts.slice(3).join(' ') || undefined;
+        if (!target) return;
+        const res = await moderation.banOrTimeout(channel, tags.username, target, duration, reason);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg === '!clear' && isMod) {
-        client.say(channel, '/clear');
+        const res = await moderation.clearChat(channel, tags.username);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg.startsWith('!slow ') && isMod) {
-        const seconds = message.split(' ')[1] || 10;
-        client.say(channel, `/slow ${seconds}`);
+        const seconds = Math.max(1, Math.min(parseInt(message.split(' ')[1], 10) || 10, 120));
+        const res = await moderation.setSlowMode(channel, tags.username, seconds);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg === '!slowoff' && isMod) {
-        client.say(channel, '/slowoff');
+        const res = await moderation.setSlowMode(channel, tags.username, 0);
+        client.say(channel, res.message);
         return;
     }
 
-    if (msg.startsWith('!unban ') && isMod) {
+    if ((msg.startsWith('!unban ') || msg.startsWith('!untimeout ')) && isMod) {
         const target = message.split(' ')[1];
-        if (target) client.say(channel, `/unban ${target}`);
+        if (!target) return;
+        const res = await moderation.unban(channel, tags.username, target);
+        client.say(channel, res.message);
         return;
     }
 
-    if (msg.startsWith('!untimeout ') && isMod) {
-        const target = message.split(' ')[1];
-        if (target) client.say(channel, `/untimeout ${target}`);
+    // Self-documenting mod panel: what can CUHZ Bot's mod kit do RIGHT NOW in
+    // this channel — including whether the token scopes actually back each one.
+    if ((msg === '!mod' || msg === '!modcommands') && isMod) {
+        const validation = await validateToken();
+        const cap = moderation.capabilityReport(validation && validation.scopes);
+        const mark = (ok) => ok ? '✅' : '⚠️';
+        sendMessage(channel, `🛡️ CUHZ Bot mod kit — enforcement: ${mark(cap.ban)} !ban !timeout [secs] !unban · ${mark(cap.clear)} !clear · ${mark(cap.slow)} !slow [secs] !slowoff · ${mark(cap.announce)} !announce <text>`);
+        sendMessage(channel, `🛡️ Stream: !title !game !so !raid · Intel: !chatreport !userreport !mood !botcheck · Points: !give · Setup: !settoday !cleartoday !refresh${(cap.ban && cap.clear && cap.slow) ? '' : ' — ⚠️ = bot token missing a scope (run !botcheck)'}`);
         return;
     }
 

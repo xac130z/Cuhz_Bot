@@ -270,6 +270,18 @@ class DBAdapter {
         unique_chatters INTEGER DEFAULT 0,
         mood_summary TEXT,
         created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Moderation audit trail (who did what, to whom, and did Twitch accept it) =====
+      `CREATE TABLE IF NOT EXISTS mod_actions (
+        id ${SERIAL} ${PK},
+        channel TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT,
+        detail TEXT,
+        result TEXT NOT NULL,
+        created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`
     ];
   }
@@ -281,7 +293,8 @@ class DBAdapter {
       'CREATE INDEX IF NOT EXISTS idx_chat_log_username ON chat_log(username, created_at)',
       'CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username)',
       'CREATE INDEX IF NOT EXISTS idx_mood_history_channel ON mood_history(channel, created_at)',
-      'CREATE INDEX IF NOT EXISTS idx_achievements_username ON achievements(username)'
+      'CREATE INDEX IF NOT EXISTS idx_achievements_username ON achievements(username)',
+      'CREATE INDEX IF NOT EXISTS idx_mod_actions_channel ON mod_actions(channel, created_at)'
     ];
   }
 
