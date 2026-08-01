@@ -776,6 +776,8 @@ const USER_VARIANT_POOLS = {
     '!uncle':       UNCLE_QUOTES,
     '!meaux':       UNCLE_QUOTES,
     '!breezy':      BREEZY_QUOTES,
+    '!smutty':      SMUTTY_QUOTES,
+    '!pippen':      SMUTTY_QUOTES,
     '!cuhz':    CUHZ_QUOTES,
     '!planet':  CUHZ_QUOTES,
 };
@@ -859,6 +861,19 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} blessed @{recipient} with a sub — pay it forward, fam 🚀",
     "🎁 SUBGIFT! @{gifter} → @{recipient}. Real ones lift real ones 💎",
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
+];
+
+// !smutty / !pippen for smuttyp1ppen — Pippen namesake + tunes in from the
+// fire watch at work. Palette 🏀 🔥 💪 👑 💎. 8 variants, no-repeat-last-2.
+const SMUTTY_QUOTES = [
+    "🏀 SMUTTY PIPPEN in the building! @smuttyp1ppen — two-way killer energy 🔥",
+    "🔥 @smuttyp1ppen tuned in from the FIRE WATCH — that's real dedication cuhz 💪",
+    "👑 Pippen pulled up! @smuttyp1ppen — every dynasty needs a real one 🏀",
+    "💎 @smuttyp1ppen in the chat! On the clock AND locked in with the fam 🔥",
+    "🏀 @smuttyp1ppen touched down — smooth game, smoother name 👑",
+    "🔥 Fire watch can't stop the CUHZ watch — @smuttyp1ppen ALWAYS pulls up 💪",
+    "💪 @smuttyp1ppen here! Shows up for the fam even mid-shift 😤🏀",
+    "👑 @smuttyp1ppen slid in — Pippen never missed a big moment, neither does he 💎"
 ];
 
 // !top100points — four_a_reason ONLY. Four put the Top 100 Proving Grounds
@@ -2309,7 +2324,7 @@ async function handleMessage(channel, tags, message, self) {
         const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !mahni !storm !juan !rico !bern !dame !anti';
+        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !mahni !storm !juan !rico !bern !dame !anti';
         const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
         const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
@@ -2329,14 +2344,14 @@ async function handleMessage(channel, tags, message, self) {
             // Basic — limited shoutouts, no AI, no info-link dump
             sendMessage(channel, utility + ' !claim');
             sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !mahni !tay !yoo !anti | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !mahni !tay !yoo !anti | Mods: !so !raid !settoday — Stay CUHZ 🚀');
         }
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !cuhz !planet !mahni !tay !yoo !anti');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !cuhz !planet !mahni !tay !yoo !anti');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2355,7 +2370,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
