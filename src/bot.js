@@ -889,6 +889,37 @@ const YOUNGJR_QUOTES = [
     "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
 ];
 
+// !gg — end-of-game good game (four_a_reason ONLY; !gg is geniiknight's
+// shoutout everywhere else, and !geni still works for them in every channel).
+// 10 variants, no-repeat-last-3.
+const GOODGAME_QUOTES = [
+    "🤝 GG! Good game cuhz — respect to everybody who laced up 🏀",
+    "🏀 GG GG GG! That's a wrap — run it back? 🔥",
+    "🤝 Good game fam. Win or lose we shake hands and hoop again 💎",
+    "🔥 GG! Buckets were had, respect was earned 🏀",
+    "💎 GG cuhz! Good game to both squads — that's how we do it 🤝",
+    "🏀 GAME. GG to everybody — see you next possession 🔥",
+    "🤝 GG! No hard feelings, just hoops. Run it back cuhz 💯",
+    "💯 Good game! Sportsmanship over everything — that's the CUHZ way 🤝",
+    "🔥 GG! Whistle blew, respect stays. Good hoops fam 🏀",
+    "🏀 GG cuhz! Take the W or take the lesson — either way we back tomorrow 💎"
+];
+
+// !mute — the community's "MUTE GAME ON LEGEND" chant. NOT a moderation
+// command; nobody gets muted. 10 variants, no-repeat-last-3.
+const MUTE_LEGEND_QUOTES = [
+    "🔇 MUTE GAME ON LEGEND 🏆",
+    "🔇 Mute game... ON LEGEND. That's the only setting cuhz 🏀",
+    "🏆 MUTE GAME ON LEGEND — say it with your chest 🔇",
+    "🔇 You already know — MUTE GAME ON LEGEND 💯",
+    "🏀 Mute game on legend. No sound, just buckets 🔇",
+    "🔥 MUTE GAME ON LEGEND! The CUHZ anthem 🏆",
+    "🔇 Volume off, difficulty MAXED — mute game on legend cuhz 🏀",
+    "💯 Mute game on legend. Period. 🔇",
+    "🏆 If you know, you know — MUTE GAME ON LEGEND 🔥",
+    "🔇 MUTE GAME ON LEGEND — the standard, not the exception 💎"
+];
+
 // Proving Grounds command directory — SINGLE SOURCE OF TRUTH.
 // Add a new PG command here and it shows up in !pg automatically.
 const PG_COMMANDS = [
@@ -2217,6 +2248,21 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.849b. User rotation commands — pools defined in USER_VARIANT_POOLS (module scope).
+    // !gg — in four_a_reason's channel this is end-of-game GG. Everywhere else
+    // it falls through to USER_VARIANT_POOLS (geniiknight's shoutout).
+    if (msg === '!gg' && cleanChannel === 'four_a_reason') {
+        const line = pickNoRepeat(`goodgame:${cleanChannel}`, GOODGAME_QUOTES, 3);
+        sendMessage(channel, line);
+        return;
+    }
+
+    // !mute — community chant, all channels. Not moderation.
+    if (msg === '!mute' || msg === '!mutegame') {
+        const line = pickNoRepeat(`mutelegend:${cleanChannel}`, MUTE_LEGEND_QUOTES, 3);
+        sendMessage(channel, line);
+        return;
+    }
+
     if (USER_VARIANT_POOLS[msg]) {
         const pool = USER_VARIANT_POOLS[msg];
         const line = pickNoRepeat(`user:${msg}:${cleanChannel}`, pool, 2);
@@ -2338,7 +2384,7 @@ async function handleMessage(channel, tags, message, self) {
         const sections = {
             utility:   '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
                        + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
-            vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn',
+            vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute' + (cleanChannel === 'four_a_reason' ? ' !gg' : ''),
             brand:     '🌌 Brand: !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
