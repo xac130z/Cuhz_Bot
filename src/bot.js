@@ -523,7 +523,8 @@ const WELCOME_BACK_QUOTES = [
     "🌌 Welcome back! Chat level immediately went up ⚡"
 ];
 
-// !gg for geniiknight — Slytherin energy. Palette 🐍 💚 ⚡ 🌌.
+// !geni for geniiknight — Slytherin energy. Palette 🐍 💚 ⚡ 🌌.
+// (!gg was reassigned to end-of-game GG; !geni is their command now.)
 const GG_QUOTES = [
     "🐍 Slytherin stand UP! @geniiknight just slid in 💚",
     "🐍 GeniiKnight in the chat — the cunning ones always pull through ⚡",
@@ -739,7 +740,6 @@ const USER_VARIANT_POOLS = {
     '!fvmous':  FVMOUS_QUOTES,
     // NOTE: '!fam' alias removed — the static vibe handler for !fam runs earlier
     // in dispatch and always wins, so the pool entry was dead code.
-    '!gg':      GG_QUOTES,
     '!geni':    GG_QUOTES,
     '!grouch':      GROUCH_QUOTES,
     '!brady':       BRADY_QUOTES,
@@ -889,9 +889,8 @@ const YOUNGJR_QUOTES = [
     "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
 ];
 
-// !gg — end-of-game good game (four_a_reason ONLY; !gg is geniiknight's
-// shoutout everywhere else, and !geni still works for them in every channel).
-// 10 variants, no-repeat-last-3.
+// !gg — end-of-game good game, all channels. (Reassigned from geniiknight,
+// who now uses !geni.) 10 variants, no-repeat-last-3.
 const GOODGAME_QUOTES = [
     "🤝 GG! Good game cuhz — respect to everybody who laced up 🏀",
     "🏀 GG GG GG! That's a wrap — run it back? 🔥",
@@ -2248,9 +2247,8 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.849b. User rotation commands — pools defined in USER_VARIANT_POOLS (module scope).
-    // !gg — in four_a_reason's channel this is end-of-game GG. Everywhere else
-    // it falls through to USER_VARIANT_POOLS (geniiknight's shoutout).
-    if (msg === '!gg' && cleanChannel === 'four_a_reason') {
+    // !gg — end-of-game good game, every channel.
+    if (msg === '!gg' || msg === '!goodgame') {
         const line = pickNoRepeat(`goodgame:${cleanChannel}`, GOODGAME_QUOTES, 3);
         sendMessage(channel, line);
         return;
@@ -2384,12 +2382,12 @@ async function handleMessage(channel, tags, message, self) {
         const sections = {
             utility:   '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
                        + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
-            vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute' + (cleanChannel === 'four_a_reason' ? ' !gg' : ''),
+            vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             brand:     '🌌 Brand: !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
-                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
-                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !tay !yoo !anti'),
+                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
+                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !tay !yoo !anti'),
             crew:      isPP ? '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
             ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
             mods:      '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
@@ -2417,7 +2415,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !cuhz !planet !mahni !tay !yoo !anti');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !cuhz !planet !mahni !tay !yoo !anti');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2436,7 +2434,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
