@@ -68,9 +68,9 @@ function recordResponse(username) {
  */
 function isCuhzRelated(message) {
     const lowerMsg = message.toLowerCase();
+    // 'chain' keyword removed with the retired Chain Generator
     return lowerMsg.includes('cuhz') ||
-        lowerMsg.includes('planet') ||
-        lowerMsg.includes('chain');
+        lowerMsg.includes('planet');
 }
 
 /**

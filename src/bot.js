@@ -149,8 +149,6 @@ const PUBLIC_COMMANDS = {
     '!roadmap': '🧭 https://planetcuhz.com/whitepaper#roadmap',
     '!rules': '📌 Be respectful. No hate. No spam. Stay CUHZ.',
     '!privacy': '🔒 Privacy & security → https://planetcuhz.com/privacy',
-    '!cuhzchain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
-    '!chain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
     '!gm': 'Good morning CUHZ ☀️',
     '!gn': 'Good night CUHZ 🌙',
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
@@ -486,18 +484,6 @@ const TIMER_POOLS = {
         "🔗 Planet CUHZ universe in one link → https://linktr.ee/PlanetCUHZ",
         "🔗 One link, all the vibes → https://linktr.ee/PlanetCUHZ",
         "🔗 Tap in across platforms → https://linktr.ee/PlanetCUHZ"
-    ],
-    tools: [
-        "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Try the Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Make your own CUHZ chain → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Chain tool — free to use → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Chain Generator is live → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Build a chain in seconds → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 CUHZ chains for the culture → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Mint ya vibe — Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Chain tool — drop in and cook → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ The Chain Generator is how we move → https://cuhz-bot-dashboard-846.created.app/chain-generator"
     ],
     rules: [
         "📌 Be respectful. No hate. No spam. Stay CUHZ.",
@@ -1160,7 +1146,7 @@ const BASIC_USER_COMMANDS = {
 const BASIC_BLOCKED_COMMANDS = new Set([
     '!cuhz', '!links', '!discord', '!whatiscuhz', '!faq',
     '!whitepaper', '!roadmap', '!rules', '!privacy',
-    '!cuhzchain', '!chain', '!giveaway', '!enter',
+    '!giveaway', '!enter',
     '!dashboard', '!pointsinfo', '!schedule', '!stream',
     '!followage', '!viewers', '!streamstats'
 ]);
@@ -1168,8 +1154,7 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
-    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-    "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
+    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx"
 ];
 
 const BASIC_TIMER_MESSAGES = [
@@ -2227,38 +2212,6 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    // 0.9. !chain interactive AI handler — intercepts !chain <prompt> before static lookup
-    // Chain command is Pro/Premium only
-    if (msg.startsWith('!chain ') && !isProOrPremium) return;
-    if (msg.startsWith('!chain ')) {
-        const prompt = message.replace(/^!chain\s+/i, '').trim();
-        if (prompt) {
-            if (!config.apiBase || !config.botApiSecret) {
-                client.say(channel, `🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
-            } else {
-                try {
-                    const res = await axios.post(`${config.apiBase}/api/bot/command`, {
-                        text: `!chain ${prompt}`,
-                        channel: cleanChannel,
-                        user: { id: tags['user-id'], name: tags.username }
-                    }, {
-                        headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
-                        timeout: 10000
-                    });
-                    if (res.data && res.data.handled && res.data.reply) {
-                        client.say(channel, res.data.reply);
-                    } else {
-                        client.say(channel, `🔗 Chain generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
-                    }
-                } catch (err) {
-                    logger.error('Error in !chain handler:', err.message);
-                    client.say(channel, `🔗 Try it at: https://cuhz-bot-dashboard-846.created.app/chain-generator`);
-                }
-            }
-        }
-        return;
-    }
-
     // 1. Exact Match Public Commands (Dashboard Persona Specific)
     // Block info/link commands for Basic tier
     if (!isProOrPremium && BASIC_BLOCKED_COMMANDS.has(msg)) {
@@ -2350,7 +2303,7 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!help' || msg === '!commands') {
         const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !commands !ping !nf !sub !raid';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
-        const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
+        const brand     = '🌌 Brand: !cuhz !planet !whatiscuhz !rules !pointsinfo';
         const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !storm !juan !rico !bern !dame !anti';
         const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
         const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
