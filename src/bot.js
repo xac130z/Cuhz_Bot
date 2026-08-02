@@ -889,6 +889,13 @@ const YOUNGJR_QUOTES = [
     "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
 ];
 
+// Proving Grounds command directory — SINGLE SOURCE OF TRUTH.
+// Add a new PG command here and it shows up in !pg automatically.
+const PG_COMMANDS = [
+    { cmd: '!top100points',  desc: 'Top 100 in points' },
+    { cmd: '!top100ovrrank', desc: 'Top 100 by OVR rank' }
+];
+
 // !top100ovrrank — four_a_reason ONLY. Four ranked the Top 100 by OVR in
 // Proving Grounds. 5 variants, no-repeat-last-2.
 const TOP100OVR_QUOTES = [
@@ -2180,6 +2187,15 @@ async function handleMessage(channel, tags, message, self) {
 
     // 0.849. !rock — all tiers, 12 variants, no repeats within last 3 fires.
     // !top100points — four_a_reason's channel only (his video, his shoutout)
+    // !pg — Proving Grounds command directory (four_a_reason only, since every
+    // PG command it lists is locked to his channel).
+    if (msg === '!pg' || msg === '!provinggrounds' || msg === '!pgcommands') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const list = PG_COMMANDS.map(c => `${c.cmd} — ${c.desc}`).join(' | ');
+        sendMessage(channel, `🏀 PROVING GROUNDS commands: ${list} 👑 All straight from @four_a_reason`);
+        return;
+    }
+
     if (msg === '!top100ovrrank' || msg === '!top100ovr') {
         if (cleanChannel !== 'four_a_reason') return;
         const line = pickNoRepeat(`top100ovr:${cleanChannel}`, TOP100OVR_QUOTES, 2);
@@ -2329,7 +2345,7 @@ async function handleMessage(channel, tags, message, self) {
         if (isPremium) {
             sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
             sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot !faq !roadmap !whitepaper !dashboard');
-            sendMessage(channel, shoutouts + (cleanChannel === 'four_a_reason' ? ' !top100points !top100ovrrank' : ''));
+            sendMessage(channel, shoutouts + (cleanChannel === 'four_a_reason' ? ' !pg !top100points !top100ovrrank' : ''));
             sendMessage(channel, crew + ' | ' + ai);
             sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
         } else if (tier === TIERS.PRO) {
