@@ -2330,35 +2330,42 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
-    // 1.5. Dynamic Help System based on Tiers. Grouped + each sendMessage stays
-    // under Twitch's 500-char per-line limit. Audited against actual dispatch
-    // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
-    if (msg === '!help' || msg === '!commands') {
-        const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !commands !ping !nf !sub !raid';
-        const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
-        const brand     = '🌌 Brand: !cuhz !planet !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !storm !juan !rico !bern !dame !anti';
-        const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
-        const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
-        const ai        = 'AI: !ask !code !whois !topchatters';
+    // 1.5. Menu-driven help. `!help` sends ONE line (the category menu);
+    // `!help <category>` sends ONE line for that category. Replaces the old
+    // 3-5 message wall of text that flooded chat for ~7 seconds.
+    if (msg === '!help' || msg === '!commands' || msg.startsWith('!help ')) {
+        const isPP = isProOrPremium;
+        const sections = {
+            utility:   '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
+                       + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
+            vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn',
+            brand:     '🌌 Brand: !cuhz !planet'
+                       + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
+            shoutouts: '🎤 Shoutouts: ' + (isPP
+                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
+                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !tay !yoo !anti'),
+            crew:      isPP ? '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
+            ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
+            mods:      '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
+                       + (isPP ? ' !addstreamer !removestreamer' : ''),
+            pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null
+        };
 
-        if (isPremium) {
-            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
-            sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot !faq !roadmap !whitepaper !dashboard');
-            sendMessage(channel, shoutouts + (cleanChannel === 'four_a_reason' ? ' !pg !top100points !top100ovrrank' : ''));
-            sendMessage(channel, crew + ' | ' + ai);
-            sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
-        } else if (tier === TIERS.PRO) {
-            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
-            sendMessage(channel, vibes + ' | ' + brand);
-            sendMessage(channel, shoutouts);
-            sendMessage(channel, crew + ' | ' + modsPro);
-        } else {
-            // Basic — limited shoutouts, no AI, no info-link dump
-            sendMessage(channel, utility + ' !claim');
-            sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !tay !yoo !anti | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+        // `!help <category>` — one targeted line
+        if (msg.startsWith('!help ')) {
+            const key = msg.slice(6).trim().replace(/^!/, '');
+            if (sections[key]) {
+                sendMessage(channel, sections[key]);
+            } else {
+                const valid = Object.keys(sections).filter(k => sections[k]).join(' ');
+                sendMessage(channel, `🤖 No '${key}' category cuhz. Try: ${valid}`);
+            }
+            return;
         }
+
+        // Bare `!help` — the menu, one message
+        const cats = Object.keys(sections).filter(k => sections[k]);
+        sendMessage(channel, `🤖 CUHZ BOT — say !help + a category: ${cats.join(' · ')} 💎`);
         return;
     }
 
