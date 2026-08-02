@@ -889,6 +889,16 @@ const YOUNGJR_QUOTES = [
     "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
 ];
 
+// !top100ovrrank — four_a_reason ONLY. Four ranked the Top 100 by OVR in
+// Proving Grounds. 5 variants, no-repeat-last-2.
+const TOP100OVR_QUOTES = [
+    "🏆 Four ranked the TOP 100 by OVR in Proving Grounds — every name, on camera 👑 https://youtu.be/X3srv7B_ErU",
+    "📊 TOP 100 OVR in Proving Grounds, ranked by @four_a_reason. The list is THE list 🏀 https://youtu.be/X3srv7B_ErU",
+    "👑 @four_a_reason put the whole TOP 100 OVR ranking together — respect the work 💎 https://youtu.be/X3srv7B_ErU",
+    "🔥 Who's really HIM? @four_a_reason ranked the TOP 100 by OVR — go find out 🏀 https://youtu.be/X3srv7B_ErU",
+    "💎 @four_a_reason did the homework so we ain't gotta — TOP 100 OVR rank 📊 https://youtu.be/X3srv7B_ErU"
+];
+
 // !top100points — four_a_reason ONLY. Four put the Top 100 Proving Grounds
 // scorers on camera and named every grinder. 5 variants, no-repeat-last-2.
 const TOP100_QUOTES = [
@@ -2170,6 +2180,13 @@ async function handleMessage(channel, tags, message, self) {
 
     // 0.849. !rock — all tiers, 12 variants, no repeats within last 3 fires.
     // !top100points — four_a_reason's channel only (his video, his shoutout)
+    if (msg === '!top100ovrrank' || msg === '!top100ovr') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const line = pickNoRepeat(`top100ovr:${cleanChannel}`, TOP100OVR_QUOTES, 2);
+        sendMessage(channel, line);
+        return;
+    }
+
     if (msg === '!top100points' || msg === '!top100') {
         if (cleanChannel !== 'four_a_reason') return;
         const line = pickNoRepeat(`top100:${cleanChannel}`, TOP100_QUOTES, 2);
@@ -2312,7 +2329,7 @@ async function handleMessage(channel, tags, message, self) {
         if (isPremium) {
             sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
             sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot !faq !roadmap !whitepaper !dashboard');
-            sendMessage(channel, shoutouts + (cleanChannel === 'four_a_reason' ? ' !top100points' : ''));
+            sendMessage(channel, shoutouts + (cleanChannel === 'four_a_reason' ? ' !top100points !top100ovrrank' : ''));
             sendMessage(channel, crew + ' | ' + ai);
             sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
         } else if (tier === TIERS.PRO) {
