@@ -344,6 +344,9 @@ class DBAdapter {
   async _runMigrations() {
     // !watchtime — watch-minute tracking (schema declares it, old tables lack it)
     await this._ensureColumn('user_profiles', 'total_watch_minutes INTEGER DEFAULT 0');
+    // Paycheck clock — separates 'when did we last pay them' from 'last_seen',
+    // so steady chatters accrue correctly (see bot.js passive paycheck).
+    await this._ensureColumn('users', 'last_paycheck TIMESTAMP');
   }
 
   initSqlite() {

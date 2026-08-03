@@ -158,6 +158,11 @@ function drainQueue(key) {
     }, wait);
 }
 
+// Passive paycheck tuning: a viewer is "still here" if their previous message
+// was within PRESENCE_GAP_MS; they get paid at most once per PAYCHECK_INTERVAL_MS.
+const PRESENCE_GAP_MS = 15 * 60 * 1000;
+const PAYCHECK_INTERVAL_MS = 10 * 60 * 1000;
+
 // Per-user !gamble cooldown timestamps
 const _gambleCooldowns = new Map();
 
@@ -193,7 +198,8 @@ const USER_COMMANDS = {
     // !ec — rotated handler; see EC_QUOTES + dispatch block.
     // !four — rotated handler; shares FOUR_QUOTES pool with !4 (see dispatch block).
     '!jay': 'HBN Jay bringing the heat! 300 level energy! 🔥',
-    '!rell': 'Rell is here, the vibes are up! 🔥',
+    // !rell moved to USER_VARIANT_POOLS (Hell Rell rotation, all tiers);
+    // WestSideRelly has his own !west there — two different Rells.
     '!jxy': 'Speak up! JxyTalk is in the room. 🎙️',
     '!keem': 'KeemKillem with the plays! Welcome fam! 🎮',
     '!jaylo': 'Jaylo sliding through! Smooth operator! ⛸️',
@@ -750,6 +756,30 @@ const BREEZY_QUOTES = [
     "💎 @breezyxd23 in the frequency — light work, heavy presence ❄️"
 ];
 
+// !rell for Hell Rell — heat/fire energy, day-one supporter. 8 variants.
+const HELLRELL_QUOTES = [
+    "🔥 HELL RELL in the building! @hellrell the heat just walked in 😤",
+    "😤 @hellrell pulled up — certified real one, no debate 🔥",
+    "💯 Rell in the chat! @hellrell been holding us down since day one 🔥",
+    "🔥 Ayy it's Rell! @hellrell the energy ALWAYS up when he pull up ⚡",
+    "⚡ @hellrell slid in — loyalty like his don't come standard 💎",
+    "💎 Hell Rell here! @hellrell supports the fam every single time 🔥",
+    "😤 @hellrell touched down — turn the heat UP cuhz 🔥",
+    "🔥 Rell in the frequency! @hellrell real recognize real 💯"
+];
+
+// !west for WestSideRelly — West Side energy, day-one supporter. 8 variants.
+const WESTSIDE_QUOTES = [
+    "🌴 WEST SIDE in the building! @westsiderelly pulled up 🤙",
+    "🤙 @westsiderelly touched down — West Side stand UP 🌴",
+    "🌇 Westside Relly in the chat! @westsiderelly always shows love 💎",
+    "💎 @westsiderelly slid in — supports the fam without fail 🌴",
+    "🌴 Ayy it's Relly! @westsiderelly the West keeps us WARM 🤙",
+    "🔥 @westsiderelly here! West Side loyalty, CUHZ family 🌇",
+    "🤙 West Side Relly in the frequency — @westsiderelly we appreciate you 💎",
+    "🌇 @westsiderelly pulled up! Coast to coast, same fam 🌴"
+];
+
 // NOTE: every *_QUOTES constant referenced by USER_VARIANT_POOLS below must be
 // defined ABOVE it. The map is a module-level object literal, so it is evaluated
 // at import time — referencing a `const` declared later throws a ReferenceError
@@ -829,6 +859,11 @@ const USER_VARIANT_POOLS = {
     '!uncle':       UNCLE_QUOTES,
     '!meaux':       UNCLE_QUOTES,
     '!breezy':      BREEZY_QUOTES,
+    '!rell':        HELLRELL_QUOTES,
+    '!hellrell':    HELLRELL_QUOTES,
+    '!west':        WESTSIDE_QUOTES,
+    '!westside':    WESTSIDE_QUOTES,
+    '!relly':       WESTSIDE_QUOTES,
     '!smutty':      SMUTTY_QUOTES,
     '!pippen':      SMUTTY_QUOTES,
     '!relax':       AYELIK_QUOTES,
@@ -2130,22 +2165,34 @@ async function handleMessage(channel, tags, message, self) {
         const now = new Date();
         const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
 
-        // 1. Check Passive Paycheck (Active for 10 mins -> +10 points)
-        // We check last_seen before updating it to see how long since last active
-        const user = isKnownBot ? null : await db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
+        // 1. Passive Paycheck (+10 points per 10 minutes of continuous presence)
+        //
+        // FIXED: the old rule only paid when the gap between two messages landed
+        // BETWEEN 10 and 30 minutes, so anyone chatting steadily (gap always < 10
+        // min) earned nothing. Production log proof: planetcuhz 34 messages -> 0
+        // paychecks, phoenixpnyc 17 -> 0, while a sporadic chatter got several.
+        // Now: still-present (last message within PRESENCE_GAP) + at least
+        // PAYCHECK_INTERVAL since their last paycheck -> pay. Steady chatters are
+        // rewarded, people who left are not.
+        const user = isKnownBot ? null : await db.prepare('SELECT last_seen, last_paycheck FROM users WHERE username = ?').get(usernameL);
 
         if (!isKnownBot) {
             if (user) {
-                const lastSeenTime = new Date(user.last_seen).getTime();
-                const timeDiff = now.getTime() - lastSeenTime;
+                const sinceSeen = now.getTime() - new Date(user.last_seen).getTime();
+                const lastPay = user.last_paycheck ? new Date(user.last_paycheck).getTime() : null;
+                const sincePay = lastPay === null ? null : now.getTime() - lastPay;
 
-                // If they've been chatting actively (last msg was within 10-20 mins ago)
-                // AND it's been at least 10 minutes since last activity logged
-                if (timeDiff > 10 * 60 * 1000 && timeDiff < 30 * 60 * 1000) {
+                if (lastPay === null) {
+                    // First time we've seen them since this feature shipped — start
+                    // their clock now rather than paying for unknown history.
+                    await db.prepare('UPDATE users SET last_paycheck = CURRENT_TIMESTAMP WHERE username = ?').run(usernameL);
+                } else if (sinceSeen <= PRESENCE_GAP_MS && sincePay >= PAYCHECK_INTERVAL_MS) {
                     await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
-                    // !watchtime: each presence-point award = one ~10-minute active
-                    // viewing window (the paycheck's own "active for 10 mins" unit).
-                    await userMemory.addWatchMinutes(usernameL, 10);
+                    // Credit the real elapsed presence, capped so a long gap that
+                    // still passed the presence check can't over-credit.
+                    const earnedMinutes = Math.min(Math.round(sincePay / 60000), 30);
+                    await userMemory.addWatchMinutes(usernameL, earnedMinutes);
+                    await db.prepare('UPDATE users SET last_paycheck = CURRENT_TIMESTAMP WHERE username = ?').run(usernameL);
                 }
             }
 
@@ -2555,7 +2602,7 @@ async function handleMessage(channel, tags, message, self) {
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
             sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
-            sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
+            sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !west !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
         }
