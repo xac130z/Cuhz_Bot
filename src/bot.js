@@ -162,7 +162,8 @@ const USER_COMMANDS = {
     '!uni': 'Universal vibes loaded! Welcome to the galaxy! 🌌',
     // !balen — rotated handler; aliases to BALEN_QUOTES via USER_VARIANT_POOLS.
     '!chi': 'Windy City energy! Chi2K is in the building. 🏀',
-    '!bot': 'Just a bot doing bot things. 🤖',
+    // !bot — was a throwaway joke; now the onboarding CTA. Handled in dispatch
+    // next to !getcuhzbot so it can't be shadowed by this canned map.
     '!drizzy': 'Drizzy in the cut! No drizzle, just reign! ☔👑',
     // !ec — rotated handler; see EC_QUOTES + dispatch block.
     // !four — rotated handler; shares FOUR_QUOTES pool with !4 (see dispatch block).
@@ -2223,8 +2224,14 @@ async function handleMessage(channel, tags, message, self) {
         client.say(channel, 'GOAT behavior detected 🐐 Keep going cuhz!');
         return;
     }
-    if (msg === '!getcuhzbot') {
-        client.say(channel, '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream and ask about it! → https://twitch.tv/four_a_reason 🚀');
+    // Onboarding CTA — every tier, every channel. Two lines: what you get, then
+    // the two concrete steps. Step 1 (/mod cuhz_bot) is the one that actually
+    // matters: Twitch checks mod status server-side on every moderation call, so
+    // without it the bot can read chat but cannot moderate. Deliberately no
+    // token/OAuth link here — onboarding never needs a streamer's credentials.
+    if (msg === '!bot' || msg === '!getcuhzbot' || msg === '!addbot') {
+        sendMessage(channel, '🤖 CUHZ Bot — moderation, hype, points, shoutouts & AI for your stream. Free to try 🚀');
+        sendMessage(channel, '➡️ Get it in YOUR channel: 1️⃣ type /mod cuhz_bot in your chat 2️⃣ pull up to https://discord.com/invite/wt6Zc7Sgjx and say you want the bot. More → https://planetcuhz.com 🌌');
         return;
     }
 
@@ -2402,12 +2409,14 @@ async function handleMessage(channel, tags, message, self) {
             utility:   '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
                        + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
-            brand:     '🌌 Brand: !cuhz !planet'
+            // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
+            // CTA, so the people who most need to see it are in Basic channels.
+            brand:     '🌌 Brand: !bot !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
                        ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
                        : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !tay !yoo !anti'),
-            crew:      isPP ? '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
+            crew:      isPP ? '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
             ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
             // !mod leads: it's the self-documenting panel with live scope status.
             mods:      '🛡️ Mods: !mod !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
