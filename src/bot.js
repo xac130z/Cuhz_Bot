@@ -10,6 +10,7 @@ const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
 const userMemory = require('./user_memory');
 const pointsService = require('./points_service');
+const { seedPoints } = require('./points_seed');
 const loyaltySystem = require('./loyalty');
 const modIntel = require('./mod_intel');
 const moderation = require('./moderation_service');
@@ -1934,6 +1935,10 @@ function saveStreamStates() {
 
 // Load on startup
 loadStreamStates();
+
+// Restore historical CUHZ Points from data/points-seed.json (idempotent — see
+// src/points_seed.js). Fire-and-forget: never blocks or breaks boot.
+seedPoints().catch(err => logger.error(`Points seed error: ${err.message}`));
 
 // --- Graceful shutdown (Railway sends SIGTERM on every deploy) ---
 let shuttingDown = false;

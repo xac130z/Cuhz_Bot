@@ -42,7 +42,8 @@ class DBAdapter {
       });
 
       console.log('✅ Persistent storage: PostgreSQL — points survive restarts.');
-      this.initPostgres();
+      // `ready` resolves once schema + migrations are done (see points_seed.js)
+      this.ready = this.initPostgres();
 
       // Periodic health check every 5 minutes
       setInterval(() => this._pgHealthCheck(), 5 * 60 * 1000).unref(); // unref: don't hold the event loop open
@@ -65,7 +66,7 @@ class DBAdapter {
       const dbPath = path.resolve(dataDir, 'bot.db');
       this.sqlite = new (loadSqlite())(dbPath);
       this.sqlite.pragma('journal_mode = WAL');
-      this.initSqlite();
+      this.ready = Promise.resolve(this.initSqlite());
     }
   }
 
