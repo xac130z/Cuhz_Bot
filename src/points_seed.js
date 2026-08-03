@@ -4,23 +4,31 @@ const db = require('./database');
 const logger = require('./logger');
 
 /**
- * Boot-time CUHZ Points restore.
+ * Boot-time CUHZ Points restore + Founders Grant.
  *
- * Points were lost on every deploy while storage was ephemeral SQLite. The only
- * surviving record was Railway log exports; data/points-seed.json holds the
- * award events reconstructed from them (award events only — no chat content).
+ * Points were wiped on every deploy while storage was ephemeral SQLite. The
+ * only surviving record was Railway log exports; data/points-seed.json holds
+ * the award events reconstructed from them (award events only — no chat text).
  *
- * This applies the seed once, automatically, so restoring history needs no CLI
- * and no manual step. It is IDEMPOTENT: every event carries a hash written into
- * points_ledger.reason as `backfill:<hash>:<reason>`. Events already present are
- * skipped, so this runs harmlessly on every boot forever.
+ * Those logs cover ~47 hours. Roughly 18 months of community history predates
+ * them and is unrecoverable, so the restored totals are multiplied by
+ * FOUNDERS_MULTIPLIER as an explicit, honest grant — not invented history.
  *
- * FOUNDERS_GRANT_MULTIPLIER: set POINTS_FOUNDERS_MULTIPLIER (env) to award a
- * multiple of the reconstructed totals, acknowledging the ~18 months of history
- * that predates any surviving log. 1 = restore exactly what the logs show.
+ * SELF-CORRECTING + IDEMPOTENT. On every boot it compares what each cuhzin
+ * SHOULD have from the grant against what the ledger shows they were already
+ * given (any row whose reason starts with `backfill`), and writes only the
+ * difference. So it is safe to:
+ *   - run on every boot forever (difference becomes 0)
+ *   - raise the multiplier later (tops up to the new level automatically,
+ *     even if an earlier deploy already applied a lower one)
+ * It never deducts: lowering the multiplier is logged and ignored.
  */
 
 const SEED_PATH = path.resolve(__dirname, '../data/points-seed.json');
+
+// Founders Grant: restored log totals ×10, acknowledging the unrecorded months.
+// Override per-environment with POINTS_FOUNDERS_MULTIPLIER.
+const DEFAULT_FOUNDERS_MULTIPLIER = 10;
 
 async function seedPoints() {
     if (!fs.existsSync(SEED_PATH)) return;
@@ -35,48 +43,61 @@ async function seedPoints() {
     const events = Array.isArray(seed.events) ? seed.events : [];
     if (events.length === 0) return;
 
-    const multiplier = Math.max(1, parseInt(process.env.POINTS_FOUNDERS_MULTIPLIER, 10) || 1);
+    const envMult = parseInt(process.env.POINTS_FOUNDERS_MULTIPLIER, 10);
+    const multiplier = Number.isFinite(envMult) && envMult > 0 ? envMult : DEFAULT_FOUNDERS_MULTIPLIER;
+
+    // What each cuhzin should hold from the grant
+    const target = {};
+    for (const e of events) target[e.u] = (target[e.u] || 0) + e.a * multiplier;
 
     try {
         await db.ready;   // schema + migrations must exist first
 
-        // One query tells us everything already applied.
+        // What they were already granted (covers per-event rows written by the
+        // earlier version of this file, and any previous top-up).
         const rows = await db.prepare(
-            `SELECT reason FROM points_ledger WHERE reason LIKE 'backfill:%'`
+            `SELECT username, SUM(amount) AS granted
+               FROM points_ledger
+              WHERE reason LIKE 'backfill%'
+              GROUP BY username`
         ).all();
-        const seen = new Set((rows || []).map(r => String(r.reason).split(':')[1]));
+        const granted = {};
+        for (const r of rows || []) granted[r.username] = Number(r.granted) || 0;
 
-        const pending = events.filter(e => !seen.has(e.h));
-        if (pending.length === 0) {
-            logger.info(`💎 Points seed: all ${events.length} historical events already applied.`);
-            return;
-        }
+        const stamp = new Date().toISOString().slice(0, 10);
+        let touched = 0, added = 0, lowered = 0;
 
-        logger.info(`💎 Points seed: restoring ${pending.length} historical events` +
-                    (multiplier > 1 ? ` (founders grant ×${multiplier})` : '') + '…');
+        for (const [user, want] of Object.entries(target)) {
+            const have = granted[user] || 0;
+            const delta = want - have;
+            if (delta === 0) continue;
+            if (delta < 0) { lowered++; continue; }   // never claw back
 
-        const totals = {};
-        for (const e of pending) {
-            const amount = e.a * multiplier;
             await db.prepare(
                 `INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)`
-            ).run(e.u, amount, `backfill:${e.h}:${e.r}`);
+            ).run(user, delta, `backfill:grant_x${multiplier}:${stamp}`);
             await db.prepare(`
                 INSERT INTO users (username, points, messages_sent, last_seen)
                 VALUES (?, ?, 0, CURRENT_TIMESTAMP)
                 ON CONFLICT(username) DO UPDATE SET points = users.points + ?
-            `).run(e.u, amount, amount);
-            totals[e.u] = (totals[e.u] || 0) + amount;
+            `).run(user, delta, delta);
+            touched++; added += delta;
         }
 
-        const top = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 5)
-            .map(([u, p]) => `${u} ${p}`).join(', ');
-        logger.info(`💎 Points restored for ${Object.keys(totals).length} cuhzins. Top: ${top}`);
-        if (seed.coverage) {
-            logger.info(`💎 Seed covers ${seed.coverage.from} → ${seed.coverage.to}`);
+        if (touched === 0) {
+            logger.info(`💎 Founders Grant ×${multiplier} already applied to all ${Object.keys(target).length} cuhzins — nothing to do.`);
+        } else {
+            const top = Object.entries(target).sort((a, b) => b[1] - a[1]).slice(0, 5)
+                .map(([u, p]) => `${u} ${p}`).join(', ');
+            logger.info(`💎 Founders Grant ×${multiplier}: +${added} points across ${touched} cuhzins.`);
+            logger.info(`💎 Leaderboard now — ${top}`);
+            if (seed.coverage) logger.info(`💎 Reconstructed from logs ${seed.coverage.from} → ${seed.coverage.to}`);
+        }
+        if (lowered > 0) {
+            logger.warn(`💎 ${lowered} cuhzin(s) already hold more than a ×${multiplier} grant — points are never deducted, left as-is.`);
         }
     } catch (err) {
-        // Never let a seeding problem take the bot down.
+        // A seeding problem must never take the bot down.
         logger.error(`💎 Points seed failed (bot continues normally): ${err.message}`);
     }
 }
