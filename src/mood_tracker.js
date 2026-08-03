@@ -67,6 +67,8 @@ function initChannel(channel) {
             energy: 50,
             toxicity: 0,
             messageBuffer: [], // Rolling window of recent messages
+            messagesSinceLastAnalysis: 0, // New messages since last completed sentiment read
+            pendingPersonality: null, // Hysteresis: candidate awaiting a 2nd confirming read
             lastAnalysis: Date.now(),
             lastHypeInjection: 0, // Timestamp of last hype injection
             moodHistory: []
@@ -86,6 +88,7 @@ function addMessage(channel, username, message) {
 
     const state = channelMoodState.get(channel);
     state.messageBuffer.push({ username, message, timestamp: Date.now() });
+    state.messagesSinceLastAnalysis++;
 
     // Keep only last 20 messages in buffer
     if (state.messageBuffer.length > 20) {
@@ -106,13 +109,28 @@ async function updateMood(channel, sentimentData) {
     state.energy = sentimentData.energy;
     state.toxicity = sentimentData.toxicity;
     state.lastAnalysis = Date.now();
+    state.messagesSinceLastAnalysis = 0; // Completed read — reset new-message counter
 
     // Determine personality based on mood metrics
     const newPersonality = determinePersonality(sentimentData);
 
+    // Hysteresis: require 2 CONSECUTIVE reads agreeing on the new personality
+    // before switching. A single divergent read only becomes a pending
+    // candidate — kills rapid neutral↔hype oscillation.
     if (newPersonality !== state.currentPersonality) {
-        logger.info(`🎭 ${channel} personality changed: ${state.currentPersonality} → ${newPersonality}`);
-        state.currentPersonality = newPersonality;
+        if (state.pendingPersonality === newPersonality) {
+            logger.info(`🎭 ${channel} personality changed: ${state.currentPersonality} → ${newPersonality} (confirmed by 2 consecutive reads)`);
+            state.currentPersonality = newPersonality;
+            state.pendingPersonality = null;
+        } else {
+            state.pendingPersonality = newPersonality;
+            logger.info(`🎭 ${channel} personality candidate: ${newPersonality} (needs 1 more read to confirm)`);
+        }
+    } else {
+        if (state.pendingPersonality) {
+            logger.info(`🎭 ${channel} discarded single-read flip to ${state.pendingPersonality}`);
+        }
+        state.pendingPersonality = null;
     }
 
     // Store in mood history
@@ -131,7 +149,7 @@ async function updateMood(channel, sentimentData) {
     // Save to database
     await saveMoodToDatabase(channel, sentimentData);
 
-    return newPersonality;
+    return state.currentPersonality;
 }
 
 /**
@@ -229,6 +247,14 @@ function getMessageBuffer(channel) {
  */
 function shouldAnalyzeMood(channel) {
     const state = getMoodState(channel);
+
+    // Idle guard: no NEW messages since the last completed read means chat is
+    // idle — re-analyzing the same stale buffer just burns an API call and
+    // returns an identical result. Skip until fresh chat arrives.
+    if (state.messagesSinceLastAnalysis === 0) {
+        return false;
+    }
+
     const timeSinceLastAnalysis = Date.now() - state.lastAnalysis;
     const messageCount = state.messageBuffer.length;
 

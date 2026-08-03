@@ -3,6 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const config = require('./config');
 const logger = require('./logger');
+const { calendarDiff, formatDuration, formatMinutes } = require('./duration');
 const db = require('./database');
 const aiService = require('./ai_service');
 const moodTracker = require('./mood_tracker');
@@ -72,6 +73,30 @@ let _webhookLastErrorLogAt = 0;   // epoch ms of last logged webhook error
 const WEBHOOK_FAILURE_THRESHOLD = 5;
 const WEBHOOK_PAUSE_MS = 30 * 60 * 1000;           // 30 minutes
 const WEBHOOK_ERROR_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+// Known bot accounts from OTHER channels' toolchains (plus self as belt-and-
+// suspenders — our own messages are already dropped by the `self` check in
+// handleMessage). These must never earn points, accrue watch minutes, or get
+// auto-welcomed: in production they earned 13/85 points in #thatgirlmahni_.
+const KNOWN_BOTS = new Set([
+    'nightbot', 'wizebot', 'streamelements', 'moobot',
+    'fossabot', 'soundalerts', 'sery_bot', 'cuhz_bot'
+]);
+
+// Join verification state: the target list is captured at init and compared
+// against client.getChannels() ~60s after connect (the old per-channel
+// dashboard POST /api/bot/verify 4xx'd in production and never detected
+// missing joins anyway). Missing channels are retried with backoff.
+let targetChannels = [];
+const JOIN_RETRY_DELAYS_MS = [30000, 60000, 120000];
+
+// Persona-fetch log hygiene: each channel's failure is logged once at startup,
+// then identical repeats are suppressed to at most once/hour per channel.
+// _personaSource feeds the one-line startup summary.
+const _personaSource = new Map();   // channel -> 'dashboard' | 'defaults'
+const _personaErrorLog = new Map(); // channel -> { msg: string, at: epoch ms }
+const PERSONA_ERROR_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+let _personaSummaryLogged = false;
 
 // Per-channel welcome tracking (First Contact is scoped to CHANNEL, not global).
 // Keyed by `${channel}:${username}` -> { firstContactAt: number, lastWelcomedAt: number }
@@ -1242,6 +1267,7 @@ async function fetchChannelPersona(channel) {
             persona.timers.push("📱 Follow Planet CUHZ on YouTube and TikTok! 🚀");
         }
         channelConfigs.set(channel.toLowerCase(), persona);
+        _personaSource.set(channel.toLowerCase(), 'defaults');
         return;
     }
 
@@ -1281,9 +1307,20 @@ async function fetchChannelPersona(channel) {
         }
 
         channelConfigs.set(channel.toLowerCase(), persona);
+        _personaSource.set(channel.toLowerCase(), 'dashboard');
         logger.info(`Loaded ${Object.keys(persona.commands).length} commands, ${persona.timers.length} timers at ${persona.interval}min intervals for ${channel}`);
     } catch (error) {
-        logger.error(`Error fetching persona for ${channel}:`, error.message);
+        // Log each channel's failure once, then suppress identical repeats to
+        // once/hour per channel (was 141 identical 404 lines in 23h — the
+        // defaults fallback below makes the failure non-fatal).
+        const errKey = channel.toLowerCase();
+        const prev = _personaErrorLog.get(errKey);
+        const nowMs = Date.now();
+        if (!prev || prev.msg !== error.message || nowMs - prev.at >= PERSONA_ERROR_LOG_INTERVAL_MS) {
+            logger.error(`Error fetching persona for ${channel}: ${error.message} (defaults in use; repeats muted for 1h)`);
+            _personaErrorLog.set(errKey, { msg: error.message, at: nowMs });
+        }
+        _personaSource.set(errKey, 'defaults');
 
         const fallbackPersona = { ...DEFAULT_CONFIG, timers: [...defaultTimers] };
         if (cleanChannel === 'planetcuhz') {
@@ -1586,8 +1623,13 @@ async function initializeTwitchClient() {
         channels: channelsToJoin
     });
 
+    targetChannels = [...channelsToJoin];
+
     client.connect().then(() => {
         logger.info('Successfully initiated connection to Twitch IRC.');
+        // Verify actual IRC membership ~60s after connect (joins are async and
+        // can silently fail — qweenstormygirlnz89 never joined in production).
+        setTimeout(() => verifyChannelJoins(0), 60000);
     }).catch(err => {
         logger.error('Twitch connection FAILED:', err);
     });
@@ -1660,8 +1702,6 @@ function setupEventHandlers() {
             startRotationalTimer(channel);
             startStreamPoller(channel);
             startMoodAnalyzer(channel);
-
-            verifyJoin(channel);
         }
     });
 
@@ -1724,20 +1764,60 @@ function setupEventHandlers() {
     logger.info('🚨 Raid / sub / resub / subgift event handlers registered');
 }
 
-async function verifyJoin(channel) {
-    if (config.apiBase && config.botApiSecret) {
-        try {
-            await axios.post(`${config.apiBase}/api/bot/verify`, {
-                channel: channel.replace('#', ''),
-                status: 'active'
-            }, {
-                headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
-                timeout: 10000
-            });
-        } catch (error) {
-            logger.error('Error verifying channel join:', error.message);
+// Join verification v2: the old implementation POSTed to the dashboard's
+// /api/bot/verify, which doesn't exist in production (only in
+// mock_dashboard.js) — every call 4xx'd AND it only ran on successful 'join'
+// events, so a channel that never joined was never checked. This version
+// compares actual IRC membership (client.getChannels()) against the target
+// list and retries missing joins with backoff (3 attempts: 30s/60s/120s).
+function verifyChannelJoins(attempt) {
+    try {
+        if (!client || targetChannels.length === 0) return;
+        const joined = new Set((client.getChannels() || []).map(c => c.toLowerCase()));
+        const missing = targetChannels.filter(ch => !joined.has(ch.toLowerCase()));
+
+        if (attempt === 0) {
+            logger.info(`🚪 Channels: joined ${targetChannels.length - missing.length}/${targetChannels.length}`);
+            logPersonaSummary();
         }
+
+        if (missing.length === 0) {
+            if (attempt > 0) {
+                logger.info(`🚪 Channels: joined ${targetChannels.length}/${targetChannels.length} (recovered after ${attempt} retr${attempt === 1 ? 'y' : 'ies'})`);
+            }
+            return;
+        }
+
+        if (attempt >= JOIN_RETRY_DELAYS_MS.length) {
+            logger.warn(`🚪 Channels STILL MISSING after ${attempt} retries: ${missing.join(', ')}`);
+            return;
+        }
+
+        const delayMs = JOIN_RETRY_DELAYS_MS[attempt];
+        logger.warn(`🚪 Channels missing: ${missing.join(', ')} — retry ${attempt + 1}/${JOIN_RETRY_DELAYS_MS.length} in ${delayMs / 1000}s`);
+        setTimeout(async () => {
+            for (const ch of missing) {
+                try {
+                    await client.join(ch);
+                    logger.info(`🚪 Rejoined ${ch}`);
+                } catch (err) {
+                    logger.warn(`🚪 Retry join failed for ${ch}: ${err && err.message ? err.message : err}`);
+                }
+            }
+            verifyChannelJoins(attempt + 1);
+        }, delayMs);
+    } catch (err) {
+        logger.error('Error verifying channel joins:', err && err.message ? err.message : err);
     }
+}
+
+// One-line startup summary of persona sources (fires with the join check).
+function logPersonaSummary() {
+    if (_personaSummaryLogged || _personaSource.size === 0) return;
+    _personaSummaryLogged = true;
+    const total = _personaSource.size;
+    const loaded = [..._personaSource.values()].filter(v => v === 'dashboard').length;
+    logger.info(`🎭 Personas: ${loaded}/${total} loaded from dashboard (defaults in use for the rest)`);
 }
 
 function startStreamPoller(channel) {
@@ -1837,9 +1917,9 @@ async function updateStreamState(channel) {
             logger.info(`🔴 STREAM LIVE: ${channel} playing ${gameName}`);
             const template = pickNoRepeat(`live:${channel}`, LIVE_ANNOUNCEMENTS, 2);
             sendMessage(channel, template.replace('{game}', gameName));
-        } else {
-            logger.info(`🔴 Stream live (already announced): ${channel}`);
         }
+        // No-op polls (live and already announced) are intentionally NOT
+        // logged — only state transitions are (was 101 useless lines/day).
     }
     // 2. Stream went OFFLINE
     else if (wasLive) {
@@ -2019,6 +2099,11 @@ async function handleAutoShoutout(channel, usernameLower, displayName) {
 async function handleMessage(channel, tags, message, self) {
     if (self) return;
 
+    // Instrumentation: every command attempt is visible in the logs.
+    if (message.startsWith('!')) {
+        logger.info(`⌨️ CMD ${message.split(' ')[0]} by ${tags.username} in ${channel}`);
+    }
+
     // --- Add to AI Context & Mood Buffers ---
     const username = tags.username;
     if (config.enableMoodDetection) {
@@ -2036,6 +2121,10 @@ async function handleMessage(channel, tags, message, self) {
     const msg = message.toLowerCase();
 
     // --- Track User Activity ---
+    // Other channels' bots (nightbot, streamelements, ...) get NO points, NO
+    // watch-minute accrual, and NO welcomes — they earned 13/85 points in
+    // #thatgirlmahni_ in production.
+    const isKnownBot = KNOWN_BOTS.has(username.toLowerCase());
     try {
         const usernameL = username.toLowerCase();
         const now = new Date();
@@ -2043,44 +2132,46 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1. Check Passive Paycheck (Active for 10 mins -> +10 points)
         // We check last_seen before updating it to see how long since last active
-        const user = await db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
+        const user = isKnownBot ? null : await db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
 
-        if (user) {
-            const lastSeenTime = new Date(user.last_seen).getTime();
-            const timeDiff = now.getTime() - lastSeenTime;
+        if (!isKnownBot) {
+            if (user) {
+                const lastSeenTime = new Date(user.last_seen).getTime();
+                const timeDiff = now.getTime() - lastSeenTime;
 
-            // If they've been chatting actively (last msg was within 10-20 mins ago)
-            // AND it's been at least 10 minutes since last activity logged
-            if (timeDiff > 10 * 60 * 1000 && timeDiff < 30 * 60 * 1000) {
-                await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
-                // !watchtime: each presence-point award = one ~10-minute active
-                // viewing window (the paycheck's own "active for 10 mins" unit).
-                await userMemory.addWatchMinutes(usernameL, 10);
+                // If they've been chatting actively (last msg was within 10-20 mins ago)
+                // AND it's been at least 10 minutes since last activity logged
+                if (timeDiff > 10 * 60 * 1000 && timeDiff < 30 * 60 * 1000) {
+                    await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
+                    // !watchtime: each presence-point award = one ~10-minute active
+                    // viewing window (the paycheck's own "active for 10 mins" unit).
+                    await userMemory.addWatchMinutes(usernameL, 10);
+                }
             }
+
+            // 2. Earn Active Point (+1 per message)
+            await pointsService.addPoints(usernameL, 1, 'chat_message');
+
+            // 3. Update User Stats (Last Seen, Msg Count)
+            const upsertUser = db.prepare(`
+                INSERT INTO users (username, points, messages_sent, last_seen)
+                VALUES (?, 1, 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(username) DO UPDATE SET
+                    messages_sent = messages_sent + 1,
+                    last_seen = CURRENT_TIMESTAMP
+            `);
+            await upsertUser.run(usernameL);
+
+            // 4. Check Achievements (Async) — decoupled from points so a failure here
+            //    can't break point awarding, and routed through the send queue.
+            loyaltySystem.checkAchievements(usernameL).then(newAchievements => {
+                if (newAchievements && newAchievements.length > 0) {
+                    newAchievements.forEach(ach => {
+                        sendMessage(channel, `🏆 ACHIEVEMENT UNLOCKED: @${tags.username} earned '${ach}'!`);
+                    });
+                }
+            }).catch(err => logger.error('Achievement check failed:', err && err.message ? err.message : err));
         }
-
-        // 2. Earn Active Point (+1 per message)
-        await pointsService.addPoints(usernameL, 1, 'chat_message');
-
-        // 3. Update User Stats (Last Seen, Msg Count)
-        const upsertUser = db.prepare(`
-            INSERT INTO users (username, points, messages_sent, last_seen)
-            VALUES (?, 1, 1, CURRENT_TIMESTAMP)
-            ON CONFLICT(username) DO UPDATE SET
-                messages_sent = messages_sent + 1,
-                last_seen = CURRENT_TIMESTAMP
-        `);
-        await upsertUser.run(usernameL);
-
-        // 4. Check Achievements (Async) — decoupled from points so a failure here
-        //    can't break point awarding, and routed through the send queue.
-        loyaltySystem.checkAchievements(usernameL).then(newAchievements => {
-            if (newAchievements && newAchievements.length > 0) {
-                newAchievements.forEach(ach => {
-                    sendMessage(channel, `🏆 ACHIEVEMENT UNLOCKED: @${tags.username} earned '${ach}'!`);
-                });
-            }
-        }).catch(err => logger.error('Achievement check failed:', err && err.message ? err.message : err));
 
         // ... commands ...
 
@@ -2100,7 +2191,7 @@ async function handleMessage(channel, tags, message, self) {
         // Per-channel First Contact: each channel gets to welcome the user once.
         // Returning-user welcome: fire a lighter "welcome back" line if it's been ≥4h
         // since we last welcomed them in THIS channel (and they haven't spoken in 4h+).
-        const canWelcome = !persona.settings || persona.settings.auto_welcome;
+        const canWelcome = !isKnownBot && (!persona.settings || persona.settings.auto_welcome);
         if (canWelcome) {
             const welcomeKey = `${channel}:${usernameL}`;
             const welcomeState = _channelWelcomes.get(welcomeKey);
@@ -2511,22 +2602,11 @@ async function handleMessage(channel, tags, message, self) {
             }
 
             if (followData) {
-                const start = new Date(followData.followed_at);
-                const now = new Date();
-                const diffTime = Math.abs(now - start);
-
-                const years = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365));
-                const months = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24 * 30));
-                const days = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 30)) / (1000 * 60 * 60 * 24));
-                const hours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-
-                let timeStr = "";
-                if (years > 0) timeStr += `${years}y `;
-                if (months > 0) timeStr += `${months}m `;
-                if (days > 0) timeStr += `${days}d `;
-                if (timeStr === "") timeStr = `${hours}h`; // Fallback for very new follows
-
-                client.say(channel, `@${targetUsername} has been following for ${timeStr.trim()}! 📅`);
+                // Calendar-accurate diff (src/duration.js). The old fixed 365/30
+                // decomposition was off by up to ±18 days in production —
+                // verified against Helix followed_at ground truth.
+                const timeStr = formatDuration(calendarDiff(new Date(followData.followed_at), new Date()));
+                client.say(channel, `@${targetUsername} has been following for ${timeStr}! 📅`);
             } else {
                 client.say(channel, `@${targetUsername} is not following ${channel} (yet)!`);
             }
@@ -2839,9 +2919,7 @@ async function handleMessage(channel, tags, message, self) {
             const profile = await userMemory.getProfile(tags.username);
             const mins = profile && profile.total_watch_minutes ? profile.total_watch_minutes : 0;
             if (mins > 0) {
-                const hours = Math.floor(mins / 60);
-                const minutes = mins % 60;
-                sendMessage(channel, `@${tags.username} has watched for ${hours}h ${minutes}m across the CUHZ fam 💎`);
+                sendMessage(channel, `@${tags.username} has watched for ${formatMinutes(mins)} across the CUHZ fam 💎`);
             } else {
                 sendMessage(channel, `@${tags.username} just started tracking! Hang out in chat and your watch time stacks up 💎`);
             }
@@ -3209,6 +3287,9 @@ async function handleMessage(channel, tags, message, self) {
                 channel: channel.replace('#', ''),
                 user: tags.username,
                 message: message,
+                // Receiver requires a 'text' field — without it every attempt
+                // got 400 {"error":"Missing text"} in production.
+                text: `[twitch] #${channel.replace('#', '')} ${tags.username}: ${message}`,
                 timestamp: new Date().toISOString()
             }, {
                 headers: { 'Authorization': `Bearer ${config.webhookToken}` },

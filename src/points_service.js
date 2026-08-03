@@ -29,7 +29,7 @@ class PointsService {
             const logTx = db.prepare('INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)');
             await logTx.run(safeUser, amount, reason);
 
-            logger.info(`💰 Added ${amount} points to ${safeUser} (${reason})`);
+            logger.info(`💰 Added ${amount} ${amount === 1 ? 'point' : 'points'} to ${safeUser} (${reason})`);
             return true;
         } catch (err) {
             logger.error(`❌ Failed to add points for ${username}: ${err.message}`);
@@ -63,7 +63,7 @@ class PointsService {
             const logTx = db.prepare('INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)');
             await logTx.run(safeUser, -amount, reason);
 
-            logger.info(`💸 Deducted ${amount} points from ${safeUser} (${reason})`);
+            logger.info(`💸 Deducted ${amount} ${amount === 1 ? 'point' : 'points'} from ${safeUser} (${reason})`);
             return true;
         } catch (err) {
             logger.error(`❌ Failed to deduct points for ${username}: ${err.message}`);

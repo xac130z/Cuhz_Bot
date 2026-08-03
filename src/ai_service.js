@@ -357,49 +357,70 @@ function classifyVibe(message) {
 // ─────────── Per-call timeout guard ───────────
 // One hung provider call must not stall a chat reply; a timed-out brain
 // returns null and the cascade moves on.
-function withTimeout(promise, label) {
-    const ms = config.aiResponseTimeout || 8000;
+// `overrideMs` lets background jobs (e.g. sentiment) fail fast instead of
+// waiting the full chat-reply timeout; omit it to keep the configured value.
+const TIMED_OUT = Symbol('timed_out');
+
+function withTimeout(promise, label, overrideMs) {
+    const ms = overrideMs || config.aiResponseTimeout || 8000;
     return Promise.race([
         promise,
         new Promise(resolve => setTimeout(() => {
             logger.warn(`⏱️ ${label} timed out after ${ms}ms`);
-            resolve(null);
+            resolve(TIMED_OUT);
         }, ms).unref())
     ]);
 }
 
-async function executeWithRouting(prompt, vibe = 'eyes') {
+async function executeWithRouting(prompt, vibe = 'eyes', { timeoutMs } = {}) {
+    const startedAt = Date.now();
     let text = null;
     let modelUsed = 'none';
+    let sawTimeout = false;
+    let primaryModel = null; // Which brain the vibe intended (null if unavailable)
+
+    // Wraps withTimeout so a timeout is distinguishable from a provider error
+    // (both cascade the same way, but instrumentation reports them differently).
+    const attempt = async (promise, label) => {
+        const result = await withTimeout(promise, label, timeoutMs);
+        if (result === TIMED_OUT) {
+            sawTimeout = true;
+            return null;
+        }
+        return result;
+    };
 
     // Try the intended brain first
     if (vibe === 'brain' && claudeClient) {
-        text = await withTimeout(executeClaude(CUHZ_SYSTEM_PROMPT, prompt), 'Claude');
+        primaryModel = 'claude';
+        text = await attempt(executeClaude(CUHZ_SYSTEM_PROMPT, prompt), 'Claude');
         if (text) modelUsed = 'claude';
     } else if (vibe === 'hands' && qwenApiUrl) {
-        text = await withTimeout(executeQwen(CUHZ_SYSTEM_PROMPT, prompt), 'Qwen');
+        primaryModel = 'qwen';
+        text = await attempt(executeQwen(CUHZ_SYSTEM_PROMPT, prompt), 'Qwen');
         if (text) modelUsed = 'qwen';
     } else if (vibe === 'eyes' && geminiModel) {
-        text = await withTimeout(executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`), 'Gemini');
+        primaryModel = 'gemini';
+        text = await attempt(executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`), 'Gemini');
         if (text) modelUsed = 'gemini';
     }
 
     // Fallback cascade: Gemini → Claude → Qwen
     if (!text) {
         if (modelUsed !== 'gemini') {
-            text = await withTimeout(executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`), 'Gemini');
+            text = await attempt(executeGemini(`${CUHZ_SYSTEM_PROMPT}\n\n${prompt}`), 'Gemini');
             if (text) modelUsed = 'gemini';
         }
     }
     if (!text) {
         if (modelUsed !== 'claude' && claudeClient) {
-            text = await withTimeout(executeClaude(CUHZ_SYSTEM_PROMPT, prompt), 'Claude');
+            text = await attempt(executeClaude(CUHZ_SYSTEM_PROMPT, prompt), 'Claude');
             if (text) modelUsed = 'claude';
         }
     }
     if (!text) {
         if (modelUsed !== 'qwen' && qwenApiUrl) {
-            text = await withTimeout(executeQwen(CUHZ_SYSTEM_PROMPT, prompt), 'Qwen');
+            text = await attempt(executeQwen(CUHZ_SYSTEM_PROMPT, prompt), 'Qwen');
             if (text) modelUsed = 'qwen';
         }
     }
@@ -408,12 +429,26 @@ async function executeWithRouting(prompt, vibe = 'eyes') {
         logger.warn(`⚠️ ALL AI BRAINS UNAVAILABLE — degraded mode. Backoffs: Gemini ${Math.max(0, Math.round((brainHealth.gemini.backoffUntil - Date.now()) / 1000))}s, Claude ${Math.max(0, Math.round((brainHealth.claude.backoffUntil - Date.now()) / 1000))}s, Qwen ${Math.max(0, Math.round((brainHealth.qwen.backoffUntil - Date.now()) / 1000))}s`);
     }
 
+    // Instrumentation: one line per routed call (complements the existing
+    // 🤖 [MODEL/vibe] response log in generateContextAwareResponse).
+    let outcome;
+    if (text) {
+        outcome = modelUsed === primaryModel ? 'ok' : 'fallback_used';
+    } else {
+        outcome = sawTimeout ? 'timeout' : 'error';
+    }
+    logger.info(`🤖 AI call [${vibe}] provider=${modelUsed} latency_ms=${Date.now() - startedAt} outcome=${outcome}`);
+
     return { text, model: modelUsed };
 }
 
 // =============================================
 //  PUBLIC API
 // =============================================
+
+// Sentiment is a background job — waiting the full chat-reply timeout (10s)
+// for a mood read is wasted latency before the fallback fires.
+const SENTIMENT_TIMEOUT_MS = 5000;
 
 /**
  * Analyze sentiment — always uses The Eyes (Gemini) for speed
@@ -443,8 +478,10 @@ ${chatSample}
 JSON format:
 {"mood":"<positive|negative|neutral|hype|toxic>","energy":<0-100>,"toxicity":<0-100>,"summary":"<1 sentence>"}`;
 
-        // Sentiment always goes to Gemini (fast + cheap)
-        const { text, model } = await executeWithRouting(prompt, 'eyes');
+        // Sentiment always goes to Gemini (fast + cheap). Background job —
+        // fail fast at 5s instead of the full chat-reply timeout so the
+        // fallback kicks in sooner. Chat replies keep the configured timeout.
+        const { text, model } = await executeWithRouting(prompt, 'eyes', { timeoutMs: SENTIMENT_TIMEOUT_MS });
 
         if (!text) return fallbackSentimentAnalysis(messages);
 
