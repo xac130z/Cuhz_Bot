@@ -150,8 +150,6 @@ const PUBLIC_COMMANDS = {
     '!roadmap': '🧭 https://planetcuhz.com/whitepaper#roadmap',
     '!rules': '📌 Be respectful. No hate. No spam. Stay CUHZ.',
     '!privacy': '🔒 Privacy & security → https://planetcuhz.com/privacy',
-    '!cuhzchain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
-    '!chain': '🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator',
     '!gm': 'Good morning CUHZ ☀️',
     '!gn': 'Good night CUHZ 🌙',
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
@@ -488,18 +486,6 @@ const TIMER_POOLS = {
         "🔗 One link, all the vibes → https://linktr.ee/PlanetCUHZ",
         "🔗 Tap in across platforms → https://linktr.ee/PlanetCUHZ"
     ],
-    tools: [
-        "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Try the Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Make your own CUHZ chain → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Chain tool — free to use → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Chain Generator is live → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Build a chain in seconds → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 CUHZ chains for the culture → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ Mint ya vibe — Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "🔗 Chain tool — drop in and cook → https://cuhz-bot-dashboard-846.created.app/chain-generator",
-        "⛓️ The Chain Generator is how we move → https://cuhz-bot-dashboard-846.created.app/chain-generator"
-    ],
     rules: [
         "📌 Be respectful. No hate. No spam. Stay CUHZ.",
         "📌 House rules: respect the chat, love the cuhz, keep it clean.",
@@ -538,7 +524,8 @@ const WELCOME_BACK_QUOTES = [
     "🌌 Welcome back! Chat level immediately went up ⚡"
 ];
 
-// !gg for geniiknight — Slytherin energy. Palette 🐍 💚 ⚡ 🌌.
+// !geni for geniiknight — Slytherin energy. Palette 🐍 💚 ⚡ 🌌.
+// (!gg was reassigned to end-of-game GG; !geni is their command now.)
 const GG_QUOTES = [
     "🐍 Slytherin stand UP! @geniiknight just slid in 💚",
     "🐍 GeniiKnight in the chat — the cunning ones always pull through ⚡",
@@ -754,7 +741,6 @@ const USER_VARIANT_POOLS = {
     '!fvmous':  FVMOUS_QUOTES,
     // NOTE: '!fam' alias removed — the static vibe handler for !fam runs earlier
     // in dispatch and always wins, so the pool entry was dead code.
-    '!gg':      GG_QUOTES,
     '!geni':    GG_QUOTES,
     '!grouch':      GROUCH_QUOTES,
     '!brady':       BRADY_QUOTES,
@@ -777,6 +763,13 @@ const USER_VARIANT_POOLS = {
     '!uncle':       UNCLE_QUOTES,
     '!meaux':       UNCLE_QUOTES,
     '!breezy':      BREEZY_QUOTES,
+    '!smutty':      SMUTTY_QUOTES,
+    '!pippen':      SMUTTY_QUOTES,
+    '!relax':       AYELIK_QUOTES,
+    '!lik':         AYELIK_QUOTES,
+    '!aye':         AYELIK_QUOTES,
+    '!jr':          YOUNGJR_QUOTES,
+    '!young':       YOUNGJR_QUOTES,
     '!cuhz':    CUHZ_QUOTES,
     '!planet':  CUHZ_QUOTES,
 };
@@ -860,6 +853,88 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} blessed @{recipient} with a sub — pay it forward, fam 🚀",
     "🎁 SUBGIFT! @{gifter} → @{recipient}. Real ones lift real ones 💎",
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
+];
+
+// !smutty / !pippen for smuttyp1ppen — Pippen namesake + tunes in from the
+// fire watch at work. Palette 🏀 🔥 💪 👑 💎. 8 variants, no-repeat-last-2.
+const SMUTTY_QUOTES = [
+    "🏀 SMUTTY PIPPEN in the building! @smuttyp1ppen — two-way killer energy 🔥",
+    "🔥 @smuttyp1ppen tuned in from the FIRE WATCH — that's real dedication cuhz 💪",
+    "👑 Pippen pulled up! @smuttyp1ppen — every dynasty needs a real one 🏀",
+    "💎 @smuttyp1ppen in the chat! On the clock AND locked in with the fam 🔥",
+    "🏀 @smuttyp1ppen touched down — smooth game, smoother name 👑",
+    "🔥 Fire watch can't stop the CUHZ watch — @smuttyp1ppen ALWAYS pulls up 💪",
+    "💪 @smuttyp1ppen here! Shows up for the fam even mid-shift 😤🏀",
+    "👑 @smuttyp1ppen slid in — Pippen never missed a big moment, neither does he 💎"
+];
+
+// !relax / !lik / !aye for ayelikrelaxx — chill-master energy. Palette 🌊 😌 😌 💨 🛋️ 💎.
+// 6 variants, no-repeat-last-2. Requested live in Four's chat.
+const AYELIK_QUOTES = [
+    "😌 AYE LIK RELAXX in the chat — instant chill mode activated 🌊",
+    "🌊 @ayelikrelaxx pulled up! Stress leaves when he arrives, no cap 😌",
+    "💨 Aye... lik... relaxx cuhz. @ayelikrelaxx said breathe easy 🛋️",
+    "😌 @ayelikrelaxx slid in — smoothest energy in the frequency 💎",
+    "🛋️ The chill-master @ayelikrelaxx touched down — vibes officially maxed 🌊",
+    "💎 @ayelikrelaxx here! Chat calm, vibes right, that's the relaxx effect 😌"
+];
+
+// !jr / !young for young_jr2424 — young hooper energy. Palette 🏀 ⚡ 🌟 🔥 💎.
+// 6 variants, no-repeat-last-2. Requested live in Four's chat.
+const YOUNGJR_QUOTES = [
+    "🌟 YOUNG JR in the building! @young_jr2424 — the future pulled UP 🏀",
+    "⚡ @young_jr2424 touched down! Young legs, old-soul game 🔥",
+    "🏀 JR here! @young_jr2424 — 2424 on the jersey, buckets on the mind 💎",
+    "🔥 @young_jr2424 slid in — next-gen CUHZ energy locked in 🌟",
+    "💎 Young Jr in the frequency — @young_jr2424 the fam raised him right ⚡",
+    "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
+];
+
+// !gg — end-of-game good game, all channels. (Reassigned from geniiknight,
+// who now uses !geni.) 10 variants, no-repeat-last-3.
+const GOODGAME_QUOTES = [
+    "🤝 GG! Good game cuhz — respect to everybody who laced up 🏀",
+    "🏀 GG GG GG! That's a wrap — run it back? 🔥",
+    "🤝 Good game fam. Win or lose we shake hands and hoop again 💎",
+    "🔥 GG! Buckets were had, respect was earned 🏀",
+    "💎 GG cuhz! Good game to both squads — that's how we do it 🤝",
+    "🏀 GAME. GG to everybody — see you next possession 🔥",
+    "🤝 GG! No hard feelings, just hoops. Run it back cuhz 💯",
+    "💯 Good game! Sportsmanship over everything — that's the CUHZ way 🤝",
+    "🔥 GG! Whistle blew, respect stays. Good hoops fam 🏀",
+    "🏀 GG cuhz! Take the W or take the lesson — either way we back tomorrow 💎"
+];
+
+// !mute — the community's "MUTE GAME ON LEGEND" chant. NOT a moderation
+// command; nobody gets muted. 10 variants, no-repeat-last-3.
+const MUTE_LEGEND_QUOTES = [
+    "🔇 MUTE GAME ON LEGEND 🏆",
+    "🔇 Mute game... ON LEGEND. That's the only setting cuhz 🏀",
+    "🏆 MUTE GAME ON LEGEND — say it with your chest 🔇",
+    "🔇 You already know — MUTE GAME ON LEGEND 💯",
+    "🏀 Mute game on legend. No sound, just buckets 🔇",
+    "🔥 MUTE GAME ON LEGEND! The CUHZ anthem 🏆",
+    "🔇 Volume off, difficulty MAXED — mute game on legend cuhz 🏀",
+    "💯 Mute game on legend. Period. 🔇",
+    "🏆 If you know, you know — MUTE GAME ON LEGEND 🔥",
+    "🔇 MUTE GAME ON LEGEND — the standard, not the exception 💎"
+];
+
+// Proving Grounds command directory — SINGLE SOURCE OF TRUTH.
+// Add a new PG command here and it shows up in !pg automatically.
+const PG_COMMANDS = [
+    { cmd: '!top100points',  desc: 'Top 100 in points' },
+    { cmd: '!top100ovrrank', desc: 'Top 100 by OVR rank' }
+];
+
+// !top100ovrrank — four_a_reason ONLY. Four ranked the Top 100 by OVR in
+// Proving Grounds. 5 variants, no-repeat-last-2.
+const TOP100OVR_QUOTES = [
+    "🏆 Four ranked the TOP 100 by OVR in Proving Grounds — every name, on camera 👑 https://youtu.be/X3srv7B_ErU",
+    "📊 TOP 100 OVR in Proving Grounds, ranked by @four_a_reason. The list is THE list 🏀 https://youtu.be/X3srv7B_ErU",
+    "👑 @four_a_reason put the whole TOP 100 OVR ranking together — respect the work 💎 https://youtu.be/X3srv7B_ErU",
+    "🔥 Who's really HIM? @four_a_reason ranked the TOP 100 by OVR — go find out 🏀 https://youtu.be/X3srv7B_ErU",
+    "💎 @four_a_reason did the homework so we ain't gotta — TOP 100 OVR rank 📊 https://youtu.be/X3srv7B_ErU"
 ];
 
 // !top100points — four_a_reason ONLY. Four put the Top 100 Proving Grounds
@@ -1119,7 +1194,7 @@ const BASIC_USER_COMMANDS = {
 const BASIC_BLOCKED_COMMANDS = new Set([
     '!cuhz', '!links', '!discord', '!whatiscuhz', '!faq',
     '!whitepaper', '!roadmap', '!rules', '!privacy',
-    '!cuhzchain', '!chain', '!giveaway', '!enter',
+    '!giveaway', '!enter',
     '!dashboard', '!pointsinfo', '!schedule', '!stream',
     '!followage', '!viewers', '!streamstats'
 ]);
@@ -1127,8 +1202,7 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
-    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-    "🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator"
+    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx"
 ];
 
 const BASIC_TIMER_MESSAGES = [
@@ -2154,6 +2228,22 @@ async function handleMessage(channel, tags, message, self) {
 
     // 0.849. !rock — all tiers, 12 variants, no repeats within last 3 fires.
     // !top100points — four_a_reason's channel only (his video, his shoutout)
+    // !pg — Proving Grounds command directory (four_a_reason only, since every
+    // PG command it lists is locked to his channel).
+    if (msg === '!pg' || msg === '!provinggrounds' || msg === '!pgcommands') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const list = PG_COMMANDS.map(c => `${c.cmd} — ${c.desc}`).join(' | ');
+        sendMessage(channel, `🏀 PROVING GROUNDS commands: ${list} 👑 All straight from @four_a_reason`);
+        return;
+    }
+
+    if (msg === '!top100ovrrank' || msg === '!top100ovr') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const line = pickNoRepeat(`top100ovr:${cleanChannel}`, TOP100OVR_QUOTES, 2);
+        sendMessage(channel, line);
+        return;
+    }
+
     if (msg === '!top100points' || msg === '!top100') {
         if (cleanChannel !== 'four_a_reason') return;
         const line = pickNoRepeat(`top100:${cleanChannel}`, TOP100_QUOTES, 2);
@@ -2168,6 +2258,20 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.849b. User rotation commands — pools defined in USER_VARIANT_POOLS (module scope).
+    // !gg — end-of-game good game, every channel.
+    if (msg === '!gg' || msg === '!goodgame') {
+        const line = pickNoRepeat(`goodgame:${cleanChannel}`, GOODGAME_QUOTES, 3);
+        sendMessage(channel, line);
+        return;
+    }
+
+    // !mute — community chant, all channels. Not moderation.
+    if (msg === '!mute' || msg === '!mutegame') {
+        const line = pickNoRepeat(`mutelegend:${cleanChannel}`, MUTE_LEGEND_QUOTES, 3);
+        sendMessage(channel, line);
+        return;
+    }
+
     if (USER_VARIANT_POOLS[msg]) {
         const pool = USER_VARIANT_POOLS[msg];
         const line = pickNoRepeat(`user:${msg}:${cleanChannel}`, pool, 2);
@@ -2193,38 +2297,6 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!cleartoday' && isMod) {
         dailyMessages.delete(channel.toLowerCase());
         client.say(channel, '✅ Today\'s update cleared.');
-        return;
-    }
-
-    // 0.9. !chain interactive AI handler — intercepts !chain <prompt> before static lookup
-    // Chain command is Pro/Premium only
-    if (msg.startsWith('!chain ') && !isProOrPremium) return;
-    if (msg.startsWith('!chain ')) {
-        const prompt = message.replace(/^!chain\s+/i, '').trim();
-        if (prompt) {
-            if (!config.apiBase || !config.botApiSecret) {
-                client.say(channel, `🔗 CUHZ Chain Generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
-            } else {
-                try {
-                    const res = await axios.post(`${config.apiBase}/api/bot/command`, {
-                        text: `!chain ${prompt}`,
-                        channel: cleanChannel,
-                        user: { id: tags['user-id'], name: tags.username }
-                    }, {
-                        headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
-                        timeout: 10000
-                    });
-                    if (res.data && res.data.handled && res.data.reply) {
-                        client.say(channel, res.data.reply);
-                    } else {
-                        client.say(channel, `🔗 Chain generator → https://cuhz-bot-dashboard-846.created.app/chain-generator`);
-                    }
-                } catch (err) {
-                    logger.error('Error in !chain handler:', err.message);
-                    client.say(channel, `🔗 Try it at: https://cuhz-bot-dashboard-846.created.app/chain-generator`);
-                }
-            }
-        }
         return;
     }
 
@@ -2313,41 +2385,49 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
-    // 1.5. Dynamic Help System based on Tiers. Grouped + each sendMessage stays
-    // under Twitch's 500-char per-line limit. Audited against actual dispatch
-    // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
-    if (msg === '!help' || msg === '!commands') {
-        const utility   = '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !commands !ping !nf !sub !raid';
-        const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
-        const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !mahni !storm !juan !rico !bern !dame !anti';
-        const crew      = '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
-        const modsPro   = '🛡️ Mods: !mod !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
-        const ai        = 'AI: !ask !code !whois !topchatters';
+    // 1.5. Menu-driven help. `!help` sends ONE line (the category menu);
+    // `!help <category>` sends ONE line for that category. Replaces the old
+    // 3-5 message wall of text that flooded chat for ~7 seconds.
+    if (msg === '!help' || msg === '!commands' || msg.startsWith('!help ')) {
+        const isPP = isProOrPremium;
+        const sections = {
+            utility:   '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
+                       + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
+            vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
+            brand:     '🌌 Brand: !cuhz !planet'
+                       + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
+            shoutouts: '🎤 Shoutouts: ' + (isPP
+                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
+                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !mahni !tay !yoo !anti'),
+            crew:      isPP ? '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
+            ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
+            // !mod leads: it's the self-documenting panel with live scope status.
+            mods:      '🛡️ Mods: !mod !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
+                       + (isPP ? ' !addstreamer !removestreamer' : ''),
+            pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null
+        };
 
-        if (isPremium) {
-            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
-            sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot !faq !roadmap !whitepaper !dashboard');
-            sendMessage(channel, shoutouts + (cleanChannel === 'four_a_reason' ? ' !top100points' : ''));
-            sendMessage(channel, crew + ' | ' + ai);
-            sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
-        } else if (tier === TIERS.PRO) {
-            sendMessage(channel, utility + ' !discord !links !claim !gamble !achievements !followage');
-            sendMessage(channel, vibes + ' | ' + brand);
-            sendMessage(channel, shoutouts);
-            sendMessage(channel, crew + ' | ' + modsPro);
-        } else {
-            // Basic — limited shoutouts, no AI, no info-link dump
-            sendMessage(channel, utility + ' !claim');
-            sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !mahni !tay !yoo !anti | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+        // `!help <category>` — one targeted line
+        if (msg.startsWith('!help ')) {
+            const key = msg.slice(6).trim().replace(/^!/, '');
+            if (sections[key]) {
+                sendMessage(channel, sections[key]);
+            } else {
+                const valid = Object.keys(sections).filter(k => sections[k]).join(' ');
+                sendMessage(channel, `🤖 No '${key}' category cuhz. Try: ${valid}`);
+            }
+            return;
         }
+
+        // Bare `!help` — the menu, one message
+        const cats = Object.keys(sections).filter(k => sections[k]);
+        sendMessage(channel, `🤖 CUHZ BOT — say !help + a category: ${cats.join(' · ')} 💎`);
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !cuhz !planet !mahni !tay !yoo !anti');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !cuhz !planet !mahni !tay !yoo !anti');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2366,7 +2446,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;

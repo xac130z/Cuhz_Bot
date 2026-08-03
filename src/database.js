@@ -1,5 +1,22 @@
 const { Pool } = require('pg');
-const Database = require('better-sqlite3');
+// better-sqlite3 is an OPTIONAL dependency (native module, local-dev only —
+// production uses Postgres via DATABASE_URL). Lazy-required so a skipped or
+// failed optional install can never crash a Postgres deployment.
+let Database = null;
+function loadSqlite() {
+    if (!Database) {
+        try {
+            Database = require('better-sqlite3');
+        } catch (err) {
+            throw new Error(
+                'better-sqlite3 is not installed (optional dep). Either set DATABASE_URL ' +
+                'to use Postgres, or run `npm install` locally to build sqlite. ' +
+                'Original error: ' + err.message
+            );
+        }
+    }
+    return Database;
+}
 const path = require('path');
 const fs = require('fs');
 
@@ -35,7 +52,7 @@ class DBAdapter {
         fs.mkdirSync(dataDir);
       }
       const dbPath = path.resolve(dataDir, 'bot.db');
-      this.sqlite = new Database(dbPath);
+      this.sqlite = new (loadSqlite())(dbPath);
       this.sqlite.pragma('journal_mode = WAL');
       this.initSqlite();
     }

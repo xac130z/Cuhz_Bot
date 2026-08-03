@@ -39,7 +39,6 @@ ABOUT PLANET CUHZ:
 - "Cuhz" means family/cousin — the community treats everyone like fam
 - Website: https://planetcuhz.com | Discord: https://discord.com/invite/wt6Zc7Sgjx
 - Linktree: https://linktr.ee/PlanetCUHZ | Whitepaper: https://planetcuhz.com/whitepaper
-- The CUHZ Chain Generator is a community tool: https://cuhz-bot-dashboard-846.created.app/chain-generator
 
 STREAMERS:
 - planetcuhz — The founder, solo dev building AI.
