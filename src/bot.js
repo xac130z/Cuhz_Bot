@@ -724,6 +724,46 @@ const BREEZY_QUOTES = [
     "💎 @breezyxd23 in the frequency — light work, heavy presence ❄️"
 ];
 
+// NOTE: every *_QUOTES constant referenced by USER_VARIANT_POOLS below must be
+// defined ABOVE it. The map is a module-level object literal, so it is evaluated
+// at import time — referencing a `const` declared later throws a ReferenceError
+// (temporal dead zone) and the bot never boots. Add new quote pools here.
+
+// !smutty / !pippen for smuttyp1ppen — Pippen namesake + tunes in from the
+// fire watch at work. Palette 🏀 🔥 💪 👑 💎. 8 variants, no-repeat-last-2.
+const SMUTTY_QUOTES = [
+    "🏀 SMUTTY PIPPEN in the building! @smuttyp1ppen — two-way killer energy 🔥",
+    "🔥 @smuttyp1ppen tuned in from the FIRE WATCH — that's real dedication cuhz 💪",
+    "👑 Pippen pulled up! @smuttyp1ppen — every dynasty needs a real one 🏀",
+    "💎 @smuttyp1ppen in the chat! On the clock AND locked in with the fam 🔥",
+    "🏀 @smuttyp1ppen touched down — smooth game, smoother name 👑",
+    "🔥 Fire watch can't stop the CUHZ watch — @smuttyp1ppen ALWAYS pulls up 💪",
+    "💪 @smuttyp1ppen here! Shows up for the fam even mid-shift 😤🏀",
+    "👑 @smuttyp1ppen slid in — Pippen never missed a big moment, neither does he 💎"
+];
+
+// !relax / !lik / !aye for ayelikrelaxx — chill-master energy. Palette 🌊 😌 😌 💨 🛋️ 💎.
+// 6 variants, no-repeat-last-2. Requested live in Four's chat.
+const AYELIK_QUOTES = [
+    "😌 AYE LIK RELAXX in the chat — instant chill mode activated 🌊",
+    "🌊 @ayelikrelaxx pulled up! Stress leaves when he arrives, no cap 😌",
+    "💨 Aye... lik... relaxx cuhz. @ayelikrelaxx said breathe easy 🛋️",
+    "😌 @ayelikrelaxx slid in — smoothest energy in the frequency 💎",
+    "🛋️ The chill-master @ayelikrelaxx touched down — vibes officially maxed 🌊",
+    "💎 @ayelikrelaxx here! Chat calm, vibes right, that's the relaxx effect 😌"
+];
+
+// !jr / !young for young_jr2424 — young hooper energy. Palette 🏀 ⚡ 🌟 🔥 💎.
+// 6 variants, no-repeat-last-2. Requested live in Four's chat.
+const YOUNGJR_QUOTES = [
+    "🌟 YOUNG JR in the building! @young_jr2424 — the future pulled UP 🏀",
+    "⚡ @young_jr2424 touched down! Young legs, old-soul game 🔥",
+    "🏀 JR here! @young_jr2424 — 2424 on the jersey, buckets on the mind 💎",
+    "🔥 @young_jr2424 slid in — next-gen CUHZ energy locked in 🌟",
+    "💎 Young Jr in the frequency — @young_jr2424 the fam raised him right ⚡",
+    "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
+];
+
 // User shoutout rotation pools — all tiers, no repeats within last 2 fires.
 // Hoisted to module scope so the map isn't rebuilt on every chat message.
 const USER_VARIANT_POOLS = {
@@ -855,40 +895,8 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
 ];
 
-// !smutty / !pippen for smuttyp1ppen — Pippen namesake + tunes in from the
-// fire watch at work. Palette 🏀 🔥 💪 👑 💎. 8 variants, no-repeat-last-2.
-const SMUTTY_QUOTES = [
-    "🏀 SMUTTY PIPPEN in the building! @smuttyp1ppen — two-way killer energy 🔥",
-    "🔥 @smuttyp1ppen tuned in from the FIRE WATCH — that's real dedication cuhz 💪",
-    "👑 Pippen pulled up! @smuttyp1ppen — every dynasty needs a real one 🏀",
-    "💎 @smuttyp1ppen in the chat! On the clock AND locked in with the fam 🔥",
-    "🏀 @smuttyp1ppen touched down — smooth game, smoother name 👑",
-    "🔥 Fire watch can't stop the CUHZ watch — @smuttyp1ppen ALWAYS pulls up 💪",
-    "💪 @smuttyp1ppen here! Shows up for the fam even mid-shift 😤🏀",
-    "👑 @smuttyp1ppen slid in — Pippen never missed a big moment, neither does he 💎"
-];
 
-// !relax / !lik / !aye for ayelikrelaxx — chill-master energy. Palette 🌊 😌 😌 💨 🛋️ 💎.
-// 6 variants, no-repeat-last-2. Requested live in Four's chat.
-const AYELIK_QUOTES = [
-    "😌 AYE LIK RELAXX in the chat — instant chill mode activated 🌊",
-    "🌊 @ayelikrelaxx pulled up! Stress leaves when he arrives, no cap 😌",
-    "💨 Aye... lik... relaxx cuhz. @ayelikrelaxx said breathe easy 🛋️",
-    "😌 @ayelikrelaxx slid in — smoothest energy in the frequency 💎",
-    "🛋️ The chill-master @ayelikrelaxx touched down — vibes officially maxed 🌊",
-    "💎 @ayelikrelaxx here! Chat calm, vibes right, that's the relaxx effect 😌"
-];
 
-// !jr / !young for young_jr2424 — young hooper energy. Palette 🏀 ⚡ 🌟 🔥 💎.
-// 6 variants, no-repeat-last-2. Requested live in Four's chat.
-const YOUNGJR_QUOTES = [
-    "🌟 YOUNG JR in the building! @young_jr2424 — the future pulled UP 🏀",
-    "⚡ @young_jr2424 touched down! Young legs, old-soul game 🔥",
-    "🏀 JR here! @young_jr2424 — 2424 on the jersey, buckets on the mind 💎",
-    "🔥 @young_jr2424 slid in — next-gen CUHZ energy locked in 🌟",
-    "💎 Young Jr in the frequency — @young_jr2424 the fam raised him right ⚡",
-    "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
-];
 
 // !gg — end-of-game good game, all channels. (Reassigned from geniiknight,
 // who now uses !geni.) 10 variants, no-repeat-last-3.
