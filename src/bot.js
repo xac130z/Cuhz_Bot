@@ -724,6 +724,19 @@ const BREEZY_QUOTES = [
     "💎 @breezyxd23 in the frequency — light work, heavy presence ❄️"
 ];
 
+// !smutty / !pippen for smuttyp1ppen — Pippen namesake + tunes in from the
+// fire watch at work. Palette 🏀 🔥 💪 👑 💎. 8 variants, no-repeat-last-2.
+const SMUTTY_QUOTES = [
+    "🏀 SMUTTY PIPPEN in the building! @smuttyp1ppen — two-way killer energy 🔥",
+    "🔥 @smuttyp1ppen tuned in from the FIRE WATCH — that's real dedication cuhz 💪",
+    "👑 Pippen pulled up! @smuttyp1ppen — every dynasty needs a real one 🏀",
+    "💎 @smuttyp1ppen in the chat! On the clock AND locked in with the fam 🔥",
+    "🏀 @smuttyp1ppen touched down — smooth game, smoother name 👑",
+    "🔥 Fire watch can't stop the CUHZ watch — @smuttyp1ppen ALWAYS pulls up 💪",
+    "💪 @smuttyp1ppen here! Shows up for the fam even mid-shift 😤🏀",
+    "👑 @smuttyp1ppen slid in — Pippen never missed a big moment, neither does he 💎"
+];
+
 // User shoutout rotation pools — all tiers, no repeats within last 2 fires.
 // Hoisted to module scope so the map isn't rebuilt on every chat message.
 const USER_VARIANT_POOLS = {
@@ -853,19 +866,6 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} blessed @{recipient} with a sub — pay it forward, fam 🚀",
     "🎁 SUBGIFT! @{gifter} → @{recipient}. Real ones lift real ones 💎",
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
-];
-
-// !smutty / !pippen for smuttyp1ppen — Pippen namesake + tunes in from the
-// fire watch at work. Palette 🏀 🔥 💪 👑 💎. 8 variants, no-repeat-last-2.
-const SMUTTY_QUOTES = [
-    "🏀 SMUTTY PIPPEN in the building! @smuttyp1ppen — two-way killer energy 🔥",
-    "🔥 @smuttyp1ppen tuned in from the FIRE WATCH — that's real dedication cuhz 💪",
-    "👑 Pippen pulled up! @smuttyp1ppen — every dynasty needs a real one 🏀",
-    "💎 @smuttyp1ppen in the chat! On the clock AND locked in with the fam 🔥",
-    "🏀 @smuttyp1ppen touched down — smooth game, smoother name 👑",
-    "🔥 Fire watch can't stop the CUHZ watch — @smuttyp1ppen ALWAYS pulls up 💪",
-    "💪 @smuttyp1ppen here! Shows up for the fam even mid-shift 😤🏀",
-    "👑 @smuttyp1ppen slid in — Pippen never missed a big moment, neither does he 💎"
 ];
 
 // !relax / !lik / !aye for ayelikrelaxx — chill-master energy. Palette 🌊 😌 😌 💨 🛋️ 💎.
