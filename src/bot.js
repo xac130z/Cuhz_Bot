@@ -167,6 +167,37 @@ const PAYCHECK_INTERVAL_MS = 10 * 60 * 1000;
 const _gambleCooldowns = new Map();
 
 // --- Content Data (Non-Crypto) ---
+
+// CUHZ Points reward tiers — SINGLE SOURCE OF TRUTH (same pattern as PG_COMMANDS).
+// Edit a tier here and it updates !rewards in chat AND GET /api/rewards, which is
+// what planetcuhz.com renders. Costs are placeholders for the owner to tune.
+// `note` is detail for the website; `name` is the short label chat prints.
+// Declared ABOVE PUBLIC_COMMANDS so no module-level literal can hit it in the TDZ.
+const POINT_REWARDS = [
+    { cost: 500,  name: 'Shoutout',            note: 'Shoutout on stream' },
+    { cost: 1000, name: 'Pick next game',      note: 'Pick the next game/opponent' },
+    { cost: 2500, name: 'VIP for a week',      note: 'VIP status in chat for 7 days' },
+    { cost: 5000, name: 'Custom bot greeting', note: 'Your own bot greeting for a month' }
+];
+
+// Twitch hard-caps a message at 500 chars; we budget 450. If POINT_REWARDS ever
+// grows past that, drop whole tiers off the end (with an ellipsis) rather than
+// slicing a reward name in half or blowing the cap.
+const REWARDS_LINE_MAX = 450;
+function buildRewardsLine() {
+    const prefix = '💎 CUHZ POINTS REWARDS: ';
+    const suffix = ' → Ask a mod to redeem 💎';
+    const tiers = POINT_REWARDS.map(r => `${r.cost} = ${r.name}`);
+    const shown = tiers.slice();
+    let line = prefix + shown.join(' | ') + suffix;
+    while (shown.length > 1 && line.length > REWARDS_LINE_MAX) {
+        shown.pop();
+        line = prefix + shown.join(' | ') + ' | …' + suffix;
+    }
+    // Single tier still too long (pathological name) — hard trim as a last resort.
+    return line.length > REWARDS_LINE_MAX ? line.slice(0, REWARDS_LINE_MAX - 1) + '…' : line;
+}
+
 const PUBLIC_COMMANDS = {
     // NOTE: direct !cuhz dispatch is intercepted by USER_VARIANT_POOLS (hype pool);
     // this entry stays because the context handler's Q&A matcher uses it to answer
@@ -185,7 +216,7 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!pointsinfo': '💎 Earn Cuhz Points by chatting! Use them for AI commands: !ask (10-20), !code (25), or !ask -brain (50). Use !points to check balance and !top for the leaderboard!'
+    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top — and see what you can SPEND it on with !rewards 💎'
 };
 
 const USER_COMMANDS = {
@@ -2544,7 +2575,7 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!help' || msg === '!commands' || msg.startsWith('!help ')) {
         const isPP = isProOrPremium;
         const sections = {
-            utility:   '🛠️ Utility: !lurk !unlurk !points !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
+            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
                        + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
@@ -2953,6 +2984,15 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // --- Points & Economy Commands ---
+
+    // !rewards — the "what are points actually FOR" answer. All tiers, every
+    // channel, ONE line built straight from POINT_REWARDS so chat and the
+    // website (GET /api/rewards) can never drift apart.
+    if (msg === '!rewards' || msg === '!shop' || msg === '!redeem') {
+        sendMessage(channel, buildRewardsLine());
+        return;
+    }
+
     if (msg === '!points' || msg === '!balance') {
         const balance = await pointsService.getBalance(tags.username);
         sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ points in the bank`);
@@ -3447,6 +3487,82 @@ app.get('/api/system-status', (req, res) => {
             contextAware: config.enableContextAware
         }
     });
+});
+
+// --- Public Points API (no auth) ---
+// planetcuhz.com embeds the dashboard and renders these directly, so they are
+// deliberately unauthenticated: read-only, no chat content, no PII beyond the
+// public Twitch display names already visible in chat and on !top.
+// Cached 60s so a busy site can't hammer the DB.
+
+// Normalized the same way points_service does, so lookups match stored rows.
+function normalizePointsUser(name) {
+    return String(name || '').toLowerCase().replace('@', '').trim();
+}
+
+app.get('/api/points/leaderboard', async (req, res) => {
+    try {
+        const raw = parseInt(req.query.limit, 10);
+        const limit = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), 100) : 10;
+        const rows = await pointsService.getRichList(limit);
+        res.set('Cache-Control', 'public, max-age=60');
+        res.json({
+            updated_at: new Date().toISOString(),
+            leaderboard: rows.map((r, i) => ({
+                rank: i + 1,
+                username: r.username,
+                points: r.points
+            }))
+        });
+    } catch (err) {
+        logger.error('/api/points/leaderboard failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
+app.get('/api/points/user/:username', async (req, res) => {
+    try {
+        const username = normalizePointsUser(req.params.username);
+        if (!username) return res.status(404).json({ error: 'not found' });
+
+        const points = await pointsService.getBalance(username);
+
+        // points_service exposes no rank query and we don't own that file, so
+        // rank comes from the top-100 rich list; anyone below that returns null.
+        const top = await pointsService.getRichList(100);
+        const idx = top.findIndex(r => normalizePointsUser(r.username) === username);
+
+        // getBalance() returns 0 for both "no row" and "row with 0 points", so a
+        // 0-balance user absent from the top 100 is treated as not found. A real
+        // 0-point holder can't be told apart without a query we're not allowed to add.
+        if (points === 0 && idx === -1) {
+            return res.status(404).json({ error: 'not found' });
+        }
+
+        res.set('Cache-Control', 'public, max-age=60');
+        res.json({
+            username,
+            points,
+            rank: idx === -1 ? null : idx + 1
+        });
+    } catch (err) {
+        logger.error('/api/points/user failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
+// Same POINT_REWARDS registry the bot announces via !rewards — single source of truth.
+app.get('/api/rewards', (req, res) => {
+    try {
+        res.set('Cache-Control', 'public, max-age=60');
+        res.json({
+            updated_at: new Date().toISOString(),
+            rewards: POINT_REWARDS.map(r => ({ cost: r.cost, name: r.name, note: r.note || null }))
+        });
+    } catch (err) {
+        logger.error('/api/rewards failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
 });
 
 app.get('/', (req, res) => {
