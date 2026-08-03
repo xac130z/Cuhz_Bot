@@ -186,7 +186,7 @@ const POINT_REWARDS = [
 const REWARDS_LINE_MAX = 450;
 function buildRewardsLine() {
     const prefix = '💎 CUHZ POINTS REWARDS: ';
-    const suffix = ' → Ask a mod to redeem 💎';
+    const suffix = ' → Ask a mod to redeem · more at planetcuhz.com 💎';
     const tiers = POINT_REWARDS.map(r => `${r.cost} = ${r.name}`);
     const shown = tiers.slice();
     let line = prefix + shown.join(' | ') + suffix;
@@ -216,7 +216,7 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top — and see what you can SPEND it on with !rewards 💎'
+    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top + planetcuhz.com — spend it with !rewards 💎'
 };
 
 const USER_COMMANDS = {
@@ -1295,7 +1295,7 @@ const BASIC_BLOCKED_COMMANDS = new Set([
     '!cuhz', '!links', '!discord', '!whatiscuhz', '!faq',
     '!whitepaper', '!roadmap', '!rules', '!privacy',
     '!giveaway', '!enter',
-    '!dashboard', '!pointsinfo', '!schedule', '!stream',
+    '!dashboard', '!schedule', '!stream',
     '!followage', '!viewers', '!streamstats'
 ]);
 
