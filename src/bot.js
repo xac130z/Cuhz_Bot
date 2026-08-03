@@ -187,7 +187,10 @@ const POINT_REWARDS = [
 const REWARDS_LINE_MAX = 450;
 function buildRewardsLine() {
     const prefix = '💎 CUHZ POINTS REWARDS: ';
-    const suffix = ' → Ask a mod to redeem · more at planetcuhz.com 💎';
+    // NOTE: no site pointer here on purpose — planetcuhz.com has no /rewards page
+    // yet, and pointing viewers at a dead end teaches them the economy isn't real.
+    // Re-add '· more at planetcuhz.com/rewards' ONLY once that page ships.
+    const suffix = ' → Ask a mod to redeem — the fam fulfills it, usually same stream 💎';
     const tiers = POINT_REWARDS.map(r => `${r.cost} = ${r.name}`);
     const shown = tiers.slice();
     let line = prefix + shown.join(' | ') + suffix;
@@ -217,7 +220,10 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top + planetcuhz.com — spend it with !rewards 💎'
+    // "hanging out IN CHAT" is load-bearing: the passive paycheck is message-triggered
+    // (see PRESENCE_GAP_MS / PAYCHECK_INTERVAL_MS above) — a viewer who never types
+    // earns nothing, so the copy must not promise points for silent lurking.
+    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out in chat while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top + planetcuhz.com — spend it with !rewards 💎'
 };
 
 const USER_COMMANDS = {
@@ -1303,14 +1309,22 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
-    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx"
+    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
+    // Points line: the timer loop is the bot's only proactive surface, so it's how
+    // the earn loop gets discovered. Claims mirror verified code (chat_message +1,
+    // passive_paycheck +10, claimBonus 300) — and "in chat" because the paycheck is
+    // message-triggered, so pure lurking pays nothing.
+    "💎 You're stacking CUHZ Points right now — +1 every message, +10 for hanging out in chat while we're live, +300 one-time with !claim. Bag check: !points · goods: !rewards 💎"
 ];
 
 const BASIC_TIMER_MESSAGES = [
-    '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream! → twitch.tv/four_a_reason 🚀',
+    // Routes to the !bot handler (one source of truth for onboarding) instead of the
+    // retired "pull up to @four_a_reason's stream" pointer superseded by PR #4.
+    '🤖 Want CUHZ Bot in your channel — mod tools, hype, points & AI? Type !bot to pull up 🚀',
     '🌌 Planet CUHZ — the creator ecosystem where we all level up together 💎',
     '💬 Join the CUHZ fam on Discord → https://discord.com/invite/wt6Zc7Sgjx',
-    '🔥 Type !hype, !vibe, or !w to show love in the chat!'
+    '🔥 Type !hype, !vibe, or !w to show love in the chat!',
+    '💎 Every message stacks CUHZ Points: +1 per chat, +10 for hanging out in chat, +300 one-time with !claim. !points for your bag, !rewards for the goods 💎'
 ];
 
 // AI Warriors removed per user request
