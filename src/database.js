@@ -41,11 +41,22 @@ class DBAdapter {
         console.error('❌ PostgreSQL pool error:', err.message);
       });
 
+      console.log('✅ Persistent storage: PostgreSQL — points survive restarts.');
       this.initPostgres();
 
       // Periodic health check every 5 minutes
       setInterval(() => this._pgHealthCheck(), 5 * 60 * 1000).unref(); // unref: don't hold the event loop open
     } else {
+      // ⚠️ SQLite lives in the container filesystem. Railway containers are
+      // EPHEMERAL — every deploy/restart destroys it, taking all points,
+      // watch time and user profiles with it. This is a data-loss warning,
+      // not a style note.
+      console.warn('⚠️ ══════════════════════════════════════════════════════════');
+      console.warn('⚠️  DATABASE_URL is NOT set — falling back to local SQLite.');
+      console.warn('⚠️  On a hosted container this storage is EPHEMERAL:');
+      console.warn('⚠️  ALL POINTS, WATCH TIME AND PROFILES RESET ON EVERY DEPLOY.');
+      console.warn('⚠️  Fix: add a Postgres service in Railway and set DATABASE_URL.');
+      console.warn('⚠️ ══════════════════════════════════════════════════════════');
       console.log('📁 Using local SQLite database...');
       const dataDir = path.resolve(__dirname, '../data');
       if (!fs.existsSync(dataDir)) {

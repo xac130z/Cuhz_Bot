@@ -3176,7 +3176,8 @@ async function handleMessage(channel, tags, message, self) {
         if (validation) {
             const hasFollowerScope = (validation.scopes || []).includes('moderator:read:followers');
             const hasBroadcastScope = (validation.scopes || []).includes('channel:manage:broadcast');
-            client.say(channel, `🤖 Status: LIVE | Scopes: ${validation.scopes.length} | Followage Fix: ${hasFollowerScope ? '✅' : '❌'} | Title/Game: ${hasBroadcastScope ? '✅' : '❌'}`);
+            const persistent = db.type === 'postgres';
+            client.say(channel, `🤖 Status: LIVE | Scopes: ${validation.scopes.length} | Followage: ${hasFollowerScope ? '✅' : '❌'} | Title/Game: ${hasBroadcastScope ? '✅' : '❌'} | Points storage: ${persistent ? '✅ Postgres (safe)' : '⚠️ SQLite (RESETS ON DEPLOY)'}`);
         } else {
             client.say(channel, `❌ Token invalid or expired.`);
         }
