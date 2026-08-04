@@ -4,8 +4,9 @@
  * false claim in chat is a broken promise, not a typo.
  *
  * What must stay true:
- *  1. !rewards never points at planetcuhz.com — the site has no /rewards page,
- *     so the pointer is a dead end. (Restore it only when that page ships.)
+ *  1. Neither !rewards nor !pointsinfo points at planetcuhz.com — the site has no
+ *     /rewards, /leaderboard or /points page (all 404 live), so the pointer is a
+ *     dead end. (Restore it only when planetcuhz.com/points ships.)
  *  2. !rewards still renders inside REWARDS_LINE_MAX, and the drop-whole-tiers
  *     truncation still works if POINT_REWARDS ever grows.
  *  3. Both timer pools advertise the earn loop (the timers are the bot's only
@@ -17,6 +18,18 @@
  *     10 min, both evaluated inside the chat-message handler), so a viewer who
  *     never types earns zero. The earn copy must be qualified with chat.
  *  6. Everything fits Twitch's 500-char message cap.
+ *  7. FIRST-PARTY ONLY (CUHZ_POINTS_ECONOMY.md Rev 2). CUHZ Bot is a guest in 8
+ *     channels it does not own, so no reward may promise a HOST STREAMER's labor
+ *     or channel privileges. This file is the tripwire: the retired vocabulary
+ *     (shoutout / VIP / pick next game / "your stream" / "your channel") is
+ *     banned from reward text, and the bot-greeting tier must name the Planet
+ *     Cuhz channel out loud so it can never read as a promise in a host's house.
+ *  8. The four public costs stay exactly 500/1000/2500/5000. Viewers are banking
+ *     against those numbers right now — they may be lowered, never raised, and a
+ *     net-new tier (e.g. the 7500 grail) needs the owner, not an agent.
+ *  9. The 25% discount tier never claims instant/automatic delivery — spec §4 E1
+ *     (store platform single-use codes) is UNVERIFIED and the fallback is a
+ *     manual refund, so the copy must stay "issued via Discord" by a human.
  */
 
 const fs = require('fs');
@@ -77,6 +90,65 @@ check(`!rewards within REWARDS_LINE_MAX (${shippedRewards.length} <= ${REWARDS_L
     shippedRewards.length <= REWARDS_LINE_MAX);
 check('!rewards still tells viewers how to actually redeem (ask a mod)',
     /ask a mod/i.test(shippedRewards));
+check('!rewards states the Rev 2 fulfilment promise (fam / Discord, no host needed)',
+    /via Discord/i.test(shippedRewards) && /no host needed/i.test(shippedRewards));
+check('!rewards no longer implies on-stream fulfilment ("usually same stream")',
+    !/same stream/i.test(shippedRewards));
+
+// --- the ladder itself: first-party only ---------------------------------
+
+// eslint-disable-next-line no-new-func
+const tiersData = new Function(`${rewardsData[0]}\nreturn POINT_REWARDS;`)();
+
+// Never-raise rule (spec §2c): these four numbers are public and viewers are
+// grinding toward them. They may be confirmed or LOWERED — never raised — and a
+// net-new tier (the 7500 grail) is the owner's call, not an agent's.
+check(`costs are exactly [500,1000,2500,5000] (${tiersData.map(t => t.cost).join(',')})`,
+    JSON.stringify(tiersData.map(t => t.cost)) === JSON.stringify([500, 1000, 2500, 5000]));
+
+// Rev 2 kill list. CUHZ Bot is a guest in 8 channels it does not own, so reward
+// copy may never name a host streamer's labour, airtime, or channel privileges.
+const HOST_DEPENDENT = [
+    'shoutout',
+    'VIP',
+    'pick next game',
+    'your stream',
+    'your channel'
+];
+tiersData.forEach(t => {
+    const text = `${t.name} ${t.note}`;
+    const hit = HOST_DEPENDENT.filter(w => new RegExp(w.replace(/ /g, '\\s+'), 'i').test(text));
+    check(`tier ${t.cost} promises nothing from a host streamer${hit.length ? ` (found: ${hit.join(', ')})` : ''}`,
+        hit.length === 0);
+    check(`tier ${t.cost} has a website-grade note`,
+        typeof t.note === 'string' && t.note.length > 20);
+});
+
+// The bot's own speech is ours; a greeting in a HOST's chat is our promo in their
+// house. The tier must say WHICH channel out loud, in the chat-visible name too —
+// in a host's channel an unscoped "Custom bot greeting" reads as a promise there.
+const greeting = tiersData.find(t => /greeting/i.test(t.name));
+check('bot-greeting tier exists and is priced at 5000', !!greeting && greeting.cost === 5000);
+check('bot-greeting tier scopes to Planet Cuhz in its note',
+    !!greeting && /planet\s*cuhz/i.test(greeting.note));
+check('bot-greeting tier scopes to Planet Cuhz in the chat-visible name',
+    !!greeting && /planet\s*cuhz/i.test(greeting.name));
+check('bot-greeting scope survives into the rendered !rewards line',
+    /planet\s*cuhz/i.test(shippedRewards.replace(/CUHZ POINTS REWARDS/i, '')));
+
+// Spec §4 E1 is UNVERIFIED (can the store issue single-use codes at all?), and the
+// documented fallback is William refunding 25% by hand. So the discount tier must
+// read as human-issued — never instant, never automatic.
+const discount = tiersData.find(t => /%/.test(t.name));
+check('discount tier exists at 1000', !!discount && discount.cost === 1000);
+check('discount tier does NOT claim instant/automatic delivery (E1 unverified)',
+    !!discount && !/instant|automatic|auto-appl|immediately/i.test(`${discount.name} ${discount.note}`));
+check('discount tier says a human issues it via Discord',
+    !!discount && /issued via Discord/i.test(discount.note));
+
+// The 7500 grail is net-new value (a $15 SKU) — owner approval, not agent action.
+check('no unapproved 7500 grail tier snuck in',
+    !tiersData.some(t => t.cost === 7500));
 
 // Truncation must still drop WHOLE tiers rather than blow the cap.
 const fatLadder = Array.from({ length: 40 }, (_, i) => ({
@@ -94,11 +166,18 @@ const basicTimers = arrayLines('BASIC_TIMER_MESSAGES');
 check('TIMER_MESSAGES parsed', Array.isArray(proTimers) && proTimers.length > 0);
 check('BASIC_TIMER_MESSAGES parsed', Array.isArray(basicTimers) && basicTimers.length > 0);
 
-const pointsLine = l => /!points\b/.test(l) && /CUHZ Points/i.test(l);
-check('TIMER_MESSAGES advertises the points loop (mentions !points)',
-    (proTimers || []).some(pointsLine));
-check('BASIC_TIMER_MESSAGES advertises the points loop (mentions !points)',
-    (basicTimers || []).some(pointsLine));
+// A points line must name the currency AND route somewhere the viewer can act.
+const pointsLine = l => /CUHZ Points/i.test(l) && /!(points|rewards)\b/.test(l);
+check('TIMER_MESSAGES advertises the points loop', (proTimers || []).some(pointsLine));
+check('BASIC_TIMER_MESSAGES advertises the points loop', (basicTimers || []).some(pointsLine));
+
+// The instant AI spends are Pro/Premium-gated. Showcasing them in the Pro pool is
+// the point of the Rev 2 timer upgrade; advertising them to Basic channels would
+// be selling a command those viewers cannot run.
+check('Pro timer showcases the instant AI spends (!ask / !code)',
+    (proTimers || []).some(l => /!ask\b/.test(l) && /!code\b/.test(l)));
+check('Basic timer does NOT advertise the Pro/Premium-only AI spends',
+    !(basicTimers || []).some(l => /!ask\b|!code\b|-brain/.test(l)));
 
 // Retired onboarding: !bot replaced the hardcoded stream pointer.
 const allTimers = [...(proTimers || []), ...(basicTimers || [])];
@@ -120,6 +199,13 @@ check('!pointsinfo does NOT promise points for passive lurking',
     !/hanging out (?!in chat)/i.test(pointsInfo));
 check('!pointsinfo qualifies the +10 earn with chat',
     /hanging out in chat/i.test(pointsInfo));
+
+// /leaderboard, /rewards and /points all 404 on the live site. Until the /points
+// page ships (spec §6), no chat surface may send a viewer there for points.
+check('!pointsinfo contains NO planetcuhz.com dead link',
+    !/planetcuhz\.com/i.test(pointsInfo));
+check('!pointsinfo still routes the leaderboard to !top',
+    /!top\b/.test(pointsInfo));
 
 // And the mechanic it describes must still be the one in the code.
 check('paycheck is still message-triggered (presence + interval gate in handler)',
