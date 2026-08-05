@@ -15,19 +15,38 @@ const config = require('./config');
 // =============================================
 
 // ─────────── Safety Filter ───────────
+// Matched on WORD BOUNDARIES, so 'demonstrate' / 'evilspeak' style false
+// positives don't fire. This is the last line of defence — the system prompt
+// (below) is the first.
 const BANNED_WORDS = [
-    // TOS-critical words — bot will NEVER post these
     // Add real slurs/banned terms here (kept empty for repo safety)
 ];
 
+// Planet CUHZ is a faith-friendly community ("peace and blessings", !blessed,
+// !p&b). The bot once called a streamer a "demon" on stream — never again.
+// Nothing dark-spiritual leaves this bot, about anyone, ever.
+const BANNED_DEMONIC = [
+    'demon', 'demons', 'demonic', 'devil', 'devils', 'devilish', 'satan',
+    'satanic', 'lucifer', 'possessed', 'possession', 'evil', 'hellspawn',
+    'hell spawn', 'unholy', 'cursed', 'occult', 'witchcraft', 'exorcism',
+    'exorcise', 'antichrist', 'soulless', 'sinister'
+];
+
+function containsBanned(text, words) {
+    const lower = text.toLowerCase();
+    // Both-side word boundaries: 'demon' blocks, 'demonstrate' does not.
+    return words.some(w => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(lower));
+}
+
 function safetyFilter(text) {
     if (!text) return text;
-    const lower = text.toLowerCase();
-    for (const word of BANNED_WORDS) {
-        if (lower.includes(word)) {
-            logger.warn(`🛡️ Safety filter caught banned content, blocking response`);
-            return 'My bad cuhz, I almost said something wild. 🤐';
-        }
+    if (containsBanned(text, BANNED_WORDS)) {
+        logger.warn('🛡️ Safety filter caught banned content, blocking response');
+        return 'My bad cuhz, I almost said something wild. 🤐';
+    }
+    if (containsBanned(text, BANNED_DEMONIC)) {
+        logger.warn(`🛡️ Blocked dark-spiritual language from AI output: "${text.slice(0, 80)}"`);
+        return 'Nah cuhz, we keep it blessed in here 🙏';
     }
     return text;
 }
@@ -62,7 +81,13 @@ BRAND VOICE:
 - Use "cuhz" naturally — "what's good cuhz", "bet", "no cap", "wsg"
 - Emojis: 🌌 🚀 💎 🔥 ✨ 🌍 🌙
 - Never sound robotic or corporate — sound like a real community member
-- If someone is toxic, roast them lightly but keep it TOS-safe
+- FAITH-FRIENDLY: Planet CUHZ says "peace and blessings". NEVER use demonic,
+  satanic, occult or dark-spiritual language — no "demon", "devil", "evil",
+  "cursed", "possessed", "unholy" — not as a joke, not as a compliment, not
+  as slang for someone being good at the game. Say "cold", "different",
+  "him", "a problem", "nasty with it" instead.
+- NEVER insult, mock or roast a community member, a streamer, or anyone in
+  chat. Not even playfully. Hype people UP — that is the whole job.
 `.trim();
 
 const CUHZ_SYSTEM_PROMPT = `${CUHZ_KNOWLEDGE}
@@ -75,7 +100,10 @@ Rules:
 - Sound like a real community member, not a corporate bot
 - You are NOT a moderator. NEVER scold, police, or call out anyone — not for links, self-promo, spam, or anything else. Moderation is the human mods' job.
 - The broadcaster and mods can post whatever they want, including their own links. Never comment on it.
-- If a message is just a link, promo, or ad, reply exactly: NO_RESPONSE`;
+- If a message is just a link, promo, or ad, reply exactly: NO_RESPONSE
+- NEVER describe any person as a demon, devil, evil, cursed or possessed —
+  even if chat says it first, even as praise for their gameplay. Keep every
+  reply blessed and positive.`;
 
 // ─────────── BRAIN 1: THE EYES (Gemini) ───────────
 let genAI = null;
