@@ -171,14 +171,34 @@ const _gambleCooldowns = new Map();
 
 // CUHZ Points reward tiers — SINGLE SOURCE OF TRUTH (same pattern as PG_COMMANDS).
 // Edit a tier here and it updates !rewards in chat AND GET /api/rewards, which is
-// what planetcuhz.com renders. Costs are placeholders for the owner to tune.
+// what planetcuhz.com renders.
 // `note` is detail for the website; `name` is the short label chat prints.
 // Declared ABOVE PUBLIC_COMMANDS so no module-level literal can hit it in the TDZ.
+//
+// FIRST-PARTY ONLY (CUHZ_POINTS_ECONOMY.md Rev 2, §2–§3 — non-negotiable):
+// CUHZ Bot is a GUEST in 8 channels it does not own, so no tier may depend on a
+// host streamer's labor or channel privileges. The retired ladder (Shoutout /
+// Pick next game / VIP for a week) all promised somebody else's airtime or badge
+// — that was never ours to give. Every tier below is fulfillable by us alone:
+// the bot, planetcuhz.com (Chain Studio + store), our own stream, or our Discord.
+// Do NOT re-add a host-dependent tier. Not "usually", not "we'll ask them".
+//
+// NEVER-RAISE RULE (§2c): 500/1000/2500/5000 are public and viewers are banking
+// against them right now. These costs may be confirmed or LOWERED, never raised.
+// The reward AT a price point may only be swapped for equal-or-greater value.
+//
+// No 7500 "grail" tier here on purpose — it is net-new and awaits owner approval.
 const POINT_REWARDS = [
-    { cost: 500,  name: 'Shoutout',            note: 'Shoutout on stream' },
-    { cost: 1000, name: 'Pick next game',      note: 'Pick the next game/opponent' },
-    { cost: 2500, name: 'VIP for a week',      note: 'VIP status in chat for 7 days' },
-    { cost: 5000, name: 'Custom bot greeting', note: 'Your own bot greeting for a month' }
+    { cost: 500,  name: 'Custom Chain PFP',     note: 'Made-to-order Chain Studio profile art — any finish, your nameplate, delivered in Discord' },
+    // 25% tier: copy says "issued via Discord" and never "instant"/"auto-applied".
+    // Spec §4 E1 (store platform's single-use discount codes) is UNVERIFIED, and the
+    // fallback is a manual 25% refund — so nothing here may imply automatic delivery.
+    { cost: 1000, name: '25% off the store',    note: 'Single-use 25% discount code for anything at planetcuhz.com — issued via Discord' },
+    { cost: 2500, name: 'Emote Pack Vol.1',     note: 'The full $7 emote pack, free — 8 emotes, Twitch + Discord sizes, via Discord DM' },
+    // Scoped to the Planet Cuhz channel on purpose: the bot's speech is ours, but a
+    // greeting firing in a HOST's chat is our promo in their house. Never advertise
+    // this as bot-wide. The "on the Planet Cuhz channel" clause is load-bearing.
+    { cost: 5000, name: 'Custom bot greeting (Planet Cuhz)', note: 'Cuhz_Bot greets you by name with your line on the Planet Cuhz channel for a month' }
 ];
 
 // Twitch hard-caps a message at 500 chars; we budget 450. If POINT_REWARDS ever
@@ -187,7 +207,13 @@ const POINT_REWARDS = [
 const REWARDS_LINE_MAX = 450;
 function buildRewardsLine() {
     const prefix = '💎 CUHZ POINTS REWARDS: ';
-    const suffix = ' → Ask a mod to redeem · more at planetcuhz.com 💎';
+    // NOTE: no site pointer here on purpose — planetcuhz.com has no /points page
+    // yet, and pointing viewers at a dead end teaches them the economy isn't real.
+    // Re-add '· more at planetcuhz.com/points' ONLY once that page ships (spec §6).
+    // "no host needed" is the Rev 2 promise in four words; "usually same stream" is
+    // gone because custom art and discount codes take a day and "same stream"
+    // implied on-stream fulfillment — the exact frame Rev 2 retires.
+    const suffix = ' → Ask a mod to redeem — delivered by the fam via Discord, no host needed 💎';
     const tiers = POINT_REWARDS.map(r => `${r.cost} = ${r.name}`);
     const shown = tiers.slice();
     let line = prefix + shown.join(' | ') + suffix;
@@ -217,7 +243,13 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top + planetcuhz.com — spend it with !rewards 💎'
+    // "hanging out IN CHAT" is load-bearing: the passive paycheck is message-triggered
+    // (see PRESENCE_GAP_MS / PAYCHECK_INTERVAL_MS above) — a viewer who never types
+    // earns nothing, so the copy must not promise points for silent lurking.
+    // The '+ planetcuhz.com' pointer is gone: the site has no leaderboard and no
+    // points page (verified live — /leaderboard and /rewards both 404). Restore it
+    // as 'planetcuhz.com/points' ONLY after that page ships (spec §5a/§6).
+    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out in chat while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top — spend it with !rewards 💎'
 };
 
 const USER_COMMANDS = {
@@ -1303,14 +1335,24 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 const TIMER_MESSAGES = [
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
-    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx"
+    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
+    // Points line: the timer loop is the bot's only proactive surface, so it's how
+    // the earn loop gets discovered. Claims mirror verified code (chat_message +1,
+    // passive_paycheck +10, claimBonus 300) — and "in chat" because the paycheck is
+    // message-triggered, so pure lurking pays nothing. The instant spends named here
+    // (!ask 10 · !code 25 · !ask -brain 50) are Pro/Premium-only, which is why this
+    // line lives in THIS pool and BASIC_TIMER_MESSAGES must never copy it.
+    "💎 You're stacking CUHZ Points right now — +1 every message, +10 for hanging out in chat while we're live, +300 one-time with !claim. Spend instantly: !ask (10) · !code (25) · !ask -brain (50) — or save up: !rewards 💎"
 ];
 
 const BASIC_TIMER_MESSAGES = [
-    '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream! → twitch.tv/four_a_reason 🚀',
+    // Routes to the !bot handler (one source of truth for onboarding) instead of the
+    // retired "pull up to @four_a_reason's stream" pointer superseded by PR #4.
+    '🤖 Want CUHZ Bot in your channel — mod tools, hype, points & AI? Type !bot to pull up 🚀',
     '🌌 Planet CUHZ — the creator ecosystem where we all level up together 💎',
     '💬 Join the CUHZ fam on Discord → https://discord.com/invite/wt6Zc7Sgjx',
-    '🔥 Type !hype, !vibe, or !w to show love in the chat!'
+    '🔥 Type !hype, !vibe, or !w to show love in the chat!',
+    '💎 Every message stacks CUHZ Points: +1 per chat, +10 for hanging out in chat, +300 one-time with !claim. !points for your bag, !rewards for the goods 💎'
 ];
 
 // AI Warriors removed per user request
