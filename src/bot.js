@@ -249,7 +249,7 @@ const PUBLIC_COMMANDS = {
     // The '+ planetcuhz.com' pointer is gone: the site has no leaderboard and no
     // points page (verified live — /leaderboard and /rewards both 404). Restore it
     // as 'planetcuhz.com/points' ONLY after that page ships (spec §5a/§6).
-    '!pointsinfo': '💎 EARN Cuhz Points: +1 every chat message, +10 just for hanging out in chat while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top — spend it with !rewards 💎'
+    '!pointsinfo': '💎 EARN CUHZ Points: +1 every chat message, +10 just for hanging out in chat while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top — spend it with !rewards 💎'
 };
 
 const USER_COMMANDS = {
@@ -3042,7 +3042,7 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!points' || msg === '!balance') {
         const balance = await pointsService.getBalance(tags.username);
-        sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ points in the bank`);
+        sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ Points in the bank`);
         return;
     }
 

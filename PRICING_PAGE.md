@@ -40,7 +40,7 @@ Are you a creator looking to bring the **Cuhz_Bot** experience to your own chann
 - **Automated Marketing**: Your social links (TikTok/YouTube) on a professional timer rotation.
 
 ### 🛠️ The "Architect" Custom Build (Contact for Quote)
-*Own a piece of the future. Custom-coded by the fourareason4 team.*
+*Own a piece of the future. Custom-coded by the four_a_reason team.*
 - **Custom Branding**: Give the bot your own name, avatar, and background story.
 - **Private Intelligence**: Train the AI on your specific game knowledge, lore, and rules.
 - **Dedicated Server**: Runs on a high-speed private instance for 0.0ms delay.
@@ -62,4 +62,4 @@ Absolutely. You can change your tier at any time through our dashboard.
 ---
 
 ## 🚀 Ready to Level Up?
-*Contact @fourareason4 in Discord or via email at **SUPPORT@PLANETCUHZ.COM** to get started.*
+*Contact @four_a_reason in Discord or via email at **SUPPORT@PLANETCUHZ.COM** to get started.*
