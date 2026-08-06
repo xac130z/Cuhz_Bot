@@ -2482,8 +2482,27 @@ async function handleMessage(channel, tags, message, self) {
     // Affiliate $49.99, site membership Pro $9.99 / Team $24.99 is a
     // SEPARATE product and named here so the two never get conflated in chat.
     // All tiers, all channels — a price question can come from anywhere.
-    if (msg === '!prices' || msg === '!price' || msg === '!plans' || msg === '!pricing') {
-        sendMessage(channel, '💎 CUHZ Bot plans: Community FREE · Silver $4.99/mo · Gold $14.99/mo · Affiliate $49.99/mo (your own branded bot) · Architect custom. Site membership is separate: Pro $9.99/mo · Team $24.99/mo. Full breakdown → planetcuhz.com/pricing 💎');
+    if (msg === '!prices' || msg === '!price' || msg === '!plans' || msg === '!pricing'
+        || msg.startsWith('!prices ') || msg.startsWith('!price ') || msg.startsWith('!plans ')) {
+        // Drill-down: `!prices <plan>` = ONE line of what that plan actually
+        // gets you — feature copy mirrors the site's Pricing.tsx bullets
+        // verbatim-in-spirit so chat and site can't tell different stories.
+        const PLAN_DETAILS = {
+            free:      '🆓 Community — FREE, live NOW: CUHZ Bot in your channel · CUHZ Points (+1/msg) · !ask AI (10 pts) · shoutouts · !points !top !rewards. Start: type !bot 🚀',
+            community: null, // alias of free — filled below
+            silver:    '🥈 Silver Supporter — $4.99/mo: the supporter tier. Perks are rolling out and checkout opens at planetcuhz.com/pricing this launch — pull up to the Discord to be first in line 🌌',
+            gold:      '🥇 Gold Executive — $14.99/mo: the top supporter tier (AI-first). Perks are rolling out and checkout opens at planetcuhz.com/pricing this launch — Discord gets first access 🌌',
+            affiliate: '🛰️ Affiliate Pack — $49.99/mo: a full CUHZ Bot deployment in YOUR channel — your links & socials on rotation · mod intelligence (!chatreport, !mood) · points for your chat. Onboarding via the Discord → !bot',
+            architect: '🏗️ Architect Custom Build — custom quote: a bot you OWN, custom-coded — your branding, avatar & backstory, private AI on your game & rules. Ask in the Discord → planetcuhz.com/pricing',
+            membership:'🪐 Site membership (separate from the bot): Pro $9.99/mo · Team $24.99/mo — planetcuhz.com tools & AI studio. → planetcuhz.com/pricing'
+        };
+        PLAN_DETAILS.community = PLAN_DETAILS.free;
+        const arg = msg.split(/\s+/)[1];
+        if (arg && PLAN_DETAILS[arg]) {
+            sendMessage(channel, PLAN_DETAILS[arg]);
+            return;
+        }
+        sendMessage(channel, '💎 CUHZ Bot plans: Community FREE · Silver $4.99/mo · Gold $14.99/mo · Affiliate $49.99/mo (your own branded bot) · Architect custom. Details: !prices silver (or free/gold/affiliate/architect/membership) → planetcuhz.com/pricing 💎');
         return;
     }
 
