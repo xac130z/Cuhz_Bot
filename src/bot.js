@@ -2476,6 +2476,17 @@ async function handleMessage(channel, tags, message, self) {
     // matters: Twitch checks mod status server-side on every moderation call, so
     // without it the bot can read chat but cannot moderate. Deliberately no
     // token/OAuth link here — onboarding never needs a streamer's credentials.
+    // !prices — the sales answer, ONE line so it never floods chat (same
+    // discipline as !help). Prices are CANON (BRAND_PRICE_GUARDRAILS §9 /
+    // site src/data/pricing.ts): bot plans Silver $4.99 / Gold $14.99 /
+    // Affiliate $49.99, site membership Pro $9.99 / Team $24.99 is a
+    // SEPARATE product and named here so the two never get conflated in chat.
+    // All tiers, all channels — a price question can come from anywhere.
+    if (msg === '!prices' || msg === '!price' || msg === '!plans' || msg === '!pricing') {
+        sendMessage(channel, '💎 CUHZ Bot plans: Community FREE · Silver $4.99/mo · Gold $14.99/mo · Affiliate $49.99/mo (your own branded bot) · Architect custom. Site membership is separate: Pro $9.99/mo · Team $24.99/mo. Full breakdown → planetcuhz.com/pricing 💎');
+        return;
+    }
+
     if (msg === '!bot' || msg === '!getcuhzbot' || msg === '!addbot') {
         sendMessage(channel, '🤖 CUHZ Bot — moderation, hype, points, shoutouts & AI for your stream. Free to try 🚀');
         sendMessage(channel, '➡️ Get it in YOUR channel: 1️⃣ type /mod cuhz_bot in your chat 2️⃣ pull up to https://discord.com/invite/wt6Zc7Sgjx and say you want the bot. More → https://planetcuhz.com 🌌');
@@ -2658,7 +2669,7 @@ async function handleMessage(channel, tags, message, self) {
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
             // CTA, so the people who most need to see it are in Basic channels.
-            brand:     '🌌 Brand: !bot !cuhz !planet'
+            brand:     '🌌 Brand: !bot !prices !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
                        ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
