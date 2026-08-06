@@ -30,6 +30,12 @@
  *  9. The 25% discount tier never claims instant/automatic delivery — spec §4 E1
  *     (store platform single-use codes) is UNVERIFIED and the fallback is a
  *     manual refund, so the copy must stay "issued via Discord" by a human.
+ * 10. NAMING LAW (ladder v2, owner-locked 2026-08-06). The internal tier keys
+ *     (basic/pro/premium) are plumbing, not products: "Pro" collides with the
+ *     planetcuhz.com site membership and "Premium" is a plan nobody can buy, so
+ *     neither may leak into a chat string. "Affiliate Pack" is retired vocabulary
+ *     — the $49.99 SKU is Partner, a managed own-branded deployment. Every
+ *     !prices line must also fit the 500-char Twitch cap.
  */
 
 const fs = require('fs');
@@ -211,9 +217,87 @@ check('!pointsinfo still routes the leaderboard to !top',
 check('paycheck is still message-triggered (presence + interval gate in handler)',
     /sinceSeen <= PRESENCE_GAP_MS && sincePay >= PAYCHECK_INTERVAL_MS/.test(src));
 
+// --- naming law: no internal tier names, no retired vocabulary -----------
+
+// Every literal the bot actually speaks: sendMessage(channel, …) and the raw
+// client.say(channel, …) escapes. Comments are excluded by construction (a
+// commented-out line never matches the call form), so the old vocabulary can
+// still be quoted in a code comment for context without failing the build.
+function spokenStrings() {
+    const out = [];
+    const re = /(?:sendMessage|client\.say)\(\s*channel\s*,\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/g;
+    let m;
+    while ((m = re.exec(src)) !== null) out.push({ raw: m[2], quote: m[1] });
+    return out;
+}
+
+const spoken = spokenStrings();
+check(`spoken-string scanner found the chat surface (${spoken.length} literals)`,
+    spoken.length > 20);
+
+// "Pro"/"Premium" are CHANNEL_TIERS plumbing. A viewer never bought either word,
+// and "Pro" is the name of a different product on the site.
+const tierLeaks = spoken.filter(s => /Pro\s*\/\s*Premium|\bPremium\b/i.test(s.raw));
+check(`no internal tier names leak into chat copy${tierLeaks.length ? ` (found: ${tierLeaks.map(s => s.raw.slice(0, 60)).join(' | ')})` : ''}`,
+    tierLeaks.length === 0);
+
+// Retired 2026-08-06: the $49.99 SKU is Partner (managed, own-branded), and no
+// chat string may still sell it as an "Affiliate Pack".
+const affiliateLeaks = spoken.filter(s => /affiliate/i.test(s.raw));
+check(`no "Affiliate Pack" vocabulary left in chat copy${affiliateLeaks.length ? ` (found: ${affiliateLeaks.map(s => s.raw.slice(0, 60)).join(' | ')})` : ''}`,
+    affiliateLeaks.length === 0);
+
+// --- !prices ladder ------------------------------------------------------
+
+const planBlock = src.match(/const PLAN_DETAILS = \{([\s\S]*?)\n\s*\};/);
+check('PLAN_DETAILS block found', !!planBlock);
+
+const planLines = {};
+if (planBlock) {
+    planBlock[1].split('\n')
+        .filter(l => !l.trim().startsWith('//'))
+        .forEach(l => {
+            const m = l.match(/^\s*(\w+)\s*:\s*(['"])((?:\\.|(?!\2)[^\\])*)\2/);
+            if (m) planLines[m[1]] = unquote(`${m[2]}${m[3]}${m[2]}`);
+        });
+}
+
+// The ladder the owner locked. `affiliate` stays an accepted ARG (aliased to
+// partner in code) so old muscle memory still resolves — it just can't be a
+// distinct product line any more.
+['free', 'silver', 'gold', 'partner', 'architect', 'membership'].forEach(key => {
+    check(`!prices ${key} exists`, typeof planLines[key] === 'string' && planLines[key].length > 20);
+});
+check('retired "affiliate" key no longer holds its own copy (aliased to partner)',
+    !Object.prototype.hasOwnProperty.call(planLines, 'affiliate'));
+check('affiliate still resolves as an arg alias of partner',
+    /PLAN_DETAILS\.affiliate = PLAN_DETAILS\.partner;/.test(src));
+
+// Partner is the repositioned $49.99: managed + own-branded + capped slots. If
+// any of those three claims falls out, the price stops being defensible.
+check('Partner copy sells the managed own-branded deployment',
+    /partner/i.test(planLines.partner || '') && /own branded bot|OWN branded bot/i.test(planLines.partner || ''));
+check('Partner copy states the 5 founding slots (scarcity is the offer)',
+    /5 founding slots/i.test(planLines.partner || ''));
+check('Gold copy states the included site membership (one sub, two surfaces)',
+    /included/i.test(planLines.gold || ''));
+
+// The menu line is the most-seen string in the whole pricing surface.
+const menuMatch = src.match(/sendMessage\(channel, '(💎 CUHZ Bot plans:(?:\\.|[^'\\])*)'\)/);
+check('!prices menu line found', !!menuMatch);
+const menuLine = menuMatch ? unquote(`'${menuMatch[1]}'`) : '';
+check('menu line keeps the drill-down hint', /!prices silver/.test(menuLine));
+check('menu line names the whole ladder',
+    ['Free', 'Silver', 'Gold', 'Partner', 'Architect'].every(n => menuLine.includes(n)));
+
+const priceLines = [...Object.values(planLines), menuLine];
+priceLines.forEach(text => {
+    console.log(`     !prices copy (${text.length} chars): ${text}`);
+});
+
 // --- char caps -----------------------------------------------------------
 
-[...allTimers, shippedRewards, pointsInfo].forEach(text => {
+[...allTimers, shippedRewards, pointsInfo, ...priceLines].forEach(text => {
     check(`under Twitch's ${TWITCH_MAX}-char cap (${text.length}): "${text.slice(0, 48)}…"`,
         text.length <= TWITCH_MAX);
 });

@@ -22,6 +22,23 @@ const path = require('path');
 // on the channel name before indexing this map. Any channel not listed falls
 // through to TIERS.BASIC by default (see the `|| TIERS.BASIC` guard in
 // handleMessage), but listing explicitly here makes intent clear.
+//
+// SOLD PLAN → INTERNAL TIER MAPPING (ladder v2, owner-locked 2026-08-06).
+// These tier keys are INTERNAL ONLY and must never appear in customer-facing
+// chat copy — the public ladder uses different names on purpose ("Pro" collides
+// with the planetcuhz.com site membership, so bot chat never sells a "Pro"):
+//
+//   Free     $0        → TIERS.BASIC    (bot, moderation, points, shoutouts)
+//   Silver   $4.99/mo  → TIERS.PRO      (socials rotation, isPP command set)
+//   Gold     $14.99/mo → TIERS.PREMIUM  (unlimited chat AI + site Pro included)
+//   Partner  $49.99/mo → its OWN managed bot instance, not a row in this map
+//                        (own brand/name/avatar, hosted + run for them)
+//   Architect custom   → built-to-own custom bot, quoted per build
+//
+// Provisioning is MANUAL today: on a sale the owner tells an agent
+// "add <channel> silver/gold" and the channel gets added/edited here, then the
+// bot redeploys. There is no self-serve entitlement engine yet — do not write
+// copy anywhere that implies instant automated upgrade.
 const TIERS = { BASIC: 'basic', PRO: 'pro', PREMIUM: 'premium' };
 const CHANNEL_TIERS = {
     'four_a_reason':         TIERS.PREMIUM,
@@ -2503,22 +2520,32 @@ async function handleMessage(channel, tags, message, self) {
         // Drill-down: `!prices <plan>` = ONE line of what that plan actually
         // gets you — feature copy mirrors the site's Pricing.tsx bullets
         // verbatim-in-spirit so chat and site can't tell different stories.
+        // Ladder v2 (owner-locked 2026-08-06): every plan is a CHANNEL
+        // subscription that maps to a tier this code can actually grant today
+        // (see CHANNEL_TIERS). Silver/Gold copy names only shipped behaviour —
+        // no per-user badges/arrivals/bonus-point vapor until an entitlement
+        // engine exists. "Affiliate Pack" is retired: $49.99 self-serve has no
+        // living competitor, so that price is now Partner — a managed,
+        // own-branded deployment we build and run, which is what it's worth.
         const PLAN_DETAILS = {
             free:      '🆓 Community — FREE, live NOW: CUHZ Bot in your channel · CUHZ Points (+1/msg) · !ask AI (10 pts) · shoutouts · !points !top !rewards. Start: type !bot 🚀',
             community: null, // alias of free — filled below
-            silver:    '🥈 Silver Supporter — $4.99/mo: the supporter tier. Perks are rolling out and checkout opens at planetcuhz.com/pricing this launch — pull up to the Discord to be first in line 🌌',
-            gold:      '🥇 Gold Executive — $14.99/mo: the top supporter tier (AI-first). Perks are rolling out and checkout opens at planetcuhz.com/pricing this launch — Discord gets first access 🌌',
-            affiliate: '🛰️ Affiliate Pack — $49.99/mo: a full CUHZ Bot deployment in YOUR channel — your links & socials on rotation · mod intelligence (!chatreport, !mood) · points for your chat. Onboarding via the Discord → !bot',
-            architect: '🏗️ Architect Custom Build — custom quote: a bot you OWN, custom-coded — your branding, avatar & backstory, private AI on your game & rules. Ask in the Discord → planetcuhz.com/pricing',
+            silver:    '🥈 Silver — $4.99/mo: your channel upgraded — socials on auto-rotation every stream · extra commands & engagement (!followage !streamstats !gamble +more) · everything Free has. → planetcuhz.com/pricing',
+            gold:      '🥇 Gold — $14.99/mo: UNLIMITED AI in your chat (Gemini + Claude) · priority · site Pro membership INCLUDED — one sub covers chat + planetcuhz.com. → planetcuhz.com/pricing',
+            partner:   '🛰️ Partner — $49.99/mo: your OWN branded bot — your name, avatar & personality, built + hosted + run for you, monthly service touch, powered by VQNC Labs. 5 founding slots. Ask in the Discord 🌌',
+            affiliate: null, // retired name — accepted as an arg alias of partner, filled below
+            architect: '🏗️ Architect — custom quote: a bot you OWN, custom-coded — your branding, avatar & backstory, private AI on your game & rules. Ask in the Discord → planetcuhz.com/pricing',
             membership:'🪐 Site membership (separate from the bot): Pro $9.99/mo · Team $24.99/mo — planetcuhz.com tools & AI studio. → planetcuhz.com/pricing'
         };
         PLAN_DETAILS.community = PLAN_DETAILS.free;
+        // Anyone who learned the old vocabulary still lands on the right line.
+        PLAN_DETAILS.affiliate = PLAN_DETAILS.partner;
         const arg = msg.split(/\s+/)[1];
         if (arg && PLAN_DETAILS[arg]) {
             sendMessage(channel, PLAN_DETAILS[arg]);
             return;
         }
-        sendMessage(channel, '💎 CUHZ Bot plans: Community FREE · Silver $4.99/mo · Gold $14.99/mo · Affiliate $49.99/mo (your own branded bot) · Architect custom. Details: !prices silver (or free/gold/affiliate/architect/membership) → planetcuhz.com/pricing 💎');
+        sendMessage(channel, '💎 CUHZ Bot plans: Free · Silver $4.99/mo · Gold $14.99/mo (unlimited AI + site Pro included) · Partner $49.99/mo (your own branded bot, run for you — 5 founding slots) · Architect custom. Details: !prices silver (or free/gold/partner/architect) → planetcuhz.com/pricing 💎');
         return;
     }
 
@@ -2781,7 +2808,9 @@ async function handleMessage(channel, tags, message, self) {
 
         if (!isProOrPremium) {
             // Basic tier: friendly upsell instead of silence (in BASIC_BLOCKED_COMMANDS)
-            sendMessage(channel, `Follow-age is a Pro/Premium perk cuhz 💎`);
+            // Internal tier names ("Pro"/"Premium") never ship to chat — they
+            // collide with the site membership and aren't what anyone bought.
+            sendMessage(channel, `Follow-age is an upgraded-channel perk cuhz 💎 — !prices`);
             return;
         }
         try {
@@ -3475,7 +3504,7 @@ async function handleMessage(channel, tags, message, self) {
         sendMessage(channel, `🛡️ CUHZ Bot mod kit — enforcement: ${mark(cap.ban)} !ban [reason] !timeout [secs] [reason] !unban !untimeout · ${mark(cap.clear)} !clear · ${mark(cap.slow)} !slow [secs] !slowoff · ${mark(cap.announce)} !announce <text>`);
         sendMessage(channel, `🛡️ Stream: !title !game !so !raid · Intel: !chatreport !userreport !mood !personality !botcheck · Points: !give · Setup: !settoday !cleartoday !refresh${(cap.ban && cap.clear && cap.slow && cap.announce) ? '' : ' — ⚠️ = bot token missing that scope (run !botcheck)'}`);
         // Tier/owner-gated extras: only listed where they'd actually run.
-        if (isProOrPremium) sendMessage(channel, `🛡️ Auto-shoutouts (Pro/Premium): !addstreamer <user> · !removestreamer <user> · !liststreamers`);
+        if (isProOrPremium) sendMessage(channel, `🛡️ Auto-shoutouts (upgraded channels): !addstreamer <user> · !removestreamer <user> · !liststreamers`);
         if (tags.username === 'planetcuhz') sendMessage(channel, `👑 Owner: !status · !aistats`);
         return;
     }
