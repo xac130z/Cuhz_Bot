@@ -33,7 +33,8 @@ const CHANNEL_TIERS = {
     'razredg1':              TIERS.BASIC,
     'snowy_wolfies_ttv':     TIERS.BASIC,
     'ohthatztayy':           TIERS.BASIC,
-    'grouch392':             TIERS.BASIC
+    'grouch392':             TIERS.BASIC,
+    'westsiderelly':         TIERS.BASIC  // added live 2026-08-06 — joined from four_a_reason's stream
 };
 
 // --- Global Error Handlers (Prevention) ---
