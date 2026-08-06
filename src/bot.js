@@ -2482,6 +2482,21 @@ async function handleMessage(channel, tags, message, self) {
     // Affiliate $49.99, site membership Pro $9.99 / Team $24.99 is a
     // SEPARATE product and named here so the two never get conflated in chat.
     // All tiers, all channels — a price question can come from anywhere.
+    // !pay — HOW to pay, with guest discipline: the Venmo handle appears ONLY
+    // in our own channels (planetcuhz, cuhz_bot). In host channels the bot is
+    // a guest, so payment routes through the Discord — never a raw handle in
+    // someone else's chat. Interim rail until Stripe checkout opens; the buyer
+    // notes their Twitch name so delivery can be granted on planetcuhz.com.
+    if (msg === '!pay' || msg === '!venmo' || msg === '!buy') {
+        const OWN_CHANNELS = ['planetcuhz', 'cuhz_bot'];
+        if (OWN_CHANNELS.includes(cleanChannel)) {
+            sendMessage(channel, '💸 Pay the Planet: venmo.com/u/WRodriguezx — put your TWITCH NAME + what you\'re grabbing in the note (e.g. "yourname — Chain Pack $9"). Delivery lands on your planetcuhz.com account + Discord. Menu: !prices 💎');
+        } else {
+            sendMessage(channel, '💸 Ready to grab something? Pull up to the Discord and the fam sorts payment direct: https://discord.com/invite/wt6Zc7Sgjx · menu: !prices 💎');
+        }
+        return;
+    }
+
     if (msg === '!prices' || msg === '!price' || msg === '!plans' || msg === '!pricing'
         || msg.startsWith('!prices ') || msg.startsWith('!price ') || msg.startsWith('!plans ')) {
         // Drill-down: `!prices <plan>` = ONE line of what that plan actually
@@ -2688,7 +2703,7 @@ async function handleMessage(channel, tags, message, self) {
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
             // CTA, so the people who most need to see it are in Basic channels.
-            brand:     '🌌 Brand: !bot !prices !cuhz !planet'
+            brand:     '🌌 Brand: !bot !prices !pay !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
                        ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
