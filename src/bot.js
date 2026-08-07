@@ -122,6 +122,27 @@ let _personaSummaryLogged = false;
 const _channelWelcomes = new Map();
 const WELCOME_BACK_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 
+// !redeem idempotency: user:cost -> last-redeem timestamp. Atomic deduct already
+// blocks overdraw; this stops a double-send from charging twice when the user
+// DOES have enough for two. 8s window, cleared on failed attempts.
+const _recentRedeems = new Map(); // "user:cost" -> ms
+// Best-effort Discord webhook for redemptions (never blocks a redemption).
+async function postRedemptionWebhook(text) {
+    const hook = process.env.REDEMPTIONS_WEBHOOK_URL;
+    if (!hook) return false;
+    try {
+        await fetch(hook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: text }),
+        });
+        return true;
+    } catch (err) {
+        logger.error(`redemption webhook failed (non-fatal): ${err.message}`);
+        return false;
+    }
+}
+
 // Random pick that avoids repeating the last N picks for a given key.
 const _recentPicks = new Map(); // key -> string[]
 function pickNoRepeat(key, arr, avoidLast = 3) {
@@ -247,7 +268,7 @@ function buildRewardsLine() {
     // "no host needed" is the Rev 2 promise in four words; "usually same stream" is
     // gone because custom art and discount codes take a day and "same stream"
     // implied on-stream fulfillment — the exact frame Rev 2 retires.
-    const suffix = ' → Ask a mod to redeem — delivered by the fam via Discord, no host needed 💎';
+    const suffix = ' → Redeem: !redeem <cost> (e.g. !redeem 500) — delivered by the fam via Discord 💎';
     const tiers = POINT_REWARDS.map(r => `${r.cost} = ${r.name}`);
     const shown = tiers.slice();
     let line = prefix + shown.join(' | ') + suffix;
@@ -3141,6 +3162,51 @@ async function handleMessage(channel, tags, message, self) {
     // !rewards — the "what are points actually FOR" answer. All tiers, every
     // channel, ONE line built straight from POINT_REWARDS so chat and the
     // website (GET /api/rewards) can never drift apart.
+    // !redeem <item> — the REAL spend sink. Atomically deducts the cost, logs a
+    // fulfillment request the fam delivers via Discord, and confirms in chat.
+    // Items are POINT_REWARDS entries (single source — no second ladder). Match
+    // by cost number ("!redeem 500") or a word in the name ("!redeem chain").
+    // Bare "!redeem" falls through to the menu line below.
+    if (msg.startsWith('!redeem ')) {
+        const arg = msg.slice(8).trim().toLowerCase();
+        const item = POINT_REWARDS.find(r =>
+            String(r.cost) === arg ||
+            r.name.toLowerCase().includes(arg) ||
+            (arg.length >= 3 && r.name.toLowerCase().split(/\s+/).some(w => w.startsWith(arg)))
+        );
+        if (!item) {
+            const opts = POINT_REWARDS.map(r => `${r.cost}`).join('/');
+            sendMessage(channel, `🤔 @${tags.username} no reward matches "${arg}" cuhz. Try !redeem <${opts}> — full menu: !rewards`);
+            return;
+        }
+        const uname = tags.username.toLowerCase();
+        const dedupKey = `${uname}:${item.cost}`;
+        const nowTs = Date.now();
+        const last = _recentRedeems.get(dedupKey);
+        if (last && nowTs - last < 8000) return; // swallow double-send, no double-charge
+        _recentRedeems.set(dedupKey, nowTs);
+
+        const ok = await pointsService.deductPoints(tags.username, item.cost, `redeem_${item.cost}`);
+        if (!ok) {
+            _recentRedeems.delete(dedupKey); // let them retry once they've earned it
+            const bal = await pointsService.getBalance(tags.username);
+            sendMessage(channel, `💸 @${tags.username} "${item.name}" costs ${item.cost} — you've got ${bal}. Keep stacking cuhz 💎 (!points)`);
+            return;
+        }
+        // Fulfillment record (reuse the mod_actions ledger; result=pending until the fam delivers).
+        try {
+            await db.prepare(
+                'INSERT INTO mod_actions (channel, actor, action, target, detail, result, created_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+            ).run(cleanChannel, uname, 'redeem', item.name, `cost=${item.cost}`, 'pending');
+        } catch (err) {
+            logger.error(`redeem fulfillment log failed (non-fatal): ${err.message}`);
+        }
+        await postRedemptionWebhook(`🎟️ REDEEM · @${uname} in #${cleanChannel} → ${item.name} (${item.cost} pts). ${item.note}`);
+        const discord = (SOCIAL_LINKS && SOCIAL_LINKS.discord) || 'https://discord.com/invite/wt6Zc7Sgjx';
+        sendMessage(channel, `🎟️ @${tags.username} redeemed ${item.name} for ${item.cost} pts! The fam delivers via Discord — pull up: ${discord} 💎`);
+        return;
+    }
+
     if (msg === '!rewards' || msg === '!shop' || msg === '!redeem') {
         sendMessage(channel, buildRewardsLine());
         return;
