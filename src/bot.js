@@ -14,6 +14,7 @@ const { seedPoints } = require('./points_seed');
 const loyaltySystem = require('./loyalty');
 const modIntel = require('./mod_intel');
 const moderation = require('./moderation_service');
+const tierService = require('./tier_service');
 const fs = require('fs');
 const path = require('path');
 
@@ -1720,6 +1721,27 @@ async function initializeTwitchClient() {
             return { clientId: twitchClientId, botUserId };
         }
     });
+
+    // Viewer tier entitlement engine (src/tier_service.js) — default-off,
+    // flag-gated (ENABLE_TIER_SYNC / ENABLE_PURCHASE_SHOUTOUTS). init() only
+    // stores a sendMessage reference (harmless either way); the 60s purchase
+    // watcher timer is only ever CREATED when ENABLE_PURCHASE_SHOUTOUTS is
+    // set — with the flag unset this whole block is a no-op call and a
+    // stored function pointer that's never used. getTier/getTierAwait/
+    // grantStipend are not called from anywhere in this file yet — this is
+    // wiring-in-waiting for a future perk-consuming command, not a live
+    // integration point today.
+    tierService.init({ sendMessage });
+    if (config.enablePurchaseShoutouts) {
+        tierService.startPurchaseWatcher({
+            homeChannels: Object.keys(CHANNEL_TIERS).map(ch => `#${ch}`),
+            isLive: (ch) => {
+                const state = streamStates.get(streamKey(ch));
+                return !!(state && state.isLive);
+            },
+            sendMessage
+        });
+    }
 
     // 2. Poll the dashboard for channels to join
     let channelsToJoin = [];
