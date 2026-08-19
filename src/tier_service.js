@@ -1,33 +1,37 @@
 'use strict';
 
 // ============================================================================
-//  CUHZ Bot — Viewer tier service (Wave 6 stream commerce)
+//  CUHZ Bot — channel plan service (Wave 6 stream commerce)
 //
-//  Resolves a viewer's PAID bot tier (community | silver | gold) from the Planet
-//  Cuhz site's `bot-worker-sync` edge function, grants the promised monthly point
-//  stipends, and polls a verified purchase feed for consent-gated thank-yous.
+//  Resolves the current Twitch channel's CUHZ Bot plan from the Planet Cuhz
+//  site's `bot-worker-sync` edge function and polls a verified purchase feed for
+//  consent-gated thank-yous. Entitlements are channel-scoped: callers must pass
+//  the broadcaster/channel login, never the chatter login.
 //
 //  HARD LAWS:
 //   - Fail-open ALWAYS: any error, timeout, missing config, or disabled flag
 //     resolves to 'community'. Chat is NEVER blocked or delayed by the site.
-//   - Honest states only: an unknown viewer is 'community'. We never claim a
-//     payment state from chat; tiers come only from the DB via the site.
-//   - Gated by config.enableTierSync — when off, getTier is a pure 'community'.
+//   - Honest states only: an unknown channel is 'community'. We never claim a
+//     payment state from chat; plans come only from the DB via the site.
+//   - Gated by config.enableTierSync — when off, resolution is pure 'community'.
 //   - Request/response field names EXACTLY mirror the bot-worker-sync events:
 //       POST { event:'entitlements', logins:[...] }
-//         -> { viewers: { login: { products:[...], bot_tier:'gold'|'silver'|'community' } } }
+//         -> { viewers: { login: { products:[...], bot_tier:'...' } } }
 //       POST { event:'entitlements_recent', since:'ISO' }
 //         -> { purchases: [ { entitlement_id, twitch_login, product, created_at } ] }
+//
+//  External-contract limitation: the existing payload field/table key remains
+//  `twitch_login`; the producer must store the entitled CHANNEL login there.
+//  Reinterpreting that existing key avoids a schema migration safely.
 // ============================================================================
 
 const config = require('./config');
 const logger = require('./logger');
 const db = require('./database');
-const pointsService = require('./points_service');
 const commerceContent = require('./commerce_content');
 
 // --- Tunables ---------------------------------------------------------------
-const CACHE_TTL_TIER_MS = 10 * 60 * 1000;      // paid tiers cached 10 min
+const CACHE_TTL_TIER_MS = 10 * 60 * 1000;      // paid plans cached 10 min
 const CACHE_TTL_COMMUNITY_MS = 5 * 60 * 1000;  // community/unknown 5 min (fresh purchase surfaces fast)
 const CACHE_MAX_ENTRIES = 5000;
 const BATCH_FLUSH_MS = 5000;                   // batch flushes every 5s
@@ -40,19 +44,20 @@ const SHOUTOUT_MIN_INTERVAL_MS = 5 * 60 * 1000; // max 1 thank-you / 5 min
 const SHOUTOUT_MAX_AGE_MS = 30 * 60 * 1000;    // drop a queued thank-you after 30 min
 const LOGIN_RE = /^[a-z0-9_]{2,25}$/;
 
-const STIPEND_AMOUNTS = Object.freeze({ silver: 1000, gold: 5000 });
-
-// product -> { tier, label }. bot_affiliate is a STREAMER SKU: it is a real
-// purchase but not a viewer tier, so it is never celebrated as a viewer thank-you.
+// Stored SKU compatibility is deliberately broader than the public catalog.
+// bot_affiliate and the old `affiliate` plan value are legacy aliases for Partner.
 const PRODUCT_META = Object.freeze({
-    bot_silver: { tier: 'silver', label: 'Silver Supporter' },
-    bot_gold: { tier: 'gold', label: 'Gold Executive' },
-    bot_affiliate: { tier: 'community', label: 'Affiliate Pack' }
+    bot_community: { plan: 'community', label: 'Community' },
+    bot_silver: { plan: 'silver', label: 'Silver' },
+    bot_gold: { plan: 'gold', label: 'Gold' },
+    bot_partner: { plan: 'partner', label: 'Partner' },
+    bot_affiliate: { plan: 'partner', label: 'Partner' },
+    bot_architect: { plan: 'architect', label: 'Architect' }
 });
 
 // --- State ------------------------------------------------------------------
 const _cache = new Map();     // login -> { tier, products, fetchedAt }
-const _pending = new Map();   // login -> channel (for stipend announce context)
+const _pending = new Map();   // channel login -> null
 let _flushTimer = null;
 let _sendMessage = null;      // injected bot.js sender
 let _watcherStarted = false;
@@ -62,17 +67,24 @@ let _lastShoutoutAt = 0;
 
 // --- Helpers ----------------------------------------------------------------
 function normalize(login) {
-    const l = String(login || '').toLowerCase().replace(/^@/, '').trim();
+    const l = String(login || '').toLowerCase().replace(/^[#@]/, '').trim();
     return LOGIN_RE.test(l) ? l : null;
 }
 
-function ttlFor(tier) {
-    return (tier === 'silver' || tier === 'gold') ? CACHE_TTL_TIER_MS : CACHE_TTL_COMMUNITY_MS;
+function ttlFor(plan) {
+    return plan !== 'community' ? CACHE_TTL_TIER_MS : CACHE_TTL_COMMUNITY_MS;
 }
 
-function normalizeTier(t) {
-    return (t === 'gold' || t === 'silver') ? t : 'community';
+function normalizePlan(value) {
+    const plan = String(value || '').toLowerCase().trim();
+    if (plan === 'affiliate' || plan === 'bot_affiliate') return 'partner';
+    return ['community', 'silver', 'gold', 'partner', 'architect'].includes(plan)
+        ? plan
+        : 'community';
 }
+
+// Backwards-compatible internal name for older callers/tests.
+const normalizeTier = normalizePlan;
 
 function setCache(login, value) {
     _cache.delete(login);
@@ -101,16 +113,6 @@ function getCached(login) {
     return { tier: entry.tier, products: entry.products };
 }
 
-function stipendReason(tier, date) {
-    const ym = `${date.getUTCFullYear()}_${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-    return `tier_bonus_${ym}_${tier}`;
-}
-
-function buildStipendLine(login, tier, amount) {
-    const label = tier === 'gold' ? 'Gold' : 'Silver';
-    const emoji = tier === 'gold' ? '💎' : '🥈';
-    return `${emoji} Monthly ${label} stipend landed: +${amount.toLocaleString('en-US')} CUHZ points @${login}`;
-}
 
 // --- Network ----------------------------------------------------------------
 function functionsBase() {
@@ -140,30 +142,11 @@ async function postSite(body) {
     }
 }
 
-// --- Stipend ----------------------------------------------------------------
-// Idempotent per calendar month via pointsService.claimBonus (unique reason).
-// Announces at most once (only when the grant actually happened AND we have a
-// channel + sender). Returns whether the grant fired this call.
-async function grantStipend(login, tier, channel) {
-    try {
-        const amount = STIPEND_AMOUNTS[tier];
-        if (!amount) return false;
-        const granted = await pointsService.claimBonus(login, stipendReason(tier, new Date()), amount);
-        if (granted && channel && _sendMessage) {
-            _sendMessage(channel, buildStipendLine(login, tier, amount));
-        }
-        return granted;
-    } catch (err) {
-        logger.warn(`tier_service stipend error for ${login}: ${err && err.message}`);
-        return false;
-    }
-}
-
 // --- Batch lookup -----------------------------------------------------------
-// POSTs entitlements, updates the cache, and fires stipends. Returns a
-// Map<login, tier> for the resolved logins. Throws only on network failure
+// POSTs entitlements and updates the cache. Returns a Map<channel login, plan>.
+// Retired viewer stipends are intentionally not granted here.
 // (callers catch and fail open).
-async function _fetchAndCache(logins, channelByLogin) {
+async function _fetchAndCache(logins) {
     const result = new Map();
     if (logins.length === 0) return result;
     const data = await postSite({ event: 'entitlements', logins });
@@ -171,20 +154,17 @@ async function _fetchAndCache(logins, channelByLogin) {
     const now = Date.now();
     for (const l of logins) {
         const v = viewers[l] || { products: [], bot_tier: 'community' };
-        const tier = normalizeTier(v.bot_tier);
+        const tier = normalizePlan(v.bot_plan || v.bot_tier);
         const products = Array.isArray(v.products) ? v.products : [];
         setCache(l, { tier, products, fetchedAt: now });
         result.set(l, tier);
-        if (tier === 'silver' || tier === 'gold') {
-            grantStipend(l, tier, channelByLogin ? channelByLogin.get(l) : null).catch(() => {});
-        }
+
     }
     return result;
 }
 
-function enqueue(login, channel) {
-    if (channel) _pending.set(login, channel);
-    else if (!_pending.has(login)) _pending.set(login, null);
+function enqueue(login) {
+    if (!_pending.has(login)) _pending.set(login, null);
     if (_pending.size >= BATCH_MAX) {
         flush();
         return;
@@ -201,9 +181,8 @@ async function flush() {
     const batch = [..._pending.entries()].slice(0, SITE_MAX_LOGINS);
     for (const [l] of batch) _pending.delete(l);
     const logins = batch.map(([l]) => l);
-    const channelByLogin = new Map(batch);
     try {
-        await _fetchAndCache(logins, channelByLogin);
+        await _fetchAndCache(logins);
     } catch (err) {
         // Fail-open: cache nothing; the next lookup re-enqueues. Chat is unaffected.
         logger.warn(`tier_service batch lookup failed (fail-open community): ${err && err.message}`);
@@ -217,11 +196,10 @@ async function flush() {
  * Synchronous, cached tier lookup for the hot dispatch path. Returns instantly:
  * a fresh cached tier, or 'community' on a miss while enqueuing a background
  * refresh. Never throws, never awaits, never blocks chat.
- * @param {string} login  twitch login
- * @param {string} [channel]  channel for stipend-announce context
- * @returns {'community'|'silver'|'gold'}
+ * @param {string} login Twitch channel/broadcaster login
+ * @returns {'community'|'silver'|'gold'|'partner'|'architect'}
  */
-function getTier(login, channel) {
+function getChannelPlan(login) {
     if (!config.enableTierSync) return 'community';
     const l = normalize(login);
     if (!l) return 'community';
@@ -234,7 +212,7 @@ function getTier(login, channel) {
     }
     // Miss or stale → refresh in the background. Serve last-known (stale-while-
     // revalidate) if we have it, else community.
-    enqueue(l, channel);
+    enqueue(l);
     return entry ? entry.tier : 'community';
 }
 
@@ -242,9 +220,9 @@ function getTier(login, channel) {
  * Fresh tier lookup with a short budget (for !mytier, Gold arrival). Fails open
  * to the last-known tier (or 'community') on timeout/error. The underlying fetch
  * still completes and warms the cache in the background.
- * @returns {Promise<'community'|'silver'|'gold'>}
+ * @returns {Promise<'community'|'silver'|'gold'|'partner'|'architect'>}
  */
-async function getTierAwait(login, ms = AWAIT_DEFAULT_MS) {
+async function getChannelPlanAwait(login, ms = AWAIT_DEFAULT_MS) {
     if (!config.enableTierSync) return 'community';
     const l = normalize(login);
     if (!l) return 'community';
@@ -253,7 +231,7 @@ async function getTierAwait(login, ms = AWAIT_DEFAULT_MS) {
     const fallbackEntry = _cache.get(l);
     const fallback = fallbackEntry ? fallbackEntry.tier : 'community';
     try {
-        const fetchP = _fetchAndCache([l], null);
+        const fetchP = _fetchAndCache([l]);
         // Swallow a late rejection if the timeout wins the race (fetch still warms
         // the cache in the background on success) — prevents an unhandled rejection.
         fetchP.catch(() => {});
@@ -338,10 +316,10 @@ async function pollPurchases() {
         const nowMs = Date.now();
         const ageMs = createdAt ? (nowMs - Date.parse(createdAt)) : 0;
 
-        // Unknown product, non-celebratable SKU (affiliate), or too old → record
+        // Unknown/non-celebratable product or too old → record
         // silently so the cursor advances; say nothing. These never consume the
         // 5-min announcement slot.
-        const celebratable = meta && (meta.tier === 'silver' || meta.tier === 'gold');
+        const celebratable = meta && (meta.plan === 'silver' || meta.plan === 'gold');
         if (!celebratable || (createdAt && ageMs > SHOUTOUT_MAX_AGE_MS)) {
             await recordAnnounced(entitlementId, login, product, createdAt);
             advanceCursor(createdAt);
@@ -353,21 +331,24 @@ async function pollPurchases() {
         if (nowMs - _lastShoutoutAt < SHOUTOUT_MIN_INTERVAL_MS) break;
 
         const prevTier = (_cache.get(login) || {}).tier || null;
-        const isUpgrade = meta.tier === 'gold' && prevTier === 'silver';
+        const isUpgrade = meta.plan === 'gold' && prevTier === 'silver';
 
-        for (const ch of liveHome) {
+        // An entitlement belongs only to the Twitch channel whose login is on the
+        // record. Never fan a purchase out to unrelated live channels.
+        const matchingChannels = liveHome.filter((ch) => normalize(ch) === login);
+        for (const ch of matchingChannels) {
             const present = !!(typeof ctx.hasChatted === 'function' && ctx.hasChatted(ch, login));
             let line;
             if (isUpgrade && present) line = commerceContent.upgradeLine(login);
-            else if (present) line = commerceContent.namedThankYou(login, meta.tier);
-            else line = commerceContent.genericThankYou(meta.tier);
+            else if (present) line = commerceContent.namedThankYou(login, meta.plan);
+            else line = commerceContent.genericThankYou(meta.plan);
             if (line && typeof ctx.sendMessage === 'function') ctx.sendMessage(ch, line);
             else if (line && _sendMessage) _sendMessage(ch, line);
         }
-        _lastShoutoutAt = nowMs;
+        if (matchingChannels.length > 0) _lastShoutoutAt = nowMs;
 
         // Reflect the new tier so future getTier is fresh + upgrade detection works.
-        setCache(login, { tier: meta.tier, products: [product], fetchedAt: Date.now() });
+        setCache(login, { tier: meta.plan, products: [product], fetchedAt: Date.now() });
 
         await recordAnnounced(entitlementId, login, product, createdAt);
         advanceCursor(createdAt);
@@ -393,15 +374,19 @@ function startPurchaseWatcher(ctx) {
     logger.info('🛰️ CUHZ Bot purchase watcher started (60s poll, live-gated, dedupe-persisted)');
 }
 
-/** Wire the bot's queue-routed sender (used for stipend announcements). */
+/** Wire the bot's queue-routed sender. */
 function init(deps) {
     if (deps && typeof deps.sendMessage === 'function') _sendMessage = deps.sendMessage;
 }
 
 module.exports = {
     init,
-    getTier,
-    getTierAwait,
+    getChannelPlan,
+    getChannelPlanAwait,
+    // Legacy method names remain API-compatible, but their argument is now
+    // explicitly the channel login rather than an individual viewer.
+    getTier: getChannelPlan,
+    getTierAwait: getChannelPlanAwait,
     getCached,
     startPurchaseWatcher,
     // Exposed for tests / internal reuse:
@@ -411,12 +396,9 @@ module.exports = {
         normalizeTier,
         setCache,
         getCached,
-        stipendReason,
-        buildStipendLine,
-        grantStipend,
+
         flush,
         pollPurchases,
-        STIPEND_AMOUNTS,
         PRODUCT_META,
         _cache,
         _pending,

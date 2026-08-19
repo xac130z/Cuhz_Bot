@@ -3,9 +3,8 @@
 // ============================================================================
 //  CUHZ Bot — Stream commerce registry (code-owned, deterministic)
 //
-//  Sibling and stylistic twin of stream_content.js. Every price here is SOURCED
-//  (PRICING_PAGE.md ↔ Pricing.tsx ↔ README-BILLING.md — all three agree) and
-//  every link is already in safety_policy APPROVED_HOSTS. Prices live ONLY in
+//  Sibling and stylistic twin of stream_content.js. Every price here mirrors the
+//  live public catalog at https://planetcuhz.com/pricing. Prices live ONLY in
 //  this file — the model never quotes a price (the source:'ai' `$` regex keeps
 //  it price-mute; that regex is untouched).
 //
@@ -21,14 +20,17 @@
 //       all apply. Every line stays under Twitch's 500-char limit.
 // ============================================================================
 
-// --- Static command replies (exact copy from plan §B) -----------------------
+// Public product names describe channel-scoped bot plans, not viewer tiers.
+// Legacy command names remain aliases for compatibility, but their replies use
+// only the current public catalog names.
 const COMMERCE_COMMANDS = Object.freeze({
-    '!plans': '💎 CUHZ Bot tiers: Community FREE · Silver Supporter $4.99/mo · Gold Executive $14.99/mo · Affiliate Pack (bot in YOUR channel) $49.99/mo · Architect custom build (quote only). Full breakdown + checkout → https://planetcuhz.com/pricing#bot',
-    '!silver': '🥈 Silver Supporter — $4.99/mo: unlimited base !ask (no point cost), 80% off the Claude brain, Verified Cuhz badge, +1,000 bonus points monthly. Go Silver → https://planetcuhz.com/pricing#bot',
-    '!gold': '💎 Gold Executive — $14.99/mo: ZERO point cost on ALL brains (!ask, !ask -brain, !code), priority AI in busy chat, custom arrival greeting, +5,000 bonus points monthly. Go Gold → https://planetcuhz.com/pricing#bot',
-    '!affiliate': '🛰️ Affiliate Pack — $49.99/mo: full CUHZ Bot in your channel running YOUR links + socials, mod intel (!chatreport / !mood), automated marketing rotation. Run the pack → https://planetcuhz.com/pricing#bot',
+    '!plans': '💎 Live plans: Membership — Free $0, Pro $9.99/mo, Team $24.99/mo. CUHZ Bot (one plan per Twitch channel) — Community free, Silver $4.99/mo, Gold $14.99/mo (includes site Pro), Partner $49.99/mo, Architect Custom Build (quote). One-time — Founders $99, Coaching Sprint $25/session. Details and purchase guidance → https://planetcuhz.com/pricing',
+    '!community': '🤖 Community — free CUHZ Bot plan for one Twitch channel. Compare plans → https://planetcuhz.com/pricing · Start free bot onboarding → https://planetcuhz.com/bot',
+    '!silver': '🥈 Silver — $4.99/mo for one CUHZ Bot plan on one Twitch channel. Compare plans and purchase → https://planetcuhz.com/pricing',
+    '!gold': '💎 Gold — $14.99/mo for one CUHZ Bot plan on one Twitch channel; includes site Pro membership. Compare plans and purchase → https://planetcuhz.com/pricing',
+    '!partner': '🛰️ Partner — $49.99/mo for one CUHZ Bot plan on one Twitch channel. Compare plans and purchase → https://planetcuhz.com/pricing',
     // Architect is QUOTE-ONLY by design — never emit a number here.
-    '!architect': '🛠️ Architect Custom Build — your own bot: your name, avatar, lore, private AI, dedicated instance. You own it. Quote only — start the convo → https://planetcuhz.com/solutions#start',
+    '!architect': '🛠️ Architect Custom Build — quote only. Compare the live catalog → https://planetcuhz.com/pricing · Request an Architect quote → https://planetcuhz.com/solutions#start',
     '!site': '🌌 Planet CUHZ HQ → https://planetcuhz.com · Plans !plans · Store !store · Chain Studio (10 finishes, free, no login) → https://planetcuhz.com/chain',
     // Voice-only Discord — the same invite the site footer links (SOCIAL_LINKS).
     // A community invite, not a sale: no price, no urgency. Aliases: !voice, !family.
@@ -36,24 +38,26 @@ const COMMERCE_COMMANDS = Object.freeze({
     // Planet CUHZ Podcast — a content plug, not a sale: no price, no urgency.
     // Aliases: !podcast, !pcp. Points at the real planetcuhz.com/podcast surface.
     '!pod': '🎙️ PCP — the Planet CUHZ Podcast (not that PCP, cuhz). Episode 001 is live → https://planetcuhz.com/podcast',
-    '!pro': '🚀 Planet CUHZ site membership (separate from CUHZ Bot tiers): Free · Pro $9.99/mo · Team $24.99/mo — 2K tools, squad features, coaching perks → https://planetcuhz.com/pricing',
-    '!membership': '🚀 Planet CUHZ site membership (separate from CUHZ Bot tiers): Free · Pro $9.99/mo · Team $24.99/mo — 2K tools, squad features, coaching perks → https://planetcuhz.com/pricing',
-    '!store': '🛒 CUHZ digital store: CUHZ Chain Full Pack $9 · Emote Pack $7 · Overlay Kit $15 → https://planetcuhz.com/store'
+    '!pro': '🚀 Planet CUHZ membership: Free $0 · Pro $9.99/mo · Team $24.99/mo. Compare and purchase → https://planetcuhz.com/pricing',
+    '!membership': '🚀 Planet CUHZ membership: Free $0 · Pro $9.99/mo · Team $24.99/mo. Compare and purchase → https://planetcuhz.com/pricing',
+    '!store': '🛒 One-time offers: Founders $99 · Coaching Sprint $25/session. Details and purchase guidance → https://planetcuhz.com/pricing'
 });
 
 // --- !mytier dynamic lines (exact copy from plan §B) ------------------------
 const MYTIER_LINES = Object.freeze({
-    gold: '💎 @{user} you\'re Gold Executive — all brains free, priority AI, stipend live. Real one.',
-    silver: '🥈 @{user} you\'re Silver Supporter — base AI unlimited, brain 80% off. Appreciate you cuhz.',
-    community: '🌌 @{user} you\'re Community tier — everything core is free. Curious what Silver/Gold adds? !plans'
+    architect: '🛠️ @{user} this channel runs an Architect CUHZ Bot custom build. Plan details: !plans',
+    partner: '🛰️ @{user} this channel runs the Partner CUHZ Bot plan. Plan details: !plans',
+    gold: '💎 @{user} this channel runs the Gold CUHZ Bot plan. Plan details: !plans',
+    silver: '🥈 @{user} this channel runs the Silver CUHZ Bot plan. Plan details: !plans',
+    community: '🌌 @{user} this channel runs the free Community CUHZ Bot plan. Plan details: !plans'
 });
 
 // --- Periodic promo pool (exact copy from plan §C.1) ------------------------
 // Honest, zero urgency, zero countdown language. One is injected per rotation.
 const PROMO_LINES = Object.freeze([
-    '💎 CUHZ Bot runs on tiers now: Silver $4.99/mo, Gold $14.99/mo — unlimited AI brains, stipends, priority. No pressure, it\'s all there → type !plans',
-    '🤖 Streamers: Affiliate Pack $49.99/mo puts CUHZ Bot in YOUR chat with your links. Curious? !affiliate',
-    '🛒 Emotes, overlays, the Chain Full Pack — real prices, no games → !store',
+    '💎 One CUHZ Bot plan per Twitch channel: Community free, Silver $4.99/mo, Gold $14.99/mo, Partner $49.99/mo, or Architect Custom Build. Details → https://planetcuhz.com/pricing',
+    '🤖 Streamers: the Partner CUHZ Bot plan is $49.99/mo for one Twitch channel. Compare plans → https://planetcuhz.com/pricing',
+    '🛒 Founders is $99 one-time and Coaching Sprint is $25/session. Details → https://planetcuhz.com/pricing',
     // Community lines — no price, no urgency. Still one-per-cycle (same pool, one pick).
     '🎙️ The CUHZ voice fam runs off-stream too — hop in the voice-only Discord and link with the cuhzins → type !discord',
     '💬 Real convos, cousin to cuhz — the CUHZ family lives in the voice Discord. Pull up, it\'s free → https://discord.gg/eNxDKkxQdN',
@@ -65,9 +69,9 @@ const PROMO_LINES = Object.freeze([
 // --- Gold custom arrival pool (plan §A.3) -----------------------------------
 // In-voice, honest, price-free. bot.js appends "@{user} 💎".
 const GOLD_ARRIVAL = Object.freeze([
-    '💎 Gold Executive in the building — clear the runway',
-    '💎 Upper-orbit cuhz just landed — Gold Executive on deck',
-    '💎 Gold in the chat. The brains are free and the vibes are up'
+    '💎 Gold-plan channel cuhz in the building — clear the runway',
+    '💎 Upper-orbit cuhz just landed — welcome in',
+    '💎 Cuhz in the chat. The vibes are up'
 ]);
 
 // --- Purchase thank-you / upgrade pools (exact copy from plan §C.2) ----------
@@ -75,14 +79,14 @@ const GOLD_ARRIVAL = Object.freeze([
 // present + public (they've chatted this session). Never an amount, order id,
 // email, or "payment confirmed" phrasing — verified entitlement state only.
 const GENERIC_THANKS = Object.freeze({
-    silver: '🎉 Somebody just went Silver Supporter on the Planet — CUHZ fam growing 💜',
-    gold: '🎉 Somebody just went Gold Executive on the Planet — CUHZ fam growing 💜'
+    silver: '🎉 This channel just moved to the Silver CUHZ Bot plan — CUHZ fam growing 💜',
+    gold: '🎉 This channel just moved to the Gold CUHZ Bot plan — CUHZ fam growing 💜'
 });
 const NAMED_THANKS = Object.freeze({
-    silver: '🎉 @{user} just went Silver Supporter 🥈 Welcome to the fam cuhz — !mytier to flex it',
-    gold: '🎉 @{user} just went Gold Executive 💎 Welcome to the upper orbit cuhz — !mytier to flex it'
+    silver: '🎉 @{user} this channel just moved to the Silver CUHZ Bot plan 🥈 Plan details: !plans',
+    gold: '🎉 @{user} this channel just moved to the Gold CUHZ Bot plan 💎 Plan details: !plans'
 });
-const UPGRADE_LINE = '🚀 @{user} leveled UP — Silver → Gold. Zero-cost brains unlocked 💎';
+const UPGRADE_LINE = '🚀 @{user} this channel upgraded from Silver to Gold CUHZ Bot 💎 Plan details: !plans';
 
 // --- No-repeat picker (local; mirrors bot.js pickNoRepeat) ------------------
 const _recent = new Map(); // key -> string[]
@@ -111,6 +115,7 @@ function _clean(user) {
 function commerceCommandResponse(command) {
     const key = String(command || '').trim().toLowerCase().split(/\s+/)[0];
     if (key === '!shop') return COMMERCE_COMMANDS['!store'];
+    if (key === '!affiliate') return COMMERCE_COMMANDS['!partner'];
     if (key === '!voice' || key === '!family') return COMMERCE_COMMANDS['!discord'];
     if (key === '!podcast' || key === '!pcp') return COMMERCE_COMMANDS['!pod'];
     return COMMERCE_COMMANDS[key] || null;
@@ -118,7 +123,7 @@ function commerceCommandResponse(command) {
 
 function isCommerceCommand(command) {
     const key = String(command || '').trim().toLowerCase().split(/\s+/)[0];
-    return key === '!shop' || key === '!mytier' || key === '!voice' || key === '!family'
+    return key === '!shop' || key === '!affiliate' || key === '!mytier' || key === '!voice' || key === '!family'
         || key === '!podcast' || key === '!pcp'
         || Object.prototype.hasOwnProperty.call(COMMERCE_COMMANDS, key);
 }
@@ -149,10 +154,10 @@ function upgradeLine(user) {
     return UPGRADE_LINE.replace('{user}', _clean(user));
 }
 
-// The commerce command names that must be added to BASIC_BLOCKED_COMMANDS
-// (Basic channels are other streamers' chats — we don't sell there).
+// Canonical commerce command registry. bot.js consumes this directly for the
+// Basic-channel denylist so aliases and new commands cannot drift apart.
 const COMMERCE_COMMAND_NAMES = Object.freeze([
-    '!plans', '!silver', '!gold', '!affiliate', '!architect',
+    '!plans', '!community', '!silver', '!gold', '!partner', '!affiliate', '!architect',
     '!mytier', '!site', '!pro', '!membership', '!store', '!shop',
     // Voice-fam Discord (community invite) + its aliases.
     '!discord', '!voice', '!family',

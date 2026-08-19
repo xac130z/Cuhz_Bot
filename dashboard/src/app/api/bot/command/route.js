@@ -20,6 +20,16 @@ function parseCommand(text = "") {
   return { cmd: "unknown" };
 }
 
+function isUnsafePrompt(text = "") {
+  const value = String(text).slice(0, 500);
+  return [
+    /ignore\s+(all\s+)?(previous|prior|system|developer)\s+(instructions|messages|prompt)/i,
+    /(reveal|show|print|repeat|leak)\s+(the\s+)?(system|developer|hidden|secret|api|oauth)/i,
+    /jailbreak|prompt\s*injection|system\s*prompt/i,
+    /(?:password|api[_ -]?key|oauth[_ -]?token|seed phrase|private key)/i,
+  ].some((pattern) => pattern.test(value));
+}
+
 // NEW: used for bot-auth mode
 function requireBotSecret(request) {
   const botSecret = process.env.BOT_API_SECRET;
@@ -146,11 +156,17 @@ export async function POST(request) {
     }
 
     if (parsed.cmd === "generate") {
-      const prompt = (parsed.prompt || "").trim();
+      const prompt = (parsed.prompt || "").trim().slice(0, 500);
       if (!prompt) {
         return Response.json({
           handled: true,
           reply: "Please provide a prompt: !chain <prompt>",
+        });
+      }
+      if (isUnsafePrompt(prompt)) {
+        return Response.json({
+          handled: true,
+          reply: "Nice try cuhz 🧢",
         });
       }
 
@@ -186,7 +202,7 @@ export async function POST(request) {
             channel,
             viewerId,
             ownerId: owner?.id || null,
-            prompt,
+            promptLength: prompt.length,
             authMode,
           },
         });

@@ -1,6 +1,7 @@
 const logger = require('./logger');
 const db = require('./database');
 const aiService = require('./ai_service');
+const config = require('./config');
 
 /**
  * User Memory Module — gives the bot memory of who users are.
@@ -21,11 +22,14 @@ async function recordMessage(channel, username, message, isCommand = false) {
     try {
         const usernameL = username.toLowerCase();
 
-        // Log the message
-        await db.prepare(`
-            INSERT INTO chat_log (channel, username, message, is_command)
-            VALUES (?, ?, ?, ?)
-        `).run(channel, usernameL, message, isCommand ? 1 : 0);
+        // Raw chat storage is opt-in. Twitch chat is public, but retaining and
+        // profiling message content still creates privacy and breach risk.
+        if (config.storeChatContent) {
+            await db.prepare(`
+                INSERT INTO chat_log (channel, username, message, is_command)
+                VALUES (?, ?, ?, ?)
+            `).run(channel, usernameL, String(message || '').slice(0, 500), isCommand ? 1 : 0);
+        }
 
         // Upsert user profile
         await db.prepare(`
@@ -178,7 +182,11 @@ async function generateUserSummary(username) {
     const profile = await getProfile(username);
     if (!profile) return 'Unknown user — no data yet.';
 
-    const history = await getUserHistory(username, 30);
+    if (!config.storeChatContent) {
+        return `${username} has shared ${profile.total_messages || 0} messages with the community.`;
+    }
+
+    const history = await getUserHistory(username, 10);
     if (history.length === 0) return `${username} is new — no chat history yet.`;
 
     // Build a quick summary from data we have
@@ -236,11 +244,11 @@ async function flushCommandUsage() {
 setInterval(flushCommandUsage, 10 * 60 * 1000).unref(); // unref: don't hold the event loop open
 
 /**
- * Prune old chat_log entries (keep last 30 days to manage DB size)
+ * Prune old chat_log entries using the configured, bounded retention period.
  */
 async function pruneOldLogs() {
     try {
-        const cutoff = new Date(Date.now() - 30 * 24 * 3600000).toISOString();
+        const cutoff = new Date(Date.now() - config.chatRetentionDays * 24 * 3600000).toISOString();
         const result = await db.prepare(`
             DELETE FROM chat_log WHERE created_at < ?
         `).run(cutoff);
@@ -255,6 +263,7 @@ async function pruneOldLogs() {
 
 // Prune old logs once per day
 setInterval(pruneOldLogs, 24 * 3600000).unref(); // unref: don't hold the event loop open
+setTimeout(pruneOldLogs, 30 * 1000).unref();
 
 module.exports = {
     recordMessage,
@@ -263,5 +272,6 @@ module.exports = {
     getTopChatters,
     getUserHistory,
     generateUserSummary,
-    flushCommandUsage
+    flushCommandUsage,
+    pruneOldLogs
 };

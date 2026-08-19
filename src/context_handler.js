@@ -1,6 +1,7 @@
 const logger = require('./logger');
 const aiService = require('./ai_service');
 const db = require('./database');
+const safetyPolicy = require('./safety_policy');
 
 // Context buffer: stores recent messages per channel for conversation understanding
 const contextBuffers = new Map();
@@ -33,8 +34,12 @@ function initChannel(channel) {
 function addToContext(channel, username, message) {
     initChannel(channel);
 
+    const assessed = safetyPolicy.assessViewerInput(message);
+    if (!assessed.allowed) return;
+    const safeUsername = safetyPolicy.safeUsername(username) || 'viewer';
+
     const buffer = contextBuffers.get(channel);
-    buffer.push(`${username}: ${message}`);
+    buffer.push(`${safeUsername}: ${assessed.text}`);
 
     // Keep only recent messages
     if (buffer.length > CONTEXT_BUFFER_SIZE) {
@@ -47,8 +52,12 @@ function addToContext(channel, username, message) {
  * @param {string} username
  * @returns {boolean}
  */
-function canRespondToUser(username) {
-    const lastResponse = userResponseCooldowns.get(username.toLowerCase());
+function cooldownKey(channel, username) {
+    return `${String(channel || '').toLowerCase()}:${String(username || '').toLowerCase()}`;
+}
+
+function canRespondToUser(username, channel = '') {
+    const lastResponse = userResponseCooldowns.get(cooldownKey(channel, username));
     if (!lastResponse) return true;
     return (Date.now() - lastResponse) > RESPONSE_COOLDOWN_MS;
 }
@@ -57,8 +66,8 @@ function canRespondToUser(username) {
  * Record that bot responded to user (for cooldown)
  * @param {string} username
  */
-function recordResponse(username) {
-    userResponseCooldowns.set(username.toLowerCase(), Date.now());
+function recordResponse(username, channel = '') {
+    userResponseCooldowns.set(cooldownKey(channel, username), Date.now());
 }
 
 /**
@@ -171,7 +180,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
     }
 
     // Check cooldown to prevent spam
-    if (!canRespondToUser(username)) {
+    if (!canRespondToUser(username, channel)) {
         logger.debug(`⏱️ Cooldown active for ${username}, skipping response`);
         return null;
     }
@@ -179,6 +188,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
     // Try to match with existing commands first (faster, no API call)
     const commandMatch = matchExistingCommand(message, availableCommands);
     if (commandMatch) {
+        recordResponse(username, channel);
         return `@${username} ${commandMatch}`;
     }
 
@@ -208,7 +218,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
             // Save to cache
             await cacheResponse(message, aiResponse);
             // Record response for cooldown tracking
-            recordResponse(username);
+            recordResponse(username, channel);
             return `@${username} ${aiResponse}`;
         }
 

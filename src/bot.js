@@ -1038,15 +1038,9 @@ const BASIC_BLOCKED_COMMANDS = new Set([
     '!cuhzchain', '!chain', '!giveaway', '!enter',
     '!dashboard', '!pointsinfo', '!schedule', '!stream',
     '!followage', '!viewers', '!streamstats',
-    // Wave 6 — commerce family: Basic channels are other streamers' chats; we
-    // don't sell there (beyond the existing !getcuhzbot line).
-    '!plans', '!silver', '!gold', '!affiliate', '!architect',
-    '!mytier', '!site', '!pro', '!membership', '!store', '!shop',
-    // Voice-fam Discord aliases (!discord already listed above) — same
-    // selling-surface gating: Basic channels are other streamers' chats.
-    '!voice', '!family',
-    // Planet CUHZ Podcast (content plug) + aliases — same selling-surface gating.
-    '!pod', '!podcast', '!pcp'
+    // Basic channels are third-party chats; consume the canonical registry so
+    // new commerce commands and legacy aliases are denied automatically.
+    ...commerceContent.COMMERCE_COMMAND_NAMES
 ]);
 
 const TIMER_MESSAGES = [
@@ -1455,7 +1449,7 @@ async function initializeTwitchClient() {
     setupEventHandlers();
 
     // Wave 6 — stream commerce wiring. init() hands tier_service the queue-routed
-    // sender (used for monthly stipend announcements). The purchase watcher
+    // sender. The purchase watcher
     // self-gates on ENABLE_PURCHASE_SHOUTOUTS and only fires while a home channel
     // is live, so it is always safe to start.
     tierService.init({ sendMessage });
@@ -1878,13 +1872,14 @@ async function handleMessage(channel, tags, message, self) {
     // Declared here so both the points/welcome block and later command dispatch can read it.
     const msg = message.toLowerCase();
 
-    // --- Viewer paid tier (Wave 6) ---
-    // Cached, synchronous, ALWAYS fail-open to 'community'. Resolves 'community'
-    // unless ENABLE_TIER_SYNC is on and the site has confirmed a paid tier. Drives
-    // the AI-cost perks, the Verified Cuhz badge, and the Gold arrival below.
+    // --- Channel CUHZ Bot plan (Wave 6) ---
+    // One plan belongs to the broadcaster login. Every chatter in this Twitch
+    // channel therefore observes the same plan; a chatter's entitlement in some
+    // other channel can never elevate this one.
     const viewerLogin = username.toLowerCase();
+    const channelLogin = channel.replace('#', '').toLowerCase();
     markChatted(channel, viewerLogin);
-    const viewerTier = tierService.getTier(viewerLogin, channel);
+    const channelPlan = tierService.getChannelPlan(channelLogin);
 
     // --- Track User Activity ---
     try {
@@ -1940,10 +1935,10 @@ async function handleMessage(channel, tags, message, self) {
 
             if (!welcomeState) {
                 // First Contact for this channel — full hype welcome.
-                // Gold Executives get a dedicated arrival — but ONLY when their tier
-                // is already cache-warm (viewerTier resolves 'gold'). A cold first-ever
-                // message still gets the normal welcome — honest, never laggy.
-                if (viewerTier === 'gold') {
+                // Gold-plan channels get a dedicated arrival — but ONLY when the
+                // channel plan is already cache-warm. A cold first-ever message
+                // still gets the normal welcome — honest, never laggy.
+                if (channelPlan === 'gold') {
                     const goldLine = commerceContent.pickGoldArrival(channel);
                     sendMessage(channel, `${goldLine} @${tags.username} 💎`);
                 } else if (joinTier === TIERS.BASIC) {
@@ -2013,7 +2008,7 @@ async function handleMessage(channel, tags, message, self) {
     // Prices live only in commerce_content.js. Gated + selling-surface-only.
     if (commerceEnabled) {
         if (msg === '!mytier') {
-            const resolved = await tierService.getTierAwait(viewerLogin);
+            const resolved = await tierService.getChannelPlanAwait(channelLogin);
             sendMessage(channel, commerceContent.myTierLine(resolved, tags.username));
             return;
         }
@@ -2090,7 +2085,7 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
     if (msg === '!getcuhzbot') {
-        client.say(channel, '🤖 Want CUHZ Bot in your channel? Community add is free → https://planetcuhz.com/bot · Affiliate Pack $49.99/mo → !affiliate');
+        client.say(channel, '🤖 Want CUHZ Bot in your channel? Compare Community, Silver, Gold, Partner, and Architect plans → https://planetcuhz.com/pricing');
         return;
     }
 
@@ -2266,7 +2261,7 @@ async function handleMessage(channel, tags, message, self) {
         const ai        = 'AI: !ask !code !whois !topchatters';
 
         // Only advertised where the commands actually work (flag on + selling surface).
-        const commerceHelp = '💎 CUHZ Bot Tiers: !plans !silver !gold !affiliate !mytier !store';
+        const commerceHelp = '💎 CUHZ Bot plans: !community !silver !gold !partner !architect | Membership: !membership | One-time: !store | Pricing: https://planetcuhz.com/pricing';
 
         if (isPremium) {
             sendMessage(channel, utility + ' !discord !voice !pod !links !claim !achievements');
@@ -2706,19 +2701,11 @@ async function handleMessage(channel, tags, message, self) {
             question = question.substring(6).trim();
         }
 
-        // Viewer-tier pricing perks (fail-open: community always pays full price).
-        //   Silver: base !ask free (eyes 0), Claude brain 80% off (50 → 10).
-        //   Gold:   every brain free (eyes 0, brain 0).
-        if (brain === 'eyes' && (viewerTier === 'silver' || viewerTier === 'gold')) {
-            cost = 0;
-        } else if (brain === 'brain') {
-            if (viewerTier === 'gold') cost = 0;
-            else if (viewerTier === 'silver') cost = pointsService.COSTS.ASK_BRAIN_SILVER;
-        }
+        // Viewer subscriptions and their old discounts were retired. Plan lookup is
+        // channel-scoped and does not alter an individual chatter's points price.
 
         if (question) {
-            const reasonSuffix = viewerTier === 'community' ? '' : `_${viewerTier}`;
-            const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}${reasonSuffix}`, channel);
+            const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}`, channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
                 client.say(channel, `🚫 Broke User Alert: You need ${cost} points for ${brainName} but only have ${balance}. Chat more to earn!`);
@@ -2726,12 +2713,9 @@ async function handleMessage(channel, tags, message, self) {
             }
 
             try {
-                // Gold gets priority on the AI per-minute limiter (bounded +5/min).
-                const reply = await aiService.askBrain(brain, question, tags.username, viewerTier === 'gold');
-                // Verified Cuhz badge for paid tiers (Silver+).
-                const badge = (viewerTier === 'silver' || viewerTier === 'gold') ? '💎✅ ' : '';
+                const reply = await aiService.askBrain(brain, question, tags.username, false);
                 const prefix = brain === 'brain' ? '🧠' : '👁️';
-                client.say(channel, `${badge}${prefix} ${reply}`);
+                client.say(channel, `${prefix} ${reply}`);
             } catch (err) {
                 logger.error('Error in !ask:', err.message);
                 // Refund on error? Maybe later.
@@ -2742,13 +2726,10 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg.startsWith('!code ') && isVerifiedStream) {
         const query = message.substring(6).trim();
-        // Gold: zero-cost !code. Silver/community pay the standard COSTS.CODE_HANDS.
-        let cost = pointsService.COSTS.CODE_HANDS;
-        if (viewerTier === 'gold') cost = 0;
+        const cost = pointsService.COSTS.CODE_HANDS;
 
         if (query) {
-            const reasonSuffix = viewerTier === 'community' ? '' : `_${viewerTier}`;
-            const success = await pointsService.deductPoints(tags.username, cost, `ask_hands${reasonSuffix}`, channel);
+            const success = await pointsService.deductPoints(tags.username, cost, 'ask_hands', channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
                 client.say(channel, `🚫 You need ${cost} points for The Hands (Code) but only have ${balance}.`);
@@ -2756,10 +2737,8 @@ async function handleMessage(channel, tags, message, self) {
             }
 
             try {
-                const reply = await aiService.askBrain('hands', query, tags.username, viewerTier === 'gold');
-                // Verified Cuhz badge for paid tiers (Silver+).
-                const badge = (viewerTier === 'silver' || viewerTier === 'gold') ? '💎✅ ' : '';
-                client.say(channel, `${badge}💻 ${reply}`);
+                const reply = await aiService.askBrain('hands', query, tags.username, false);
+                client.say(channel, `💻 ${reply}`);
             } catch (err) {
                 logger.error('Error in !code:', err.message);
             }
