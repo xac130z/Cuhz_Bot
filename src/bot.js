@@ -883,6 +883,20 @@ const WESTSIDE_QUOTES = [
 // at import time — referencing a `const` declared later throws a ReferenceError
 // (temporal dead zone) and the bot never boots. Add new quote pools here.
 
+// !shoota / !dashoota for Rico_DaShoota — sharpshooter + put-in-the-work
+// energy (💪💪📚📚 is his calling card). NOT the same person as rico2ez (!rico).
+// Palette 🎯 🏀 💪 📚 🔥 💎. 8 variants, no-repeat-last-2.
+const SHOOTA_QUOTES = [
+    "🎯 SHOOTA in the building! @Rico_DaShoota — green light every time 🏀",
+    "🏀 @Rico_DaShoota pulled up! Catch and shoot, nothing but net 🎯",
+    "💪 Da Shoota touched down — @Rico_DaShoota puts in that WORK 📚",
+    "🔥 @Rico_DaShoota slid in! Range don't stop at the arc 🎯",
+    "📚 Class in session — @Rico_DaShoota out here schooling folks 💪",
+    "🎯 Ayy it's Shoota! @Rico_DaShoota built different cuhz 💎",
+    "💎 @Rico_DaShoota in the frequency — shooters shoot, always 🏀",
+    "🏀 Shoota pulled UP! @Rico_DaShoota that jumper stay pure 🔥"
+];
+
 // !kuddy for imkxddy — day-one supporter (2y+ follower). Palette 🎯 💯 🔥 👑 💎.
 // 8 variants, no-repeat-last-2.
 const KUDDY_QUOTES = [
@@ -975,6 +989,8 @@ const USER_VARIANT_POOLS = {
     '!west':        WESTSIDE_QUOTES,
     '!westside':    WESTSIDE_QUOTES,
     '!relly':       WESTSIDE_QUOTES,
+    '!shoota':      SHOOTA_QUOTES,
+    '!dashoota':    SHOOTA_QUOTES,
     '!kuddy':       KUDDY_QUOTES,
     '!imkxddy':     KUDDY_QUOTES,
     '!smutty':      SMUTTY_QUOTES,
@@ -2734,8 +2750,8 @@ async function handleMessage(channel, tags, message, self) {
             brand:     '🌌 Brand: !bot !prices !pay !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
-                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
-                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !relax !jr !mahni !tay !yoo !anti'),
+                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
+                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !tay !yoo !anti'),
             crew:      isPP ? '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
             ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
             // !mod leads: it's the self-documenting panel with live scope status.
@@ -2764,7 +2780,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !relax !jr !cuhz !planet !mahni !tay !yoo !anti');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !tay !yoo !anti');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2783,7 +2799,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !west !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
