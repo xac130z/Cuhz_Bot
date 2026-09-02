@@ -47,19 +47,22 @@ class PointsService {
         try {
             const safeUser = username.toLowerCase().replace('@', '');
 
-            // 1. Check balance
-            const user = await db.prepare('SELECT points FROM users WHERE username = ?').get(safeUser);
-            const currentPoints = user ? user.points : 0;
+            // ATOMIC check-and-decrement: the `AND points >= ?` guard makes the
+            // balance check and the debit a single statement, so two commands
+            // racing (e.g. a double !redeem) can never overdraw — at most one
+            // UPDATE matches when funds are tight. Row count tells us if it hit.
+            // (Old code did SELECT-then-UPDATE, a classic overdraw race.)
+            const res = await db.prepare(
+                'UPDATE users SET points = points - ? WHERE username = ? AND points >= ?'
+            ).run(amount, safeUser, amount);
 
-            if (currentPoints < amount) {
-                logger.debug(`🚫 ${safeUser} insufficient funds: ${currentPoints} < ${amount}`);
+            if (!res || res.changes === 0) {
+                // No matching row = insufficient funds (or no account = 0 points).
+                logger.debug(`🚫 ${safeUser} insufficient funds for ${amount} (${reason})`);
                 return false;
             }
 
-            // 2. Deduct from balance
-            await db.prepare('UPDATE users SET points = points - ? WHERE username = ?').run(amount, safeUser);
-
-            // 3. Log transaction (negative amount)
+            // Log transaction (negative amount) — only after a real debit landed.
             const logTx = db.prepare('INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)');
             await logTx.run(safeUser, -amount, reason);
 

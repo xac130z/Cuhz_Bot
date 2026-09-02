@@ -94,10 +94,12 @@ check('!rewards contains NO planetcuhz.com dead link',
     !/planetcuhz\.com/i.test(shippedRewards));
 check(`!rewards within REWARDS_LINE_MAX (${shippedRewards.length} <= ${REWARDS_LINE_MAX})`,
     shippedRewards.length <= REWARDS_LINE_MAX);
-check('!rewards still tells viewers how to actually redeem (ask a mod)',
-    /ask a mod/i.test(shippedRewards));
-check('!rewards states the Rev 2 fulfilment promise (fam / Discord, no host needed)',
-    /via Discord/i.test(shippedRewards) && /no host needed/i.test(shippedRewards));
+// Updated 2026-08-07: !redeem is now a real command (atomic point deduction),
+// so the suffix advertises it instead of "ask a mod" manual-only fulfilment.
+check('!rewards tells viewers the real redeem command (!redeem)',
+    /!redeem/i.test(shippedRewards));
+check('!rewards keeps the honest fulfilment promise (delivered via Discord)',
+    /via Discord/i.test(shippedRewards));
 check('!rewards no longer implies on-stream fulfilment ("usually same stream")',
     !/same stream/i.test(shippedRewards));
 
