@@ -21,6 +21,26 @@ module.exports = {
     webhookToken: process.env.WEBHOOK_TOKEN,
     webhookUrl: process.env.WEBHOOK_URL,
 
+    // Planet Cuhz site integration (viewer tier entitlement sync — src/tier_service.js).
+    // DELIBERATELY separate from BOT_API_SECRET/apiBase above: those point at the
+    // created.app dashboard, a different trust domain. SITE_API_* target the Supabase
+    // `bot-worker-sync` edge function (functions base URL + that function's own
+    // BOT_API_SECRET). Never reuse or confuse the two.
+    siteApiUrl: process.env.SITE_API_URL,        // e.g. https://<ref>.functions.supabase.co
+    siteApiSecret: process.env.SITE_API_SECRET,  // = the site's BOT_API_SECRET value
+    // Two independent honest-state switches — secure-off by default like every
+    // other flag here. Unset (or any value other than the literal string 'true')
+    // means OFF. Nothing in tier_service.js runs (no network call, no db write,
+    // no chat line, no timer) until an owner sets these to 'true' in Railway.
+    //   ENABLE_TIER_SYNC          — viewer tier lookup + monthly Silver/Gold stipends
+    //   ENABLE_PURCHASE_SHOUTOUTS — live-gated purchase thank-you announcements
+    // NOTE: ENABLE_COMMERCE_COMMANDS (the !plans/!silver/!gold command family) is
+    // NOT wired here — that registry was not harvested this pass (stale pre-ladder-v2
+    // copy in the source branch; see tier_service.js header). Left unimplemented on
+    // purpose rather than shipped unsafe.
+    enableTierSync: process.env.ENABLE_TIER_SYNC === 'true',
+    enablePurchaseShoutouts: process.env.ENABLE_PURCHASE_SHOUTOUTS === 'true',
+
     // Testing / Mocking
     useMockApi: process.env.USE_MOCK_API === 'true',
     twitchApiBase: process.env.USE_MOCK_API === 'true' ? 'http://localhost:3001/helix' : 'https://api.twitch.tv/helix',

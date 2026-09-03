@@ -311,6 +311,20 @@ class DBAdapter {
         detail TEXT,
         result TEXT NOT NULL,
         created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Tier entitlement engine (src/tier_service.js) — default-off,
+      // gated by ENABLE_TIER_SYNC / ENABLE_PURCHASE_SHOUTOUTS. This table is
+      // always created (cheap, empty until the flags are flipped) so the
+      // owner doesn't need a separate migration step to go live later.
+      // Dedupe ledger for the purchase-thank-you watcher — one row per
+      // entitlement ever announced, so a Railway restart can't double-thank.
+      `CREATE TABLE IF NOT EXISTS announced_purchases (
+        entitlement_id TEXT PRIMARY KEY,
+        twitch_login TEXT,
+        product TEXT,
+        created_at TEXT,
+        announced_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`
     ];
   }
