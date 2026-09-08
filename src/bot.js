@@ -21,6 +21,11 @@ const tierService = require('./tier_service');
 const rosterService = require('./roster_service');
 const keywordListener = require('./keyword_listener');
 const followageService = require('./followage_service');
+const streakService = require('./streak_service');
+
+// Watch Streak truth is session-scoped: only Twitch's verified USERNOTICE can
+// populate this tracker. Ordinary chat text never becomes a detected streak.
+const streakTracker = streakService.createTracker();
 
 // Single keyword-intent listener instance (Wave 6, default-OFF). Owns its own
 // cooldown state. Bot names cover the login + the customer-facing "CUHZ Bot"
@@ -1573,7 +1578,17 @@ function setupEventHandlers() {
         }
     });
 
-    logger.info('🚨 Raid / sub / resub / subgift event handlers registered');
+    // Twitch emits Watch Streak shares as an IRC USERNOTICE with
+    // msg-id=viewermilestone and msg-param-category=watch-streak. tmi.js 1.8
+    // forwards unrecognized USERNOTICE types through this generic event.
+    client.on('usernotice', streakService.createNoticeHandler({
+        tracker: streakTracker,
+        send: sendMessage,
+        info: (message) => logger.info(message),
+        error: (message, err) => logger.error(message, err && err.message ? err.message : err)
+    }));
+
+    logger.info('🚨 Raid / sub / resub / subgift / watch-streak event handlers registered');
 }
 
 async function verifyJoin(channel) {
@@ -2088,6 +2103,10 @@ async function handleMessage(channel, tags, message, self) {
         client.say(channel, '🤖 Want CUHZ Bot in your channel? Compare Community, Silver, Gold, Partner, and Architect plans → https://planetcuhz.com/pricing');
         return;
     }
+    if (msg === '!streak') {
+        sendMessage(channel, streakTracker.commandReply(channel), { source: 'streak_command' });
+        return;
+    }
 
     // 0.84. Mahni Rotation (ALL tiers)
     if (msg === '!mahni') {
@@ -2252,7 +2271,7 @@ async function handleMessage(channel, tags, message, self) {
     // under Twitch's 500-char per-line limit. Audited against actual dispatch
     // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
     if (msg === '!help' || msg === '!commands') {
-        const utility   = streamContent.utilityHelp(config.enableGambling);
+        const utility   = streamContent.utilityHelp(config.enableGambling) + ' !streak';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
         const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !storm !juan !rico !bern !dame';
