@@ -16,6 +16,9 @@ const modIntel = require('./mod_intel');
 const moderation = require('./moderation_service');
 const fs = require('fs');
 const path = require('path');
+const streakService = require('./streak_service');
+// Only Twitch USERNOTICE events populate the channel-scoped streak tracker.
+const streakTracker = streakService.createTracker();
 
 // --- Tier System Definition ---
 // Canonical access list. Keys MUST be lowercase — lookups do `.toLowerCase()`
@@ -1935,7 +1938,13 @@ function setupEventHandlers() {
         }
     });
 
-    logger.info('🚨 Raid / sub / resub / subgift event handlers registered');
+    client.on('usernotice', streakService.createNoticeHandler({
+        tracker: streakTracker,
+        send: sendMessage,
+        info: (message) => logger.info(message),
+        error: (message, err) => logger.error(message, err && err.message ? err.message : err)
+    }));
+    logger.info('🚨 Raid / sub / resub / subgift / watch-streak event handlers registered');
 }
 
 // Join verification v2: the old implementation POSTed to the dashboard's
@@ -2572,6 +2581,11 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.84. Mahni Rotation (ALL tiers)
+    if (msg === '!streak') {
+        sendMessage(channel, streakTracker.commandReply(channel));
+        return;
+    }
+
     if (msg === '!mahni') {
         client.say(channel, MAHNI_QUOTES[Math.floor(Math.random() * MAHNI_QUOTES.length)]);
         return;
@@ -2742,7 +2756,7 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!help' || msg === '!commands' || msg.startsWith('!help ')) {
         const isPP = isProOrPremium;
         const sections = {
-            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim'
+            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim !streak'
                        + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
