@@ -1,25 +1,10 @@
 #!/usr/bin/env node
 /**
- * CUHZ Points backfill — seed the database from Railway log exports.
- *
- * WHY THIS EXISTS
- * Points were being written to an ephemeral SQLite file, so every deploy wiped
- * them. The only surviving record of what people earned is the Railway log
- * exports. This script replays award events out of those exports and writes
- * them into the real database.
- *
- * IDEMPOTENT: every replayed award is written to points_ledger with a reason
- * tagged `backfill:<sha>` where <sha> is a hash of the exact log line. Re-running
- * with the same file (or with overlapping files) will NOT double-count — already
- * seen hashes are skipped. Safe to run repeatedly as you export more logs.
- *
- * USAGE
- *   node scripts/backfill-points.js <log1.json> [log2.json ...]
- *   node scripts/backfill-points.js --dry-run <log.json>     # report only
- *
- * Run it against the SAME database the bot uses (set DATABASE_URL first, or it
- * writes to the local SQLite file):
- *   DATABASE_URL="postgres://..." node scripts/backfill-points.js logs/*.json
+ * Legacy award-log report ONLY. P3 retired database replay: line hashes and
+ * overlapping backfill reason totals do not prove safe historical recovery.
+ * This report preserves the old diagnostic parser, not verified user totals.
+ * Usage: node scripts/backfill-points.js --dry-run <log.json> [more.json ...]
+ * Never treat this parser's candidates as an approved credit artifact.
  */
 
 const fs = require('fs');
@@ -27,10 +12,14 @@ const crypto = require('crypto');
 const path = require('path');
 
 const DRY_RUN = process.argv.includes('--dry-run');
+if (!DRY_RUN) {
+    console.error('Legacy points replay is disabled. Use --dry-run for a report; recovery requires a separately approved artifact.');
+    process.exit(1);
+}
 const files = process.argv.slice(2).filter(a => !a.startsWith('--'));
 
 if (files.length === 0) {
-    console.error('Usage: node scripts/backfill-points.js [--dry-run] <log.json> [more.json ...]');
+    console.error('Usage: node scripts/backfill-points.js --dry-run <log.json> [more.json ...]');
     process.exit(1);
 }
 
@@ -66,6 +55,7 @@ function extractMessages(filePath) {
 }
 
 async function main() {
+    console.log('Legacy diagnostic candidates only — not verified balances or approved recovery credits.');
     // Collect unique award events across every supplied file
     const events = new Map(); // hash -> {username, amount, reason, ts}
     let scanned = 0, skippedBots = 0;
@@ -109,48 +99,7 @@ async function main() {
     }
     console.log(`${'TOTAL'.padEnd(24)}${String([...totals.values()].reduce((a, b) => a + b, 0)).padStart(8)}`);
 
-    if (DRY_RUN) {
-        console.log('\n--dry-run: nothing written.');
-        return;
-    }
-
-    const db = require('../src/database');
-    console.log(`\n💾 Writing to ${db.type.toUpperCase()}…`);
-    if (db.type !== 'postgres') {
-        console.warn('⚠️  Not Postgres — this DB is ephemeral on a hosted container.');
-        console.warn('⚠️  Set DATABASE_URL to the production Postgres before backfilling for real.');
-    }
-
-    // Which hashes were already backfilled? (reason column carries the tag)
-    const existing = new Set();
-    try {
-        const rows = await db.prepare(
-            `SELECT reason FROM points_ledger WHERE reason LIKE 'backfill:%'`
-        ).all();
-        for (const r of rows) existing.add(r.reason.split(':')[1]);
-    } catch (err) {
-        console.error('Could not read points_ledger (does the schema exist yet?):', err.message);
-        process.exit(1);
-    }
-    console.log(`↩️  ${existing.size} events were already backfilled previously — they will be skipped.`);
-
-    let written = 0, skipped = 0;
-    for (const [hash, e] of events) {
-        if (existing.has(hash)) { skipped++; continue; }
-        await db.prepare(
-            `INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)`
-        ).run(e.username, e.amount, `backfill:${hash}:${e.reason}`);
-        await db.prepare(`
-            INSERT INTO users (username, points, messages_sent, last_seen)
-            VALUES (?, ?, 0, CURRENT_TIMESTAMP)
-            ON CONFLICT(username) DO UPDATE SET points = users.points + ?
-        `).run(e.username, e.amount, e.amount);
-        written++;
-    }
-
-    console.log(`\n✅ Backfill complete: ${written} events written, ${skipped} already present (no double-count).`);
-    console.log('Run again with more log exports any time — it stays idempotent.');
-    process.exit(0);
+    console.log('\n--dry-run: nothing written.');
 }
 
 main().catch(err => { console.error('Backfill failed:', err); process.exit(1); });

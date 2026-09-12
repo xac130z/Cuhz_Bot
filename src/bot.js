@@ -10,7 +10,6 @@ const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
 const userMemory = require('./user_memory');
 const pointsService = require('./points_service');
-const { seedPoints } = require('./points_seed');
 const loyaltySystem = require('./loyalty');
 const modIntel = require('./mod_intel');
 const moderation = require('./moderation_service');
@@ -2052,9 +2051,8 @@ function saveStreamStates() {
 // Load on startup
 loadStreamStates();
 
-// Restore historical CUHZ Points from data/points-seed.json (idempotent — see
-// src/points_seed.js). Fire-and-forget: never blocks or breaks boot.
-seedPoints().catch(err => logger.error(`Points seed error: ${err.message}`));
+// P3: automatic historical grants are retired. Existing balances/provenance
+// remain untouched; a restart must not run a multiplier or backfill again.
 
 // --- Graceful shutdown (Railway sends SIGTERM on every deploy) ---
 let shuttingDown = false;
@@ -2339,24 +2337,27 @@ async function handleMessage(channel, tags, message, self) {
                     // their clock now rather than paying for unknown history.
                     await db.prepare('UPDATE users SET last_paycheck = CURRENT_TIMESTAMP WHERE username = ?').run(usernameL);
                 } else if (sinceSeen <= PRESENCE_GAP_MS && sincePay >= PAYCHECK_INTERVAL_MS) {
-                    await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
-                    // Credit the real elapsed presence, capped so a long gap that
-                    // still passed the presence check can't over-credit.
-                    const earnedMinutes = Math.min(Math.round(sincePay / 60000), 30);
-                    await userMemory.addWatchMinutes(usernameL, earnedMinutes);
-                    await db.prepare('UPDATE users SET last_paycheck = CURRENT_TIMESTAMP WHERE username = ?').run(usernameL);
+                    const paid = await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
+                    if (paid) {
+                        // Credit the real elapsed presence, capped so a long gap that
+                        // still passed the presence check can't over-credit.
+                        const earnedMinutes = Math.min(Math.round(sincePay / 60000), 30);
+                        await userMemory.addWatchMinutes(usernameL, earnedMinutes);
+                        await db.prepare('UPDATE users SET last_paycheck = CURRENT_TIMESTAMP WHERE username = ?').run(usernameL);
+                    }
                 }
             }
 
             // 2. Earn Active Point (+1 per message)
             await pointsService.addPoints(usernameL, 1, 'chat_message');
 
-            // 3. Update User Stats (Last Seen, Msg Count)
+            // 3. Update User Stats (Last Seen, Msg Count). A failed award must
+            // never create an unledgered fallback point through this upsert.
             const upsertUser = db.prepare(`
                 INSERT INTO users (username, points, messages_sent, last_seen)
-                VALUES (?, 1, 1, CURRENT_TIMESTAMP)
+                VALUES (?, 0, 1, CURRENT_TIMESTAMP)
                 ON CONFLICT(username) DO UPDATE SET
-                    messages_sent = messages_sent + 1,
+                    messages_sent = users.messages_sent + 1,
                     last_seen = CURRENT_TIMESTAMP
             `);
             await upsertUser.run(usernameL);
@@ -2906,9 +2907,10 @@ async function handleMessage(channel, tags, message, self) {
 
             if (success) {
                 const balance = await pointsService.getBalance(tags.username);
-                client.say(channel, `🎉 FOLLOW BONUS CLAIMED! @${tags.username} received 300 points! Balance: ${balance} 💎`);
+                const balanceText = balance === null ? 'Balance is unavailable right now.' : `Balance: ${balance} 💎`;
+                client.say(channel, `🎉 FOLLOW BONUS CLAIMED! @${tags.username} received 300 points! ${balanceText}`);
             } else {
-                client.say(channel, `🚫 Nice try cuhz! You already claimed your follower bonus.`);
+                client.say(channel, `⚠️ @${tags.username} the follower bonus could not be confirmed. It may already be claimed, or points may be unavailable. Check !points later.`);
             }
         } catch (err) {
             logger.error('Error in !claim:', err.message);
@@ -3178,6 +3180,10 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!points' || msg === '!balance') {
         const balance = await pointsService.getBalance(tags.username);
+        if (balance === null) {
+            sendMessage(channel, `⚠️ @${tags.username} your CUHZ Points balance is unavailable right now. Try !points again later.`);
+            return;
+        }
         sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ Points in the bank`);
         return;
     }
@@ -3228,8 +3234,12 @@ async function handleMessage(channel, tags, message, self) {
         const amount = parseInt(args[2]);
 
         if (target && !isNaN(amount)) {
-            await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`);
-            client.say(channel, `💸 @${tags.username} gave ${amount} points to @${target}!`);
+            const granted = await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`);
+            if (granted) {
+                client.say(channel, `💸 @${tags.username} gave ${amount} points to @${target}!`);
+            } else {
+                client.say(channel, `⚠️ @${tags.username} the points grant to @${target} could not be confirmed. Check the balance before trying again.`);
+            }
         }
         return;
     }
@@ -3250,17 +3260,26 @@ async function handleMessage(channel, tags, message, self) {
         }
 
         const balance = await pointsService.getBalance(tags.username);
+        if (balance === null) {
+            client.say(channel, `⚠️ @${tags.username} your CUHZ Points balance is unavailable right now. Gamble is paused for this request.`);
+            return;
+        }
         if (balance < amount) {
             client.say(channel, `🚫 You're broke cuhz! You only have ${balance} points.`);
             return;
         }
 
         const win = Math.random() < 0.5;
+        const settled = win
+            ? await pointsService.addPoints(tags.username, amount, 'gamble_win')
+            : await pointsService.deductPoints(tags.username, amount, 'gamble_loss');
+        if (!settled) {
+            client.say(channel, `⚠️ @${tags.username} the gamble points result could not be confirmed. Check !points later before trying again.`);
+            return;
+        }
         if (win) {
-            await pointsService.addPoints(tags.username, amount, 'gamble_win');
-            client.say(channel, `🎰 WINNER! @${tags.username} doubled up to ${balance + amount} points! 🟢`);
+            client.say(channel, `🎰 WINNER! @${tags.username} won ${amount} CUHZ Points! 🟢`);
         } else {
-            await pointsService.deductPoints(tags.username, amount, 'gamble_loss');
             client.say(channel, `🎰 RIP @${tags.username}... you lost ${amount} points. 🔴`);
         }
         return;
@@ -3286,7 +3305,10 @@ async function handleMessage(channel, tags, message, self) {
             const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}`);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
-                client.say(channel, `🚫 Broke User Alert: You need ${cost} points for ${brainName} but only have ${balance}. Chat more to earn!`);
+                const balanceText = balance === null ? 'Balance is unavailable.' : `Current balance: ${balance}.`;
+                // A false mutation result may include a lost COMMIT reply. Even
+                // a low balance cannot prove this was an insufficient-funds refusal.
+                client.say(channel, `⚠️ @${tags.username} the points payment could not be confirmed for ${brainName}. ${balanceText} Check !points later before trying again.`);
                 return;
             }
 
@@ -3310,7 +3332,8 @@ async function handleMessage(channel, tags, message, self) {
             const success = await pointsService.deductPoints(tags.username, cost, 'ask_hands');
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
-                client.say(channel, `🚫 You need ${cost} points for The Hands (Code) but only have ${balance}.`);
+                const balanceText = balance === null ? 'Balance is unavailable.' : `Current balance: ${balance}.`;
+                client.say(channel, `⚠️ @${tags.username} the points payment could not be confirmed. ${balanceText} Check !points later before trying again.`);
                 return;
             }
 
@@ -3709,6 +3732,10 @@ app.get('/api/points/user/:username', async (req, res) => {
         if (!username) return res.status(404).json({ error: 'not found' });
 
         const points = await pointsService.getBalance(username);
+        if (points === null) {
+            res.set('Cache-Control', 'no-store');
+            return res.status(503).json({ error: 'points balance unavailable' });
+        }
 
         // points_service exposes no rank query and we don't own that file, so
         // rank comes from the top-100 rich list; anyone below that returns null.

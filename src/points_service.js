@@ -11,23 +11,14 @@ class PointsService {
      * Add points to a user and log the transaction
      */
     async addPoints(username, amount, reason) {
+        if (!Number.isSafeInteger(amount)) return false;
         if (amount <= 0) return false;
 
         try {
             const safeUser = username.toLowerCase().replace('@', '');
 
-            // 1. Update user balance (fast cache)
-            const upsertUser = db.prepare(`
-                INSERT INTO users (username, points, messages_sent, last_seen)
-                VALUES (?, ?, 0, CURRENT_TIMESTAMP)
-                ON CONFLICT(username) DO UPDATE SET
-                    points = points + ?
-            `);
-            await upsertUser.run(safeUser, amount, amount);
-
-            // 2. Log transaction to ledger
-            const logTx = db.prepare('INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)');
-            await logTx.run(safeUser, amount, reason);
+            const changed = await db.mutatePoints({ username: safeUser, amount, reason });
+            if (!changed) return false;
 
             logger.info(`💰 Added ${amount} ${amount === 1 ? 'point' : 'points'} to ${safeUser} (${reason})`);
             return true;
@@ -42,26 +33,20 @@ class PointsService {
      * @returns {Promise<boolean>} true if successful, false if insufficient funds
      */
     async deductPoints(username, amount, reason) {
+        if (!Number.isSafeInteger(amount)) return false;
         if (amount <= 0) return true; // No cost
 
         try {
             const safeUser = username.toLowerCase().replace('@', '');
 
-            // 1. Check balance
-            const user = await db.prepare('SELECT points FROM users WHERE username = ?').get(safeUser);
-            const currentPoints = user ? user.points : 0;
-
-            if (currentPoints < amount) {
-                logger.debug(`🚫 ${safeUser} insufficient funds: ${currentPoints} < ${amount}`);
+            // The adapter commits the guarded debit and negative ledger row in
+            // one transaction. A ledger failure therefore cannot strand a debit.
+            const changed = await db.mutatePoints({ username: safeUser, amount: -amount, reason });
+            if (!changed) {
+                // No matching row = insufficient funds (or no account = 0 points).
+                logger.debug(`🚫 ${safeUser} insufficient funds for ${amount} (${reason})`);
                 return false;
             }
-
-            // 2. Deduct from balance
-            await db.prepare('UPDATE users SET points = points - ? WHERE username = ?').run(amount, safeUser);
-
-            // 3. Log transaction (negative amount)
-            const logTx = db.prepare('INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)');
-            await logTx.run(safeUser, -amount, reason);
 
             logger.info(`💸 Deducted ${amount} ${amount === 1 ? 'point' : 'points'} from ${safeUser} (${reason})`);
             return true;
@@ -72,15 +57,19 @@ class PointsService {
     }
 
     /**
-     * Get current balance
+     * Get current balance. A missing account is zero; an unavailable or invalid
+     * balance is null. Callers must check null before doing numeric operations.
      */
     async getBalance(username) {
         try {
             const safeUser = username.toLowerCase().replace('@', '');
             const user = await db.prepare('SELECT points FROM users WHERE username = ?').get(safeUser);
-            return user ? user.points : 0;
+            if (!user) return 0;
+            if (!Number.isSafeInteger(user.points)) throw new Error('Invalid points balance');
+            return user.points;
         } catch (err) {
-            return 0;
+            logger.error(`❌ Failed to read points for ${username}: ${err.message}`);
+            return null;
         }
     }
 

@@ -168,6 +168,76 @@ class DBAdapter {
     }
   }
 
+  /**
+   * Commit one signed points change and its ledger entry together. Positive
+   * amounts credit; negative amounts debit only when the balance covers them.
+   * This deliberately bypasses prepare(), whose compatibility behavior swallows
+   * unique violations: a failed ledger insert must roll the balance back.
+   */
+  async mutatePoints({ username, amount, reason }) {
+    if (!Number.isSafeInteger(amount)) return false;
+    if (amount === 0) return true;
+
+    const credit = amount > 0;
+    const balanceSql = credit
+      ? `INSERT INTO users (username, points, messages_sent, last_seen)
+         VALUES (?, ?, 0, CURRENT_TIMESTAMP)
+         ON CONFLICT(username) DO UPDATE SET points = users.points + ?`
+      : 'UPDATE users SET points = points - ? WHERE username = ? AND points >= ?';
+    const balanceArgs = credit
+      ? [username, amount, amount]
+      : [-amount, username, -amount];
+    const ledgerSql = 'INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)';
+    const ledgerArgs = [username, amount, reason];
+
+    if (this.type === 'sqlite') {
+      // No await inside this callback: every statement runs before JavaScript
+      // yields, so unrelated users of this SQLite connection cannot interleave.
+      return this.sqlite.transaction(() => {
+        const result = this.sqlite.prepare(balanceSql).run(...balanceArgs);
+        if (result.changes === 0) return false;
+        if (result.changes !== 1) throw new Error('Points mutation did not affect exactly one user');
+        const user = this.sqlite.prepare('SELECT points FROM users WHERE username = ?').get(username);
+        if (!Number.isSafeInteger(user?.points)) throw new Error('Resulting points balance is not a safe integer');
+        const ledger = this.sqlite.prepare(ledgerSql).run(...ledgerArgs);
+        if (ledger.changes !== 1) throw new Error('Points ledger insert did not create a row');
+        return true;
+      })();
+    }
+
+    const pgSql = sql => {
+      let index = 0;
+      return sql.replace(/\?/g, () => `$${++index}`);
+    };
+    const client = await this.pgPool.connect();
+    let failure;
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(pgSql(balanceSql), balanceArgs);
+      if (result.rowCount !== 0 && result.rowCount !== 1) {
+        throw new Error('Points mutation did not affect exactly one user');
+      }
+      const changed = result.rowCount === 1;
+      if (changed) {
+        const ledger = await client.query(pgSql(ledgerSql), ledgerArgs);
+        if (ledger.rowCount !== 1) throw new Error('Points ledger insert did not create a row');
+      }
+      // If COMMIT reached the server but its acknowledgement is lost, rollback
+      // cannot prove the change was undone. Never automatically retry here.
+      await client.query('COMMIT');
+      return changed;
+    } catch (err) {
+      failure = err;
+      try { await client.query('ROLLBACK'); } catch (_) {
+        // Keep the original failure. release(error) discards the connection,
+        // including when rollback failed or commit's outcome is uncertain.
+      }
+      throw err;
+    } finally {
+      client.release(failure);
+    }
+  }
+
   // ----- SCHEMA DEFINITIONS -----
 
   /** Shared schema as SQL arrays — each statement is one CREATE TABLE */
