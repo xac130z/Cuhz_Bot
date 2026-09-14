@@ -2,6 +2,7 @@ const tmi = require('tmi.js');
 const express = require('express');
 const axios = require('axios');
 const config = require('./config');
+const { sanitizeChannel, normalizeChannels } = require('./channel_identity');
 const logger = require('./logger');
 const { calendarDiff, formatDuration, formatMinutes } = require('./duration');
 const db = require('./database');
@@ -48,7 +49,7 @@ const CHANNEL_TIERS = {
     'planetcuhz':            TIERS.PREMIUM,
     'cuhz_bot':              TIERS.PREMIUM, // the bot's own stream
     'thatgirlmahni_':        TIERS.BASIC,
-    'qweenstormygirlnz89':   TIERS.BASIC,
+    'stormygirlnz89':        TIERS.BASIC,
     'razredg1':              TIERS.BASIC,
     'snowy_wolfies_ttv':     TIERS.BASIC,
     'ohthatztayy':           TIERS.BASIC,
@@ -545,14 +546,14 @@ const KASHA_QUOTES = [
     "🔥 Welcome in @dangbabykasha! Real ones know 🦁"
 ];
 
-// !qween for qweenstormygirlnz89 — Sims + basketball loyal regular.
+// !qween for stormygirlnz89 — Sims + basketball loyal regular.
 // Palette 👑 🏀 ✨ 💖 📡.
 const QWEEN_QUOTES = [
     "👑 QWEEN STORMY in the chat! Sims slayer, vibe curator 🏀",
-    "👑 @qweenstormygirlnz89 we see you cuhz — the frequency is up 📡",
+    "👑 @stormygirlnz89 we see you cuhz — the frequency is up 📡",
     "✨ Qween Stormy pulled up. Chat officially upgraded 👑",
     "👑 Ayy it's Qween! Good to see you cuhz 💖",
-    "💖 @qweenstormygirlnz89 slid through — royalty in the building 👑",
+    "💖 @stormygirlnz89 slid through — royalty in the building 👑",
     "👑 Qween energy only. Stormy here to run it 📡",
     "✨ Qween Stormy in the chat means we WINNING today 🏀",
     "💖 Welcome back Qween — the throne was empty without you 👑"
@@ -1513,12 +1514,6 @@ function getChannelConfig(channel) {
 
 // --- Twitch API Helpers ---
 
-function sanitizeChannel(name) {
-    if (!name) return null;
-    const clean = name.trim().toLowerCase();
-    return clean.startsWith('#') ? clean : `#${clean}`;
-}
-
 async function fetchClientId() {
     if (twitchClientId && botUserId) return twitchClientId;
 
@@ -1751,7 +1746,7 @@ async function initializeTwitchClient() {
             });
 
             if (response.data && response.data.channels && response.data.channels.length > 0) {
-                channelsToJoin = response.data.channels.map(ch => sanitizeChannel(ch.name)).filter(n => !!n);
+                channelsToJoin = normalizeChannels(response.data.channels.map(ch => ch.name));
                 logger.info(`Found ${channelsToJoin.length} channels to join from dashboard:`, channelsToJoin);
             } else {
                 logger.info('No channels returned from dashboard, checking config.');
@@ -1763,7 +1758,7 @@ async function initializeTwitchClient() {
 
     // Fallback to config if no dashboard channels
     if (channelsToJoin.length === 0 && config.channels && config.channels.length > 0) {
-        channelsToJoin = config.channels.map(ch => sanitizeChannel(ch)).filter(n => !!n);
+        channelsToJoin = normalizeChannels(config.channels);
         logger.info(`Using channels from config:`, channelsToJoin);
     }
 
@@ -3641,7 +3636,9 @@ app.post('/join-channel', verifyDashboardRequest, async (req, res) => {
     if (!client) return res.status(503).json({ error: 'Bot not connected' });
 
     try {
-        await client.join(channel.startsWith('#') ? channel : `#${channel}`);
+        const target = sanitizeChannel(channel);
+        if (!target) return res.status(400).json({ error: 'Channel is required' });
+        await client.join(target);
         res.json({ status: 'success' });
     } catch (err) {
         res.status(500).json({ error: err.message });
