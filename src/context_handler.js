@@ -9,6 +9,16 @@ const CONTEXT_BUFFER_SIZE = 20;
 // Response cooldown: prevents bot from spamming same user
 const userResponseCooldowns = new Map(); // username -> last response timestamp
 const RESPONSE_COOLDOWN_MS = 60000; // 60 seconds between responses to same user
+const responsesInFlight = new Set(); // reserve before any cache/model await
+
+function addressedResponse(username, response) {
+    // Models/cache may already address this user. Remove only repeated leading
+    // mentions of that exact account, never mentions of someone else or in prose.
+    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const leading = new RegExp(`^(?:@${escaped}(?=$|[\\s,:])(?:[,:])?\\s*)+`, 'i');
+    const body = String(response).trim().replace(leading, '').trim();
+    return `@${username}${body ? ` ${body}` : ''}`;
+}
 
 // Bot identity for mention detection
 const BOT_USERNAME = (process.env.BOT_USERNAME || 'cuhz_bot').toLowerCase();
@@ -181,31 +191,33 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
     }
 
     // Check cooldown to prevent spam
-    if (!canRespondToUser(username)) {
+    const responseKey = username.toLowerCase();
+    if (responsesInFlight.has(responseKey) || !canRespondToUser(username)) {
         logger.debug(`⏱️ Cooldown active for ${username}, skipping response`);
         return null;
     }
 
-    // Try to match with existing commands first (faster, no API call)
-    const commandMatch = matchExistingCommand(message, availableCommands);
-    if (commandMatch) {
-        recordResponse(username); // every reply path must arm the cooldown
-        return `@${username} ${commandMatch}`;
-    }
-
-    // Check cache for similar queries (per channel — communities don't share replies)
-    const cachedResponse = await getCachedResponse(channel, message);
-    if (cachedResponse) {
-        logger.info('💾 Using cached context response');
-        recordResponse(username); // every reply path must arm the cooldown
-        return `@${username} ${cachedResponse}`;
-    }
-
-    // Use AI for complex context understanding
-    initChannel(channel);
-    const context = contextBuffers.get(channel) || [];
-
+    responsesInFlight.add(responseKey);
     try {
+        // Try to match with existing commands first (faster, no API call)
+        const commandMatch = matchExistingCommand(message, availableCommands);
+        if (commandMatch) {
+            recordResponse(username); // every reply path must arm the cooldown
+            return addressedResponse(username, commandMatch);
+        }
+
+        // Check cache for similar queries (per channel — communities don't share replies)
+        const cachedResponse = await getCachedResponse(channel, message);
+        if (cachedResponse) {
+            logger.info('💾 Using cached context response');
+            recordResponse(username); // every reply path must arm the cooldown
+            return addressedResponse(username, cachedResponse);
+        }
+
+        // Use AI for complex context understanding
+        initChannel(channel);
+        const context = contextBuffers.get(channel) || [];
+
         const aiResponse = await aiService.generateContextAwareResponse(
             channel,
             message,
@@ -222,13 +234,15 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
             await cacheResponse(channel, message, aiResponse);
             // Record response for cooldown tracking
             recordResponse(username);
-            return `@${username} ${aiResponse}`;
+            return addressedResponse(username, aiResponse);
         }
 
         return null;
     } catch (error) {
         logger.error(`❌ Context-aware response failed: ${error.message}`);
         return null;
+    } finally {
+        responsesInFlight.delete(responseKey);
     }
 }
 

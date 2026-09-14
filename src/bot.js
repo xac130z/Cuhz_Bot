@@ -3,6 +3,8 @@ const express = require('express');
 const axios = require('axios');
 const config = require('./config');
 const { sanitizeChannel, normalizeChannels } = require('./channel_identity');
+const { createSharedChatGuard } = require('./shared_chat_guard');
+const sharedChatGuard = createSharedChatGuard();
 const logger = require('./logger');
 const { calendarDiff, formatDuration, formatMinutes } = require('./duration');
 const db = require('./database');
@@ -2277,7 +2279,9 @@ async function handleAutoShoutout(channel, usernameLower, displayName) {
 }
 
 async function handleMessage(channel, tags, message, self) {
-    if (self) return;
+    // Before context, memory, points, welcomes, commands, or any async work.
+    // tmi's local `self` flag alone does not cover mirrored shared-chat echoes.
+    if (!sharedChatGuard.accept(tags, self, config.username, botUserId)) return;
 
     // Instrumentation: every command attempt is visible in the logs.
     if (message.startsWith('!')) {
@@ -2386,7 +2390,9 @@ async function handleMessage(channel, tags, message, self) {
         // Per-channel First Contact: each channel gets to welcome the user once.
         // Returning-user welcome: fire a lighter "welcome back" line if it's been ≥4h
         // since we last welcomed them in THIS channel (and they haven't spoken in 4h+).
-        const canWelcome = !isKnownBot && (!persona.settings || persona.settings.auto_welcome);
+        // A direct request gets its answer, not a welcome/shoutout AND an answer.
+        const isDirectedRequest = isCommand || contextHandler.isQuestionOrRequest(message);
+        const canWelcome = !isKnownBot && !isDirectedRequest && (!persona.settings || persona.settings.auto_welcome);
         if (canWelcome) {
             const welcomeKey = `${channel}:${usernameL}`;
             const welcomeState = _channelWelcomes.get(welcomeKey);
@@ -2416,7 +2422,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // Auto-shoutout for fellow streamers (pro/premium only)
         const joinChannelTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
-        if (joinChannelTier !== TIERS.BASIC) {
+        if (!isKnownBot && !isDirectedRequest && joinChannelTier !== TIERS.BASIC) {
             await handleAutoShoutout(channel, usernameL, tags.username);
         }
 
@@ -2445,7 +2451,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.5. Context-Aware Response (AI) - Premium Only
-    if (isPremium && config.enableContextAware && !msg.startsWith('!')) {
+    if (!isKnownBot && isPremium && config.enableContextAware && !msg.startsWith('!')) {
         try {
             const currentPersonality = moodTracker.getCurrentPersonality(channel);
             const personalityConfig = moodTracker.getPersonalityConfig(currentPersonality);
@@ -2469,7 +2475,7 @@ async function handleMessage(channel, tags, message, self) {
             );
 
             if (aiResponse) {
-                client.say(channel, aiResponse);
+                sendMessage(channel, aiResponse);
                 return;
             }
         } catch (error) {
@@ -3676,6 +3682,7 @@ app.get('/health/full', verifyDashboardRequest, (req, res) => {
         channels: Array.from(connectedChannels),
         streamStates: Object.fromEntries(streamStates),
         startTime: startTime.toISOString(),
+        sharedChatGuard: sharedChatGuard.stats(),
         logs: logger.getLogs()
     });
 });
