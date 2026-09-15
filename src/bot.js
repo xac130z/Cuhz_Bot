@@ -226,13 +226,22 @@ function buildAiCommandList(personaCommands) {
 // against them right now. These costs may be confirmed or LOWERED, never raised.
 // The reward AT a price point may only be swapped for equal-or-greater value.
 //
+// FIXED VALUE ONLY (owner decision 2026-09-15). Every tier is a bounded good. The
+// 1000 tier used to be "25% off the store": an uncapped percentage on an unbounded
+// order, the only tier whose cost to us scaled with the buyer's cart. The ladder
+// itself prices a point (2500 = the $7 emote pack, ~0.28¢/point, so 1000 ≈ $2.80);
+// 25% paid that on an $11 order and $15 on a $60 one. The swap to a flat $5 credit
+// is equal-or-greater value at every order under $20 and above the implied point
+// rate, so §2c holds — and it can never again pay out more than $5. Do NOT
+// reintroduce a percentage tier; if you must, cap it in dollars in the name.
+//
 // No 7500 "grail" tier here on purpose — it is net-new and awaits owner approval.
 const POINT_REWARDS = [
     { cost: 500,  name: 'Custom Chain PFP',     note: 'Made-to-order Chain Studio profile art — any finish, your nameplate, delivered in Discord' },
-    // 25% tier: copy says "issued via Discord" and never "instant"/"auto-applied".
+    // Store-credit tier: copy says "issued via Discord" and never "instant"/"auto-applied".
     // Spec §4 E1 (store platform's single-use discount codes) is UNVERIFIED, and the
-    // fallback is a manual 25% refund — so nothing here may imply automatic delivery.
-    { cost: 1000, name: '25% off the store',    note: 'Single-use 25% discount code for anything at planetcuhz.com — issued via Discord' },
+    // fallback is a manual $5 refund — so nothing here may imply automatic delivery.
+    { cost: 1000, name: '$5 off the store',     note: 'Single-use $5 discount code for anything at planetcuhz.com, one per order — issued via Discord' },
     { cost: 2500, name: 'Emote Pack Vol.1',     note: 'The full $7 emote pack, free — 8 emotes, Twitch + Discord sizes, via Discord DM' },
     // Scoped to the Planet Cuhz channel on purpose: the bot's speech is ours, but a
     // greeting firing in a HOST's chat is our promo in their house. Never advertise
