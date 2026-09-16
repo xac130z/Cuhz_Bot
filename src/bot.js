@@ -952,6 +952,73 @@ const YOUNGJR_QUOTES = [
 
 // User shoutout rotation pools — all tiers, no repeats within last 2 fires.
 // Hoisted to module scope so the map isn't rebuilt on every chat message.
+// !imreacts for ImReactsTV — reaction-content creator in the Cuhzunity.
+// Palette 👀 📺 🔥 💯 😳. 8 variants, no-repeat-last-2.
+// Named '!imreacts' on purpose: '!reacts' is already a generic USER_COMMANDS
+// line, so neither shadows the other in the dispatch chain.
+const IMREACTS_QUOTES = [
+    "👀 @ImReactsTV pulled up! The reactions are about to be ELITE 📺",
+    "📺 Ayy @ImReactsTV in the building — best seat in the house 👀",
+    "🔥 @ImReactsTV slid through! Chat just got more entertaining 💯",
+    "💯 Welcome in @ImReactsTV — real ones react in real time 👀",
+    "😳 @ImReactsTV caught that live! Nothing gets past him 📺",
+    "👀 It's @ImReactsTV cuhz — front row energy every time 🔥",
+    "📺 @ImReactsTV touched down. Turn the volume UP 💯",
+    "🔥 Ayy it's Reacts! @ImReactsTV keeps the room alive 👀"
+];
+
+// !huie for lilhuie5 — Cuhzunity regular. Palette 🕹️ 💫 🙌 🔥 💎.
+// 8 variants, no-repeat-last-2.
+const HUIE_QUOTES = [
+    "🕹️ @lilhuie5 pulled up! Controller in hand, ready to work 💫",
+    "💫 Ayy @lilhuie5 in the frequency — good to see you cuhz 🙌",
+    "🙌 @lilhuie5 slid through! The lobby just got better 🔥",
+    "🔥 Welcome in @lilhuie5 — real one, every stream 💎",
+    "💎 @lilhuie5 touched down. Salute 🕹️",
+    "🕹️ It's @lilhuie5! Day-one energy in the chat 💫",
+    "🙌 @lilhuie5 pulled up on us — we see you 🔥",
+    "💫 Ayy it's Huie! @lilhuie5 keeps it a hundred 💎"
+];
+
+// !lovlee for Lovlee_ttv — Cuhzunity regular. Palette 💖 ✨ 🫶 🌸 💫.
+// 8 variants, no-repeat-last-2.
+const LOVLEE_QUOTES = [
+    "💖 @Lovlee_ttv pulled up! Good vibes just walked in ✨",
+    "✨ Ayy @Lovlee_ttv in the chat — energy went UP 🫶",
+    "🫶 @Lovlee_ttv slid through! Love always lands here 💖",
+    "🌸 Welcome in @Lovlee_ttv — the room feels better already ✨",
+    "💫 @Lovlee_ttv touched down. Real ones know 💖",
+    "💖 It's @Lovlee_ttv cuhz! Nothing but love 🫶",
+    "✨ @Lovlee_ttv pulled up on us — good to see you 🌸",
+    "🫶 Ayy it's Lovlee! @Lovlee_ttv brings the warmth 💫"
+];
+
+// !neno for NenosMindset — Cuhzunity regular. Palette 🧠 💪 📈 🔑 🌌.
+// 8 variants, no-repeat-last-2.
+const NENO_QUOTES = [
+    "🧠 @NenosMindset pulled up! Mentality on another level 💪",
+    "💪 Ayy @NenosMindset in the building — mindset is everything 📈",
+    "📈 @NenosMindset slid through! Growth energy only 🔑",
+    "🔑 Welcome in @NenosMindset — locked in as always 🧠",
+    "🌌 @NenosMindset touched down. We set orbits 💪",
+    "🧠 It's @NenosMindset cuhz! Stay sharp, stay ready 📈",
+    "💪 @NenosMindset pulled up on us — respect 🔑",
+    "📈 Ayy it's Neno! @NenosMindset keeps the standard high 🌌"
+];
+
+// !smokey for smokeyyhg — Cuhzunity regular. Palette 💨 🔥 🎯 😤 💎.
+// 8 variants, no-repeat-last-2.
+const SMOKEY_QUOTES = [
+    "💨 @smokeyyhg pulled up! Smoke in the building 🔥",
+    "🔥 Ayy @smokeyyhg in the chat — somebody getting cooked 🎯",
+    "🎯 @smokeyyhg slid through! Aim stay true 💨",
+    "😤 Welcome in @smokeyyhg — that work don't stop 🔥",
+    "💎 @smokeyyhg touched down. Real one in the frequency 💨",
+    "💨 It's @smokeyyhg cuhz! Bring the smoke 😤",
+    "🔥 @smokeyyhg pulled up on us — we see you 💎",
+    "🎯 Ayy it's Smokey! @smokeyyhg always ready 🔥"
+];
+
 const USER_VARIANT_POOLS = {
     '!ec':      EC_QUOTES,
     '!tj':      TJ_QUOTES,
@@ -983,6 +1050,15 @@ const USER_VARIANT_POOLS = {
     '!pb':          PB_QUOTES,
     '!peace':       PB_QUOTES,
     '!anti':    ANTI_QUOTES,
+    '!imreacts':    IMREACTS_QUOTES,
+    '!huie':        HUIE_QUOTES,
+    '!lilhuie':     HUIE_QUOTES,
+    '!lovlee':      LOVLEE_QUOTES,
+    '!lov':         LOVLEE_QUOTES,
+    '!neno':        NENO_QUOTES,
+    '!mindset':     NENO_QUOTES,
+    '!smokey':      SMOKEY_QUOTES,
+    '!smoke':       SMOKEY_QUOTES,
     '!blessed':     BLESSED_QUOTES,
     '!dj':          BLESSED_QUOTES,
     '!phoenix':     PHOENIX_QUOTES,
@@ -2766,8 +2842,8 @@ async function handleMessage(channel, tags, message, self) {
             brand:     '🌌 Brand: !bot !prices !pay !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
-                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
-                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !tay !yoo !anti'),
+                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !storm !juan !rico !bern !dame !anti !imreacts !huie !lovlee !neno !smokey'
+                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !tay !yoo !anti !imreacts !huie !lovlee !neno !smokey'),
             crew:      isPP ? '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
             ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
             // !mod leads: it's the self-documenting panel with live scope status.
@@ -2796,7 +2872,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !tay !yoo !anti');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !tay !yoo !anti !imreacts !huie !lovlee !neno !smokey');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2815,7 +2891,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti !imreacts !huie !lovlee !neno !smokey');
             sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !west !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
