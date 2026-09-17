@@ -7,14 +7,19 @@ const { createLoungeControl, parseCommand, SUB_PALETTES, PALETTES } = require('.
 let passed = 0;
 const check = (name, fn) => { fn(); passed++; console.log(`PASS ${name}`); };
 
-const PHOENIX = '823707557', FOUR = '952381011', OWNER = '1293717308';
+// Fixture ids. FOUR and OWNER are verified real ids (Twitch GQL, 2026-09-17).
+// OP_A is a stand-in operator id for these tests: Phoenix's real id is NOT yet
+// confirmed (phoenixnyc=757210754 vs phoenixpnyc=823707557) and a test must not
+// assert a fact nobody has verified. The module is id-agnostic; only bot.js
+// carries the real operator list.
+const PHOENIX = '900000001', FOUR = '952381011', OWNER = '1293717308';
 const ROOM = '175727753';
 let T = 1000000;
 const clock = () => T;
 const make = (o = {}) => createLoungeControl({ now: clock, operatorIds: [PHOENIX, FOUR, OWNER], cardCount: 5, ...o });
 const sub = (id, login = 'subby') => ({ userId: id, login, subscriber: true });
 const viewer = (id, login = 'rando') => ({ userId: id, login });
-const op = () => ({ userId: PHOENIX, login: 'phoenixpnyc' });
+const op = () => ({ userId: PHOENIX, login: 'operator_a' });
 const mod = (id = '500') => ({ userId: id, login: 'modperson', moderator: true });
 // every applied change must clear both the per-user and per-channel floors
 const advance = ms => { T += ms; };

@@ -19,6 +19,197 @@ const moderation = require('./moderation_service');
 const fs = require('fs');
 const path = require('path');
 const streakService = require('./streak_service');
+
+// ============================================================================
+// THE CUHZ LAB — chat-controlled lounge (Lane K). Subscribers steer the lounge
+// on stream through CUHZ Bot; operators get a menu. The state machine is
+// src/lounge_control.js and the menu is src/lounge_menu.js — both PURE modules
+// with zero requires, which is what makes "this never touches points" provable.
+// This block in bot.js only: reads tags, forwards text, prints replies, serves
+// a read-only JSON route. Nothing here imports the database or points service.
+//
+// Numeric IDs only, hardcoded on purpose: the isolated boot harness freezes
+// process.env to {}, so an env-read operator list would silently become
+// "nobody" under test. A Twitch user id is public, not a secret.
+//
+// Verified against Twitch's public GQL on 2026-09-17:
+//   four_a_reason 952381011 · planetcuhz 1293717308 · cuhz_bot room 175727753
+//
+// PHOENIX IS DELIBERATELY ABSENT until the owner confirms which account is hers.
+// Two accounts exist:  phoenixnyc = 757210754 (created 2021-12, default avatar)
+//                      phoenixpnyc = 823707557 (created 2022-09) — what earlier docs assumed.
+// A wrong guess hands the remote to a stranger or locks out the real person, and
+// an id gate that fails open is worse than one that fails closed. One line to add.
+// ============================================================================
+const { createLoungeControl, HOUSE: LOUNGE_HOUSE, PALETTES: LOUNGE_PALETTES } = require('./lounge_control');
+const { parseLab: parseLabCommand, renderMenu: renderLabMenu } = require('./lounge_menu');
+
+const LOUNGE_OPERATOR_IDS = Object.freeze(['952381011', '1293717308']);
+// login -> room-id for the channels where the lounge is on. Identity is the
+// room-id from tags; the login is only the public URL surface of the endpoint.
+const LOUNGE_ROOMS = Object.freeze({ cuhz_bot: '175727753' });
+const LOUNGE_ROOM_IDS = new Set(Object.values(LOUNGE_ROOMS));
+const LOUNGE_CARD_COUNT = 5;                 // lab.js loads five artworks; the 15 names are those five re-tilted
+const LOUNGE_REPLY_BUDGET = 4;               // lounge lines per channel per minute, then silent drops
+const LOUNGE_INTENT_RE = /^!(lounge|lab)(\s|$)|^!(vibe|color|zoom|card|glow)\s/;
+
+const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT });
+const loungeEnabled = () => process.env.LOUNGE_ENABLED !== 'false';   // kill switch; default on
+
+const _loungeReplies = new Map();   // channel -> [sentAt] within the last minute
+const _loungeLogins  = new Map();   // login -> user-id, learned from tags this session (for !lab mute <login>)
+const _loungeState   = new Map();   // roomId -> { seq, bootId, json } — serialized once per change, not per poll
+let _loungeHouseJson = null;
+
+function loungeActor(tags) {
+    const badges = (tags && tags.badges) || {};
+    return {
+        userId: tags && tags['user-id'],
+        login: tags && tags.username,
+        broadcaster: Object.hasOwn(badges, 'broadcaster'),
+        moderator: !!(tags && tags.mod) || Object.hasOwn(badges, 'moderator'),
+        // Read live from tags every time; founders are subscribers too.
+        subscriber: !!(tags && tags.subscriber) || Object.hasOwn(badges, 'subscriber') || Object.hasOwn(badges, 'founder'),
+    };
+}
+
+function loungeSay(channel, text) {
+    const t = Date.now();
+    const recent = (_loungeReplies.get(channel) || []).filter(ms => t - ms < 60000);
+    if (recent.length >= LOUNGE_REPLY_BUDGET) return false;
+    recent.push(t);
+    _loungeReplies.set(channel, recent);
+    sendMessage(channel, text);
+    return true;
+}
+
+function loungeStateChanged(roomId) { _loungeState.delete(String(roomId)); }
+
+function loungeStateJson(roomId) {
+    const s = loungeControl.readState(roomId);
+    let c = _loungeState.get(String(roomId));
+    if (!c || c.seq !== s.seq || c.bootId !== s.bootId) {
+        c = { seq: s.seq, bootId: s.bootId, json: JSON.stringify(s) };
+        _loungeState.set(String(roomId), c);
+    }
+    return c.json;
+}
+
+// Unknown, disabled and non-allowlisted channels all get THIS payload, so the
+// route cannot be used to enumerate which channels have the lounge on.
+function loungeHouseJson() {
+    if (!_loungeHouseJson) {
+        const s = loungeControl.readState(LOUNGE_ROOMS.cuhz_bot);
+        _loungeHouseJson = JSON.stringify({ ...s, seq: 0, updatedAtMs: 0, ...LOUNGE_HOUSE, locked: true, setByLogin: null });
+    }
+    return _loungeHouseJson;
+}
+
+function loungeReason(r, actor) {
+    const at = actor.login ? `@${actor.login} ` : '';
+    switch (r.reason) {
+        case 'subscribers_only':    return `${at}the lounge remote is a sub perk 💎 — !lounge shows what's on.`;
+        case 'locked':              return `${at}the lounge is locked right now.`;
+        case 'your_turn_soon':      return `${at}one change per 10s — you're up in ${Math.ceil((r.retryInMs || 0) / 1000)}s.`;
+        case 'channel_floor':
+        case 'glow_floor':          return `${at}give it a second — the screen just changed.`;
+        case 'cooling':             return `${at}chat's been busy, the lounge is cooling for a minute.`;
+        case 'vibe_operator_only':  return `${at}turbo is operator-only. Try chill or hype.`;
+        case 'color_operator_only': return `${at}that color is operator-only — !lounge colors`;
+        case 'muted':               return `${at}you can't change the lounge right now.`;
+        case 'bad_vibe':            return `${at}vibes: chill, hype.`;
+        case 'bad_color':           return `${at}!lounge colors for the list.`;
+        case 'bad_zoom':            return `${at}zoom in, out or reset.`;
+        case 'bad_glow':            return `${at}glow on or off.`;
+        case 'bad_card':            return `${at}card 1–${LOUNGE_CARD_COUNT}.`;
+        default:                    return `${at}!lounge vibe|color|zoom|card|glow|reset`;
+    }
+}
+
+function describeLoungeState(s) {
+    return `${s.vibe} · ${s.palette} · card ${s.card} · zoom ${s.zoom} · glow ${s.glow ? 'on' : 'off'}`
+        + (s.locked ? ' · locked' : '') + (s.setByLogin ? ` · set by @${s.setByLogin}` : '');
+}
+
+// Returns true when the message was a lounge message (handled or deliberately
+// silenced), false when it is not ours and must fall through untouched.
+function handleLoungeIntent(channel, roomId, actor, message) {
+    const r = loungeControl.applyIntent(roomId, actor, message);
+    if (r === null) return false;
+    switch (r.status) {
+        case 'status':
+            loungeSay(channel, `🛋️ Lounge: ${describeLoungeState(r.state)}`
+                + (r.role === 'viewer' ? ' — subs steer it: !lounge vibe hype' : ''));
+            return true;
+        case 'colors':
+            loungeSay(channel, `🎨 Colors: ${r.palettes.join(' ')} — !lounge color <name>`);
+            return true;
+        case 'applied':
+            loungeStateChanged(roomId);
+            // Visual changes are answered by the screen itself (the badge names the
+            // setter). Only the lock, which changes nothing visible, gets a line.
+            if (r.intent === 'lock')   loungeSay(channel, '🔒 Lounge locked — chat control paused.');
+            if (r.intent === 'unlock') loungeSay(channel, '🔓 Lounge unlocked — subs can steer again.');
+            return true;
+        case 'rejected':
+            if (!r.quiet) loungeSay(channel, loungeReason(r, actor));
+            return true;
+        default:                       // cosigned / silent / ignored — quiet by design
+            return true;
+    }
+}
+
+function handleLabMenu(channel, roomId, actor, lab) {
+    // Non-operators get silence and one audit line: a refusal confirms a gated
+    // surface exists and invites probing. !lab is never advertised.
+    if (loungeControl.roleOf(actor) !== 'operator') {
+        logger.info(`🧪 !lab ignored from ${actor.login || actor.userId} in ${channel}`);
+        return true;
+    }
+    if (lab.kind === 'menu')    { loungeSay(channel, renderLabMenu(lab.page)); return true; }
+    if (lab.kind === 'unknown') { loungeSay(channel, '🧪 Not a lab entry — !lab for the menu.'); return true; }
+    if (lab.kind === 'command') return handleLoungeIntent(channel, roomId, actor, lab.cmd);
+    switch (lab.action) {
+        case 'badge_on':
+        case 'badge_off': {
+            const on = lab.action === 'badge_on';
+            loungeControl.setBadge(roomId, on);
+            loungeStateChanged(roomId);
+            loungeSay(channel, `🧪 Badge ${on ? 'on' : 'off'}.`);
+            return true;
+        }
+        case 'house_set':
+            // The one action with a mandatory confirm: it is the only change to
+            // persistent-within-session state. Everything else is one !lounge reset away.
+            if (lab.arg !== 'confirm') {
+                loungeSay(channel, '🧪 This makes the current look the house default. Say: !lab house set confirm');
+                return true;
+            }
+            loungeControl.setHouse(roomId, actor);
+            loungeSay(channel, '🧪 House look saved — !lounge reset brings it back.');
+            return true;
+        case 'house_show':
+            loungeSay(channel, `🧪 On screen now: ${describeLoungeState(loungeControl.readState(roomId))}`);
+            return true;
+        case 'queue': {
+            const rows = loungeControl.auditOf(roomId).slice(-6)
+                .map(e => `${e.login || e.actor}: ${e.intent}${e.value != null ? ' ' + e.value : ''} → ${e.decision}`);
+            loungeSay(channel, rows.length ? `🧪 Last: ${rows.join(' · ')}` : '🧪 Nothing yet this session.');
+            return true;
+        }
+        case 'mute':
+        case 'unmute': {
+            const login = String(lab.arg || '').replace(/^@/, '').toLowerCase();
+            const id = _loungeLogins.get(login);
+            if (!id) { loungeSay(channel, `🧪 Haven't seen @${login} talk this session — need a message from them first.`); return true; }
+            loungeControl.mute(roomId, actor, id, lab.action === 'mute');
+            loungeSay(channel, `🧪 @${login} ${lab.action === 'mute' ? 'can no longer' : 'can'} change the lounge.`);
+            return true;
+        }
+        default:
+            return true;
+    }
+}
 // Only Twitch USERNOTICE events populate the channel-scoped streak tracker.
 const streakTracker = streakService.createTracker();
 
@@ -2483,6 +2674,23 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
+    // 0.7. THE CUHZ LAB — chat-controlled lounge. Sits ABOVE the bare !vibe
+    // handler on purpose: `!vibe hype` belongs to the lounge, bare `!vibe` does
+    // not and keeps its existing reply. Only allowlisted room-ids ever reach the
+    // state machine; every other channel falls through this block untouched.
+    // No points, no database, no network in here.
+    if (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')) && LOUNGE_INTENT_RE.test(msg)) {
+        const roomId = String(tags['room-id']);
+        const actor = loungeActor(tags);
+        if (actor.login && /^\d{1,12}$/.test(String(actor.userId || ''))) {
+            _loungeLogins.set(String(actor.login).toLowerCase(), String(actor.userId));
+        }
+        const lab = parseLabCommand(message);
+        const handled = lab ? handleLabMenu(channel, roomId, actor, lab)
+                            : handleLoungeIntent(channel, roomId, actor, message);
+        if (handled) return;
+    }
+
     // 0.8. CUHZ Vibe Commands (ALL tiers)
     if (msg === '!vibe') {
         client.say(channel, VIBE_MESSAGES[Math.floor(Math.random() * VIBE_MESSAGES.length)]);
@@ -2773,7 +2981,11 @@ async function handleMessage(channel, tags, message, self) {
             // !mod leads: it's the self-documenting panel with live scope status.
             mods:      '🛡️ Mods: !mod !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
                        + (isPP ? ' !addstreamer !removestreamer' : ''),
-            pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null
+            pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null,
+            // Advertised only where it is live (honesty law: no doors that don't open).
+            lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
+                       ? '🛋️ Lounge (subs): !lounge · !lounge vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · reset · !lounge colors'
+                       : null
         };
 
         // `!help <category>` — one targeted line
@@ -3779,6 +3991,31 @@ app.get('/api/rewards', (req, res) => {
     }
 });
 
+// THE CUHZ LAB — read-only lounge state for the OBS page (Lane K). This is the
+// ONLY lounge route and it is GET-only. Route-level CORS because the global
+// cors() above allows POST and would otherwise be inherited. Unknown, disabled
+// and non-allowlisted channels get the identical house-default payload, so the
+// route is not a channel-enumeration oracle. The JSON is serialized once per
+// state change, not per request, so a poll flood cannot starve the IRC loop.
+app.use('/api/lounge', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    res.set('Allow', 'GET');
+    res.status(405).json({ error: 'GET only' });
+});
+app.get('/api/lounge/state', cors({ methods: ['GET'], origin: '*' }), (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.type('application/json');
+        const raw = typeof req.query.channel === 'string' ? req.query.channel : '';
+        const login = String(sanitizeChannel(raw) || '').replace(/^#/, '');
+        const roomId = loungeEnabled() ? LOUNGE_ROOMS[login] : null;
+        res.send(roomId ? loungeStateJson(roomId) : loungeHouseJson());
+    } catch (err) {
+        logger.error('/api/lounge/state failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
 app.get('/', (req, res) => {
     try {
         const templatePath = path.join(__dirname, 'dashboard.html');
@@ -3791,5 +4028,13 @@ app.get('/', (req, res) => {
 
 app.listen(config.port, () => {
     logger.info(`Bot API listening on port ${config.port}`);
+    // Lane K: turbo decay and idle revert. Started here, not at module level —
+    // the isolated boot harness forbids timers and never invokes this callback.
+    const loungeClock = setInterval(() => {
+        for (const roomId of LOUNGE_ROOM_IDS) {
+            if (loungeControl.tick(roomId)) loungeStateChanged(roomId);
+        }
+    }, 5000);
+    if (typeof loungeClock.unref === 'function') loungeClock.unref();
     initializeTwitchClient();
 });
