@@ -31,6 +31,15 @@ const ENTRIES = Object.freeze([
     Object.freeze({ n: 15, words: 'q',           cmd: null, action: 'queue',     page: 2, label: 'last requests' }),
 ]);
 
+// The fine artwork controls. All take a value, so a number shortcut would not
+// help -- they are word-form only and forward straight to the validator.
+// vibe/zoom/glow are NOT here: they already have numbered menu entries, and
+// shadowing them would strip the entry object off the word form so that
+// `!lab 2` and `!lab vibe hype` stopped being identical.
+const VALUE_INTENTS = Object.freeze([
+    'depth', 'thickness', 'rotation', 'position', 'speed', 'tilt', 'shadow', 'freeze',
+]);
+
 const BY_NUMBER = Object.freeze(Object.fromEntries(ENTRIES.map(e => [String(e.n), e])));
 const BY_WORDS  = Object.freeze(Object.fromEntries(ENTRIES.map(e => [e.words, e])));
 
@@ -54,6 +63,7 @@ function parseLab(message) {
     // so `!lab 2` is "vibe hype" exactly as the menu prints it.
     if (!a || (a === 'menu' && (!b || b === '1'))) return { kind: 'menu', page: 1 };
     if (a === 'more' || (a === 'menu' && b === '2')) return { kind: 'menu', page: 2 };
+    if (a === 'art' || (a === 'menu' && b === '3')) return { kind: 'menu', page: 3 };
 
     // Numbered form. Numbers are 1..15; anything else is unknown, not a fallthrough.
     if (/^\d{1,2}$/.test(a)) {
@@ -63,9 +73,12 @@ function parseLab(message) {
                      : { kind: 'action', action: e.action, entry: e, arg: b || null };
     }
 
-    // Word forms with a value: color <name>, card <n>, mute <login>, house show|set|go
+    // Word forms with a value. These forward verbatim to the lounge validator, so
+    // the menu can never reach a value the validator would refuse -- one grammar.
     if (a === 'color' && b) return { kind: 'command', cmd: `!lounge color ${b}`, entry: null };
     if (a === 'card'  && b) return { kind: 'command', cmd: `!lounge card ${b}`,  entry: null };
+    if (VALUE_INTENTS.includes(a) && b) return { kind: 'command', cmd: `!lounge ${a} ${b}`, entry: null };
+    if (a === 'ops') return { kind: 'action', action: 'ops', entry: null, arg: null };
     if (a === 'mute'  && b) return { kind: 'action', action: 'mute',   entry: null, arg: b };
     if (a === 'unmute' && b) return { kind: 'action', action: 'unmute', entry: null, arg: b };
     if (a === 'house') {
@@ -83,12 +96,16 @@ function parseLab(message) {
 
 /** The two menu pages as chat lines. Short on purpose: Twitch is 500 chars. */
 function renderMenu(page) {
-    if (page === 2) {
-        return '🧪 LAB 2/2 — 10 lock · 11 unlock · 12 badge on · 13 badge off · 14 house set · 15 q · '
-             + 'also: !lab color <name> · !lab card <n> · !lab mute <login> · !lab house show';
+    if (page === 3) {
+        return '🧪 LAB 3/3 ART — !lab depth 1-8 · thickness 0-10 · rotation -20..20 · position -20..20 · '
+             + 'speed 5-100 · tilt 0-25 · shadow on|off · freeze on|off. Any of them: "auto" = back to the vibe.';
     }
-    return '🧪 LAB 1/2 — 1 chill · 2 hype · 3 turbo · 4 zoom in · 5 zoom out · 6 zoom reset · '
-         + '7 glow on · 8 glow off · 9 house look · say !lab more for the rest';
+    if (page === 2) {
+        return '🧪 LAB 2/3 — 10 lock · 11 unlock · 12 badge on · 13 badge off · 14 house set · 15 q · '
+             + 'also: !lab color <name> · !lab card <n> · !lab mute <login> · !lab ops · !lab art for the sliders';
+    }
+    return '🧪 LAB 1/3 — 1 chill · 2 hype · 3 turbo · 4 zoom in · 5 zoom out · 6 zoom reset · '
+         + '7 glow on · 8 glow off · 9 house look · !lab more · !lab art';
 }
 
-module.exports = Object.freeze({ parseLab, renderMenu, ENTRIES });
+module.exports = Object.freeze({ parseLab, renderMenu, ENTRIES, VALUE_INTENTS });

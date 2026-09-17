@@ -44,7 +44,22 @@ const streakService = require('./streak_service');
 const { createLoungeControl, HOUSE: LOUNGE_HOUSE, PALETTES: LOUNGE_PALETTES } = require('./lounge_control');
 const { parseLab: parseLabCommand, renderMenu: renderLabMenu } = require('./lounge_menu');
 
-const LOUNGE_OPERATOR_IDS = Object.freeze(['952381011', '1293717308']);
+// Base list is hardcoded for the reason the K1 spec gives: the isolated boot
+// harness freezes process.env to {}, so an env-ONLY gate silently becomes
+// "nobody" in every test run. Env is therefore ADDITIVE, never the whole list —
+// tests stay deterministic on the base while production can add an operator
+// without a code change or a redeploy of code.
+//
+// To give Phoenix control: have her type `!lounge whoami` in chat, read her
+// numeric id out of the bot's reply, then set on Railway:
+//     LOUNGE_OPERATOR_EXTRA_IDS=<her id>
+// (comma-separated for several). Non-numeric entries are dropped silently.
+const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['952381011', '1293717308']);
+const LOUNGE_OPERATOR_IDS = Object.freeze([
+    ...LOUNGE_OPERATOR_BASE_IDS,
+    ...String(process.env.LOUNGE_OPERATOR_EXTRA_IDS || '')
+        .split(',').map(x => x.trim()).filter(x => /^\d{1,12}$/.test(x)),
+]);
 // login -> room-id for the channels where the lounge is on. Identity is the
 // room-id from tags; the login is only the public URL surface of the endpoint.
 const LOUNGE_ROOMS = Object.freeze({ cuhz_bot: '175727753' });
@@ -115,6 +130,10 @@ function loungeReason(r, actor) {
         case 'glow_floor':          return `${at}give it a second — the screen just changed.`;
         case 'cooling':             return `${at}chat's been busy, the lounge is cooling for a minute.`;
         case 'vibe_operator_only':  return `${at}turbo is operator-only. Try chill or hype.`;
+        case 'intent_operator_only': return `${at}${r.intent} is an operator control. Subs get: vibe color zoom card glow depth thickness.`;
+        case 'out_of_range':        return `${at}${r.intent} is out of range — !lounge art for the limits.`;
+        case 'bad_number':          return `${at}${r.intent} takes a number, or "auto" to follow the vibe.`;
+        case 'bad_switch':          return `${at}on or off.`;
         case 'color_operator_only': return `${at}that color is operator-only — !lounge colors`;
         case 'muted':               return `${at}you can't change the lounge right now.`;
         case 'bad_vibe':            return `${at}vibes: chill, hype.`;
@@ -127,7 +146,13 @@ function loungeReason(r, actor) {
 }
 
 function describeLoungeState(s) {
+    // Only mention a fine control when it is actually overriding the vibe preset,
+    // so the common line stays short and a custom look is visibly custom.
+    const fine = ['depth', 'thickness', 'rotation', 'position', 'speed', 'tilt']
+        .filter(k => s[k] !== null && s[k] !== undefined).map(k => `${k} ${s[k]}`);
     return `${s.vibe} · ${s.palette} · card ${s.card} · zoom ${s.zoom} · glow ${s.glow ? 'on' : 'off'}`
+        + (s.shadow ? ' · shadow' : '') + (s.frozen ? ' · FROZEN' : '')
+        + (fine.length ? ` · ${fine.join(' · ')}` : '')
         + (s.locked ? ' · locked' : '') + (s.setByLogin ? ` · set by @${s.setByLogin}` : '');
 }
 
@@ -143,6 +168,12 @@ function handleLoungeIntent(channel, roomId, actor, message) {
             return true;
         case 'colors':
             loungeSay(channel, `🎨 Colors: ${r.palettes.join(' ')} — !lounge color <name>`);
+            return true;
+        case 'whoami':
+            // Public data (it is in every message tag), and only ever the asker's own.
+            // This is how the owner confirms an operator's real id without guessing
+            // between similar logins.
+            loungeSay(channel, `🪪 @${actor.login} — Twitch id ${r.userId} · role ${r.role}`);
             return true;
         case 'applied':
             loungeStateChanged(roomId);
@@ -187,6 +218,10 @@ function handleLabMenu(channel, roomId, actor, lab) {
             }
             loungeControl.setHouse(roomId, actor);
             loungeSay(channel, '🧪 House look saved — !lounge reset brings it back.');
+            return true;
+        case 'ops':
+            loungeSay(channel, `🧪 Operators: ${LOUNGE_OPERATOR_IDS.join(' ')}`
+                + (LOUNGE_OPERATOR_IDS.length > LOUNGE_OPERATOR_BASE_IDS.length ? ' (incl. LOUNGE_OPERATOR_EXTRA_IDS)' : ''));
             return true;
         case 'house_show':
             loungeSay(channel, `🧪 On screen now: ${describeLoungeState(loungeControl.readState(roomId))}`);
@@ -2984,7 +3019,7 @@ async function handleMessage(channel, tags, message, self) {
             pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null,
             // Advertised only where it is live (honesty law: no doors that don't open).
             lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
-                       ? '🛋️ Lounge (subs): !lounge · !lounge vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · reset · !lounge colors'
+                       ? '🛋️ Lounge (subs): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
                        : null
         };
 

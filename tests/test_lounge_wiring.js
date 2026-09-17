@@ -23,13 +23,29 @@ check('lounge_control.js and lounge_menu.js have ZERO require() calls (financial
         assert.doesNotMatch(read(f), /\b(points_|database|loyalty|axios|fs|tmi\.js|http)\b.*require/, f);
     }
 });
-check('operator ids are numeric literals, never logins, never env', () => {
-    const m = src.match(/const LOUNGE_OPERATOR_IDS = Object\.freeze\(\[([^\]]*)\]\)/);
-    assert.ok(m, 'LOUNGE_OPERATOR_IDS present');
+check('the BASE operator list is numeric literals only — never logins, never env', () => {
+    const m = src.match(/const LOUNGE_OPERATOR_BASE_IDS = Object\.freeze\(\[([^\]]*)\]\)/);
+    assert.ok(m, 'LOUNGE_OPERATOR_BASE_IDS present');
     const ids = m[1].split(',').map(x => x.trim().replace(/['"]/g, '')).filter(Boolean);
     assert.ok(ids.length >= 1);
     for (const id of ids) assert.match(id, /^\d{1,12}$/, `operator "${id}" must be a numeric Twitch id`);
-    assert.doesNotMatch(m[0], /process\.env/);
+    assert.doesNotMatch(m[0], /process\.env/, 'the base list must not read env — the boot harness freezes it to {}');
+});
+check('the env operator list is ADDITIVE and numeric-filtered (env can add, never replace)', () => {
+    const block = src.slice(src.indexOf('const LOUNGE_OPERATOR_IDS = Object.freeze(['),
+                            src.indexOf('const LOUNGE_ROOMS'));
+    assert.match(block, /\.\.\.LOUNGE_OPERATOR_BASE_IDS/, 'base ids must always be included');
+    assert.match(block, /LOUNGE_OPERATOR_EXTRA_IDS/);
+    assert.match(block, /\/\^\\d\{1,12\}\$\//, 'env ids must be filtered to numeric');
+    // Prove the filter: run the same expression against hostile env values.
+    const parse = v => String(v || '').split(',').map(x => x.trim()).filter(x => /^\d{1,12}$/.test(x));
+    assert.deepEqual(parse('757210754'), ['757210754']);
+    assert.deepEqual(parse('757210754, 823707557'), ['757210754', '823707557']);
+    assert.deepEqual(parse('phoenixnyc'), [], 'a LOGIN must never become an operator');
+    assert.deepEqual(parse('*'), []);
+    assert.deepEqual(parse('12345678901234567890'), [], 'over-long ids rejected');
+    assert.deepEqual(parse(''), []);
+    assert.deepEqual(parse(undefined), []);
 });
 check('lounge dispatch sits ABOVE the bare !vibe handler', () => {
     const lounge = src.indexOf('0.7. THE CUHZ LAB');

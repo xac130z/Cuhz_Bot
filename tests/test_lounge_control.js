@@ -226,8 +226,9 @@ check('published state carries no user ids and no chat text', () => {
     assert.equal(json.includes('99'), false, 'user id leaked into state');
     assert.equal(json.includes('!lounge'), false, 'chat text leaked into state');
     assert.equal(s.setByLogin, 'coolcuhz');
-    assert.deepEqual(Object.keys(s).sort(), ['bootId','card','cardCount','glow','locked','palette',
-        'pollMs','seq','setByLogin','updatedAtMs','version','vibe','zoom']);
+    assert.deepEqual(Object.keys(s).sort(), ['bootId','card','cardCount','depth','frozen','glow','locked',
+        'palette','pollMs','position','rotation','seq','setByLogin','shadow','speed','thickness','tilt',
+        'updatedAtMs','version','vibe','zoom']);
 });
 
 check('the badge can be killed in one command', () => {
@@ -286,6 +287,71 @@ check('status and the palette rack are open to everyone, and read-only', () => {
     assert.equal(colors.palettes.includes('transparent'), false);
     assert.equal(l.applyIntent(ROOM, op(), '!lounge colors').palettes.length, 10);
     assert.equal(l.readState(ROOM).seq, before);
+});
+
+check('subscribers get the density controls, operators get the motion controls', () => {
+    const l = make(); l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
+    // density: allowed for a sub
+    assert.equal(l.applyIntent(ROOM, sub('40'), '!lounge depth 8').status, 'applied'); turn();
+    assert.equal(l.applyIntent(ROOM, sub('41'), '!lounge thickness 0').status, 'applied'); turn();
+    // motion: operator-only for the same reason turbo is
+    for (const cmd of ['!lounge speed 100', '!lounge rotation 20', '!lounge position -20',
+                       '!lounge tilt 25', '!lounge shadow on', '!lounge freeze on']) {
+        const r = l.applyIntent(ROOM, sub('42'), cmd);
+        assert.equal(r.status, 'rejected', cmd);
+        assert.equal(r.reason, 'intent_operator_only', cmd);
+        assert.equal(l.applyIntent(ROOM, op(), cmd).status, 'applied', `operator ${cmd}`);
+        turn();
+    }
+});
+check('every numeric control is bound by the lab\u2019s own slider range, and nothing else is reachable', () => {
+    const { RANGES } = require('../src/lounge_control');
+    const l = make(); l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
+    for (const [key, r] of Object.entries(RANGES)) {
+        for (const bad of [r.min - 1, r.max + 1, 999, -999]) {
+            const res = l.applyIntent(ROOM, op(), `!lounge ${key} ${bad}`);
+            assert.equal(res.reason, 'out_of_range', `${key} ${bad} must be refused`);
+        }
+        for (const good of [r.min, r.max]) {
+            assert.equal(l.applyIntent(ROOM, op(), `!lounge ${key} ${good}`).status, 'applied', `${key} ${good}`);
+            assert.equal(l.readState(ROOM)[key], good);
+            turn();
+        }
+        // non-numeric and injection-shaped values never reach the state
+        for (const junk of ['abc', '__proto__', '1.5', '1e3', '', '0x8']) {
+            const res = l.applyIntent(ROOM, op(), `!lounge ${key} ${junk}`);
+            assert.notEqual(res.status, 'applied', `${key} ${junk}`);
+        }
+    }
+});
+check('"auto" hands one control back to the vibe preset without resetting the rest', () => {
+    const l = make(); l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
+    l.applyIntent(ROOM, op(), '!lounge depth 8'); turn();
+    l.applyIntent(ROOM, op(), '!lounge rotation 10'); turn();
+    assert.equal(l.readState(ROOM).depth, 8);
+    l.applyIntent(ROOM, op(), '!lounge depth auto'); turn();
+    assert.equal(l.readState(ROOM).depth, null, 'depth follows the preset again');
+    assert.equal(l.readState(ROOM).rotation, 10, 'the other override survived');
+});
+check('a fine override SURVIVES a later vibe change, and !lounge reset clears everything', () => {
+    const l = make(); l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
+    l.applyIntent(ROOM, op(), '!lounge depth 7'); turn();
+    l.applyIntent(ROOM, op(), '!lounge vibe hype'); turn();
+    assert.equal(l.readState(ROOM).depth, 7, '"I want 7 layers" survives "now make it hype"');
+    assert.equal(l.readState(ROOM).vibe, 'hype');
+    l.applyIntent(ROOM, op(), '!lounge reset'); turn();
+    const s = l.readState(ROOM);
+    assert.equal(s.depth, null); assert.equal(s.vibe, 'chill'); assert.equal(s.frozen, false);
+});
+check('whoami reports only the asker\u2019s own id, to everyone, and changes no state', () => {
+    const l = make();
+    const before = l.readState(ROOM).seq;
+    const r = l.applyIntent(ROOM, viewer('777', 'rando'), '!lounge whoami');
+    assert.equal(r.status, 'whoami');
+    assert.equal(r.userId, '777');
+    assert.equal(r.role, 'viewer');
+    assert.equal(l.readState(ROOM).seq, before, 'whoami must not mutate state');
+    assert.equal(l.applyIntent(ROOM, op(), '!lounge whoami').role, 'operator');
 });
 
 console.log(`\n${passed} lounge control checks passed (pure module; no network, database or bot boot).`);
