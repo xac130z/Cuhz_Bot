@@ -1629,6 +1629,13 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 ]);
 
 const TIMER_MESSAGES = [
+    // ORIENTATION FIRST. A viewer who lands on an unattended stream sees artwork
+    // and silence; they do not know this channel has a bot, points, or an AI.
+    // These three lines answer "what am I looking at / what can I do / why stay"
+    // before any link drop, because a link means nothing to someone with no context.
+    "👋 New here? This is CUHZ Bot's own channel — the bot running this chat is the product. Type !tools to see the whole rig, or !help for every command 🤖",
+    "🛋️ That artwork on screen is the CUHZ Bot Infinity Lounge — our mascot rendered inside itself, forever. Built live on this channel 🌌",
+    "💬 Talk to the bot: !ask <anything> for AI · !hype !vibe !w for the vibes · !points for your bag. It answers, try it 💎",
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
     "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
@@ -2709,6 +2716,16 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
+    // 0.65. !tools — the stream title has advertised "!tools" while no such command
+    // existed, so every viewer who tried it got silence. That is the worst possible
+    // first interaction: the channel's most visible copy making a promise the bot
+    // breaks. One source of truth for "what is this channel running".
+    if (msg === '!tools' || msg === '!rig' || msg === '!setup') {
+        sendMessage(channel, '🛠️ THE RIG — CUHZ Bot: points, AI chat, mod tools, hype & shoutouts (all live in this chat) · the Infinity Lounge overlay you\'re watching · planetcuhz.com. All of it built open, on stream.');
+        sendMessage(channel, '👉 Try it: !help (every command) · !ask <question> (AI) · !points (your bag) · !rewards (what points buy) · !bot (get CUHZ Bot in YOUR channel) 🚀');
+        return;
+    }
+
     // 0.7. THE CUHZ LAB — chat-controlled lounge. Sits ABOVE the bare !vibe
     // handler on purpose: `!vibe hype` belongs to the lounge, bare `!vibe` does
     // not and keeps its existing reply. Only allowlisted room-ids ever reach the
@@ -3006,7 +3023,7 @@ async function handleMessage(channel, tags, message, self) {
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
             // CTA, so the people who most need to see it are in Basic channels.
-            brand:     '🌌 Brand: !bot !prices !pay !cuhz !planet'
+            brand:     '🌌 Brand: !tools !bot !prices !pay !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
                        ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
