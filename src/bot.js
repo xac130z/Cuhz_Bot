@@ -1528,6 +1528,61 @@ const MAHNI_QUOTES = [
     "Mahni — the music speaks, the hustle screams, the heart inspires 🏆🌌"
 ];
 
+// Placement is load-bearing: this registry holds direct references to the quote
+// pools, so it MUST come after every one of them. Declared earlier it throws
+// 'Cannot access RICO_QUOTES before initialization' at boot — the same temporal
+// dead-zone class as the September P0. tests/test_boot_isolated.js catches it.
+// ============================================================================
+// THE CUHZNS — arrival recognition.
+//
+// The bot already had ~30 hand-written personality pools, but the ONLY way to
+// reach one was for somebody to type that person's command. So a cuhzn walked
+// in and got the same generic "Welcome to the Planet, cuhz!" as a stranger,
+// while a line written specifically for them sat unused two screens away.
+// This connects the two: your own line fires when YOU arrive.
+//
+// KEYED ON THE IMMUTABLE NUMERIC TWITCH ID, never a login. handleAutoShoutout()
+// keys on `streamer_username` and that is exactly the bug that silently broke
+// recognition when qweenstormygirlnz89 became stormygirlnz89. Twitch also
+// recycles abandoned logins after ~6 months, so a login key eventually greets
+// an impostor with a friend's line. Every id below was resolved from Twitch's
+// public GQL on 2026-09-17 and each pool was read to confirm it names that
+// person (e.g. QWEEN_QUOTES says "QWEEN STORMY", WESTSIDE says "@westsiderelly").
+//
+// ECONOMY NOTE: POINT_REWARDS sells a 5,000-point "Custom bot greeting" — a
+// line YOU choose, on planetcuhz, for a month. This registry is a different
+// thing: house-written lines for the known crew, content that is already free
+// to trigger via !four, !rico, !snowy and so on. It automates existing free
+// content; it does not give away the paid product. Keep it that way — if a
+// viewer wants THEIR OWN words on arrival, that stays the 5,000-point reward.
+// ============================================================================
+const CUHZNS = {
+    '952381011':  { login: 'four_a_reason',     pool: FOUR_QUOTES },
+    '1354688041': { login: 'rico2ez',           pool: RICO_QUOTES },
+    '732620163':  { login: 'thatgirlmahni_',    pool: MAHNI_QUOTES },
+    '824566475':  { login: 'stormygirlnz89',    pool: QWEEN_QUOTES },
+    '1388723253': { login: 'snowy_wolfies_ttv', pool: SNOWY_QUOTES },
+    '557152408':  { login: 'grouch392',         pool: GROUCH_QUOTES },
+    '128186931':  { login: 'westsiderelly',     pool: WESTSIDE_QUOTES },
+    // These two have a single house line rather than a pool; wrapped so the
+    // lookup has one shape. Promote to a pool whenever more lines get written.
+    '199116767':  { login: 'razredg1',    pool: ['Raz Red G in the building! Keeping it 100 since day one \u{1F534}'] },
+    '731191493':  { login: 'ohthatztayy', pool: ['It\u2019s giving 2K legend energy \u2014 ohthatztayy locked in! \u{1F3AE}\u{1F3C0}'] },
+    // Phoenix is deliberately absent: phoenixnyc (757210754) vs phoenixpnyc
+    // (823707557) is still unconfirmed, and greeting the wrong account with
+    // someone's personal line is worse than a generic welcome. Same rule as
+    // LOUNGE_OPERATOR_IDS. One line to add once the owner confirms.
+};
+
+/** The arriving user's own line, or null for everyone else. Id only. */
+function cuhznGreeting(userId, channelLogin) {
+    const c = CUHZNS[String(userId || '').trim()];
+    if (!c) return null;
+    // Don't greet someone in their own house — they're the broadcaster there.
+    if (c.login === String(channelLogin || '').replace('#', '').toLowerCase()) return null;
+    return pickNoRepeat(`cuhzn:${c.login}`, c.pool, Math.min(3, c.pool.length));
+}
+
 // --- CUHZ Vibe Commands (All Tiers) ---
 const VIBE_MESSAGES = [
     'We on a different frequency cuhz 🌌',
@@ -2632,9 +2687,14 @@ async function handleMessage(channel, tags, message, self) {
             const joinTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
             const nowMs = now.getTime();
 
+            const cuhznLine = cuhznGreeting(tags['user-id'], channel);
+
             if (!welcomeState) {
-                // First Contact for this channel — full hype welcome.
-                if (joinTier === TIERS.BASIC) {
+                // A known cuhzn gets their OWN line on arrival, in any tier —
+                // recognition is the point, and it reads as generic otherwise.
+                if (cuhznLine) {
+                    sendMessage(channel, `${cuhznLine}`);
+                } else if (joinTier === TIERS.BASIC) {
                     sendMessage(channel, `Wassup cuhz, Welcome to the stream! @${tags.username}`);
                 } else {
                     const randomWelcome = WELCOME_QUOTES[Math.floor(Math.random() * WELCOME_QUOTES.length)];
@@ -2646,8 +2706,10 @@ async function handleMessage(channel, tags, message, self) {
                 // (prevents re-welcoming someone who just idled in the tab).
                 const lastSeenMs = user ? new Date(user.last_seen).getTime() : 0;
                 if (!user || (nowMs - lastSeenMs) >= WELCOME_BACK_COOLDOWN_MS) {
-                    const line = pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3);
-                    sendMessage(channel, `${line} @${tags.username}`);
+                    // Their own line here too: being recognised once and then
+                    // generically thereafter is worse than never being recognised.
+                    const line = cuhznLine || `${pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3)} @${tags.username}`;
+                    sendMessage(channel, line);
                     welcomeState.lastWelcomedAt = nowMs;
                 }
             }
