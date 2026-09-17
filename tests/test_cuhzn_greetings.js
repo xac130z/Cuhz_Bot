@@ -78,4 +78,55 @@ check('the whole bot still boots with the registry wired in', () => {
     assert.deepEqual(e.forbiddenAttempts, []);
 });
 
+// ---- the live receipt: pure formatter, exercised for real --------------------
+// bot.js has no module.exports, so the function is lifted out by source and run
+// with the same formatMinutes the bot uses — the numbers must match !watchtime.
+const { formatMinutes } = require('../src/duration');
+const fmtSrc = src.slice(src.indexOf('function formatCuhznReceipt'), src.indexOf('/** Live lookup.'));
+const formatCuhznReceipt = new Function('formatMinutes', `${fmtSrc}; return formatCuhznReceipt;`)(formatMinutes);
+const DAY = 24 * 60 * 60 * 1000;
+const NOW = Date.UTC(2026, 8, 17, 12, 0, 0);
+const profile = (o = {}) => ({ total_messages: 0, total_watch_minutes: 0, first_seen: null, ...o });
+
+check('receipt prints the same figures as !points / !watchtime and a real tenure', () => {
+    const r = formatCuhznReceipt('snowy_wolfies_ttv',
+        profile({ total_messages: 1269, total_watch_minutes: 860, first_seen: '2026-08-10T21:06:56Z' }), 780, NOW);
+    assert.equal(r, '\u{1F9FE} @snowy_wolfies_ttv \u2014 1,269 messages \u00b7 14h 20m watched \u00b7 780 CUHZ Points \u00b7 here since Aug 10');
+});
+check('fewer than two real facts -> null (no padding, no "0 messages")', () => {
+    assert.equal(formatCuhznReceipt('x', profile(), 0, NOW), null);
+    assert.equal(formatCuhznReceipt('x', profile({ total_messages: 5 }), 0, NOW), null);
+    assert.equal(formatCuhznReceipt('x', null, 0, NOW), null);
+    assert.equal(formatCuhznReceipt('x', null, 400, NOW), null, 'points alone is one fact');
+});
+check('a profile created today is not "here since today"', () => {
+    const r = formatCuhznReceipt('x', profile({ total_messages: 3, total_watch_minutes: 12, first_seen: new Date(NOW - 2 * 60 * 60 * 1000).toISOString() }), 0, NOW);
+    assert.equal(r, '\u{1F9FE} @x \u2014 3 messages \u00b7 12m watched');
+    const r2 = formatCuhznReceipt('x', profile({ total_messages: 3, total_watch_minutes: 12, first_seen: new Date(NOW - 2 * DAY).toISOString() }), 0, NOW);
+    assert.match(r2, /here since Sep 15$/);
+});
+check('garbage stats are treated as absent, never printed', () => {
+    const r = formatCuhznReceipt('x', profile({ total_messages: 'lots', total_watch_minutes: NaN, first_seen: 'not a date' }), 1.5, NOW);
+    assert.equal(r, null);
+    const r2 = formatCuhznReceipt('x', profile({ total_messages: 40, total_watch_minutes: -5 }), '900', NOW);
+    assert.equal(r2, null, 'a negative and a string are not facts');
+});
+check('the receipt never states a points balance that was not read live', () => {
+    // No historical number from the reconciliation evidence may be baked in.
+    const block = src.slice(src.indexOf('const CUHZNS = {'), src.indexOf('\n};', src.indexOf('const CUHZNS = {')));
+    // Decode the source escapes first: the em-dash is written as \\u2014 in the
+    // file, and its digits are not a number the viewer ever sees.
+    const receipts = [...block.matchAll(/receipt:\s*'([^']*)'/g)].map(m => JSON.parse(`"${m[1].replace(/"/g, '\\"')}"`));
+    assert.equal(receipts.length, 8, 'eight character lines (ohthatztayy is null on purpose)');
+    for (const r of receipts) assert.doesNotMatch(r, /\d/, `character line must carry no number: "${r}"`);
+});
+check('a personal greeting suppresses the generic auto-shoutout instead of stacking on it', () => {
+    assert.match(src, /!cuhznGreeted && joinChannelTier !== TIERS\.BASIC/);
+    assert.match(src, /cuhznGreeted = true;/);
+});
+check('the receipt lookup is fail-safe: a stats error cannot suppress the greeting', () => {
+    const fn = src.slice(src.indexOf('async function cuhznReceipt'), src.indexOf('async function cuhznReceipt') + 500);
+    assert.match(fn, /try \{/); assert.match(fn, /catch \(err\)/); assert.match(fn, /return null;/);
+});
+
 console.log(`\n${passed} cuhzn-greeting checks passed.`);

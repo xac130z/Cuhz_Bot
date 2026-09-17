@@ -1556,18 +1556,49 @@ const MAHNI_QUOTES = [
 // content; it does not give away the paid product. Keep it that way — if a
 // viewer wants THEIR OWN words on arrival, that stays the 5,000-point reward.
 // ============================================================================
+// `receipt` is ONE sentence of character, grounded in what the production logs
+// actually show this person doing (Railway runtime logs 2026-09-02..09 and the
+// 2026-09-09 reconciliation evidence; per-line citations in
+// verification/CUHZN_RECOGNITION_EVIDENCE_2026-09-17.md). It describes durable
+// BEHAVIOUR, never a number — numbers go stale in a week and are printed live by
+// cuhznReceipt() instead. Where the evidence is too thin to characterise someone
+// honestly, receipt is null and the live stats speak alone.
 const CUHZNS = {
-    '952381011':  { login: 'four_a_reason',     pool: FOUR_QUOTES },
-    '1354688041': { login: 'rico2ez',           pool: RICO_QUOTES },
-    '732620163':  { login: 'thatgirlmahni_',    pool: MAHNI_QUOTES },
-    '824566475':  { login: 'stormygirlnz89',    pool: QWEEN_QUOTES },
-    '1388723253': { login: 'snowy_wolfies_ttv', pool: SNOWY_QUOTES },
-    '557152408':  { login: 'grouch392',         pool: GROUCH_QUOTES },
-    '128186931':  { login: 'westsiderelly',     pool: WESTSIDE_QUOTES },
-    // These two have a single house line rather than a pool; wrapped so the
-    // lookup has one shape. Promote to a pool whenever more lines get written.
-    '199116767':  { login: 'razredg1',    pool: ['Raz Red G in the building! Keeping it 100 since day one \u{1F534}'] },
-    '731191493':  { login: 'ohthatztayy', pool: ['It\u2019s giving 2K legend energy \u2014 ohthatztayy locked in! \u{1F3AE}\u{1F3C0}'] },
+    // 607 command rows; !grouch x20 !pnx x16 !famous x12 !mahni x12 !ac x11 — he
+    // runs more shoutouts for OTHER people than anyone in the fam. Six channels.
+    '952381011':  { login: 'four_a_reason',     pool: FOUR_QUOTES,
+                    receipt: 'The one who puts everybody else on \u2014 nobody runs more shoutouts in this fam.' },
+    // 127 retained messages spread over five channels.
+    '1354688041': { login: 'rico2ez',           pool: RICO_QUOTES,
+                    receipt: 'In the building across the whole planet.' },
+    // Runs the bot on #thatgirlmahni_ (CHANNEL_TIERS) and still chats in
+    // #four_a_reason and #grouch392.
+    '732620163':  { login: 'thatgirlmahni_',    pool: MAHNI_QUOTES,
+                    receipt: 'Runs CUHZ Bot on her own stream and still pulls up to everybody else\u2019s.' },
+    // Every retained message is in #four_a_reason; 17 log mentions as
+    // qweenstormygirlnz89 + 130 as stormygirlnz89 — the rename that broke the
+    // old login-keyed recognition, and exactly why this registry keys on id.
+    '824566475':  { login: 'stormygirlnz89',    pool: QWEEN_QUOTES,
+                    receipt: 'Reason\u2019s-chat regular \u2014 same energy under every name.' },
+    // !W x7 !quote x4 !AC x3; 1,269 messages across five channels; the highest
+    // earned balance in the reconciliation (the number is printed live, not here).
+    '1388723253': { login: 'snowy_wolfies_ttv', pool: SNOWY_QUOTES,
+                    receipt: 'Calls the Ws, pulls up to everybody\u2019s chat, and it shows.' },
+    // 1,230 messages across six channels; 5,053 log mentions — more than anyone
+    // but Reason. If the bot is in a room, Grouch has been in it.
+    '557152408':  { login: 'grouch392',         pool: GROUCH_QUOTES,
+                    receipt: 'In every room on the planet \u2014 if the bot is there, Grouch is there.' },
+    // Four channels; the most recent ledger activity in the 2026-09-12 snapshots
+    // (ten consecutive rows) — earning and spending, not lurking.
+    '128186931':  { login: 'westsiderelly',     pool: WESTSIDE_QUOTES,
+                    receipt: 'Pulls up across the planet and always cashing in.' },
+    // 166 messages but present in FIVE channels — low volume, high presence.
+    '199116767':  { login: 'razredg1',    pool: ['Raz Red G in the building! Keeping it 100 since day one \u{1F534}'],
+                    receipt: 'Doesn\u2019t say much \u2014 never misses.' },
+    // 17 retained messages in two channels: not enough to characterise honestly.
+    // The live receipt (messages / watch time / points) says what there is to say.
+    '731191493':  { login: 'ohthatztayy', pool: ['It\u2019s giving 2K legend energy \u2014 ohthatztayy locked in! \u{1F3AE}\u{1F3C0}'],
+                    receipt: null },
     // Phoenix is deliberately absent: phoenixnyc (757210754) vs phoenixpnyc
     // (823707557) is still unconfirmed, and greeting the wrong account with
     // someone's personal line is worse than a generic welcome. Same rule as
@@ -1580,7 +1611,49 @@ function cuhznGreeting(userId, channelLogin) {
     if (!c) return null;
     // Don't greet someone in their own house — they're the broadcaster there.
     if (c.login === String(channelLogin || '').replace('#', '').toLowerCase()) return null;
-    return pickNoRepeat(`cuhzn:${c.login}`, c.pool, Math.min(3, c.pool.length));
+    const line = pickNoRepeat(`cuhzn:${c.login}`, c.pool, Math.min(3, c.pool.length));
+    return c.receipt ? `${line} ${c.receipt}` : line;
+}
+
+/**
+ * Pure. Live stats -> one honest receipt line, or null when there is not enough
+ * to say. Every number is the same one the person would get from !points,
+ * !watchtime and their profile — same helpers, same rows — so the greeting can
+ * never contradict the commands. Pure so it is testable without a database.
+ */
+function formatCuhznReceipt(login, profile, balance, nowMs = Date.now()) {
+    const parts = [];
+    const msgs = profile && Number.isSafeInteger(profile.total_messages) ? profile.total_messages : 0;
+    const mins = profile && Number.isSafeInteger(profile.total_watch_minutes) ? profile.total_watch_minutes : 0;
+    const pts  = Number.isSafeInteger(balance) ? balance : 0;
+    if (msgs > 0) parts.push(`${msgs.toLocaleString('en-US')} messages`);
+    if (mins > 0) parts.push(`${formatMinutes(mins)} watched`);
+    if (pts > 0)  parts.push(`${pts.toLocaleString('en-US')} CUHZ Points`);
+    if (profile && profile.first_seen) {
+        const t = new Date(profile.first_seen).getTime();
+        // Only cite tenure that is real. A profile created in the last day is
+        // "new", and "here since today" would read as a bug.
+        if (Number.isFinite(t) && nowMs - t >= 24 * 60 * 60 * 1000) {
+            parts.push(`here since ${new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`);
+        }
+    }
+    // Two real facts minimum, or say nothing: a one-item receipt reads as padding.
+    if (parts.length < 2) return null;
+    return `\u{1F9FE} @${login} \u2014 ${parts.join(' \u00b7 ')}`;
+}
+
+/** Live lookup. A stats failure must never suppress the greeting itself. */
+async function cuhznReceipt(login) {
+    try {
+        const [profile, balance] = await Promise.all([
+            userMemory.getProfile(login),
+            pointsService.getBalance(login),
+        ]);
+        return formatCuhznReceipt(login, profile, balance);
+    } catch (err) {
+        logger.error('cuhzn receipt failed (greeting still sent):', err.message);
+        return null;
+    }
 }
 
 // --- CUHZ Vibe Commands (All Tiers) ---
@@ -2681,6 +2754,7 @@ async function handleMessage(channel, tags, message, self) {
         // A direct request gets its answer, not a welcome/shoutout AND an answer.
         const isDirectedRequest = isCommand || contextHandler.isQuestionOrRequest(message);
         const canWelcome = !isKnownBot && !isDirectedRequest && (!persona.settings || persona.settings.auto_welcome);
+        let cuhznGreeted = false;   // a personal greeting replaces the generic auto-shoutout, never stacks on it
         if (canWelcome) {
             const welcomeKey = `${channel}:${usernameL}`;
             const welcomeState = _channelWelcomes.get(welcomeKey);
@@ -2692,8 +2766,12 @@ async function handleMessage(channel, tags, message, self) {
             if (!welcomeState) {
                 // A known cuhzn gets their OWN line on arrival, in any tier —
                 // recognition is the point, and it reads as generic otherwise.
+                // Then the receipt: what THEY have actually put in, live.
                 if (cuhznLine) {
                     sendMessage(channel, `${cuhznLine}`);
+                    const receipt = await cuhznReceipt(usernameL);
+                    if (receipt) sendMessage(channel, receipt);
+                    cuhznGreeted = true;
                 } else if (joinTier === TIERS.BASIC) {
                     sendMessage(channel, `Wassup cuhz, Welcome to the stream! @${tags.username}`);
                 } else {
@@ -2710,6 +2788,11 @@ async function handleMessage(channel, tags, message, self) {
                     // generically thereafter is worse than never being recognised.
                     const line = cuhznLine || `${pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3)} @${tags.username}`;
                     sendMessage(channel, line);
+                    if (cuhznLine) {
+                        const receipt = await cuhznReceipt(usernameL);
+                        if (receipt) sendMessage(channel, receipt);
+                        cuhznGreeted = true;
+                    }
                     welcomeState.lastWelcomedAt = nowMs;
                 }
             }
@@ -2717,7 +2800,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // Auto-shoutout for fellow streamers (pro/premium only)
         const joinChannelTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
-        if (!isKnownBot && !isDirectedRequest && joinChannelTier !== TIERS.BASIC) {
+        if (!isKnownBot && !isDirectedRequest && !cuhznGreeted && joinChannelTier !== TIERS.BASIC) {
             await handleAutoShoutout(channel, usernameL, tags.username);
         }
 
