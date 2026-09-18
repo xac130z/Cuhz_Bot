@@ -196,7 +196,7 @@ check('the lounge comes home to the house look when chat goes quiet', () => {
     assert.equal(l.readState(ROOM).palette, 'peach');
     advance(91000);
     assert.equal(l.tick(ROOM).reason, 'idle');
-    assert.equal(l.readState(ROOM).palette, 'black');
+    assert.equal(l.readState(ROOM).palette, 'transparent');   // idle returns to the house look
 });
 
 check('an operator can set the house look and the lounge returns to it', () => {
@@ -259,7 +259,7 @@ check('rooms are isolated — one channel cannot drive another', () => {
     l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
     l.applyIntent(ROOM, op(), '!lounge color peach');
     assert.equal(l.readState(ROOM).palette, 'peach');
-    assert.equal(l.readState(other).palette, 'black');
+    assert.equal(l.readState(other).palette, 'transparent');   // untouched room = house default
     assert.equal(l.readState(other).locked, true);
 });
 
@@ -392,6 +392,19 @@ check('operators-only: the operator has the full board', () => {
 check('an unknown access value fails closed to operators-only', () => {
     assert.equal(createLoungeControl({ now: clock, access: 'everyone' }).stats().access, 'operators');
     assert.equal(createLoungeControl({ now: clock, access: 'subscribers' }).stats().access, 'subscribers');
+});
+
+check('the house palette is transparent — an opaque default paints a square over the stream', () => {
+    const { HOUSE } = require('../src/lounge_control');
+    assert.equal(HOUSE.palette, 'transparent');
+    const l = createLoungeControl({ now: clock, operatorIds: [OWNER], cardCount: 5 });
+    assert.equal(l.readState(ROOM).palette, 'transparent', 'boot state');
+    const me = { userId: OWNER, login: 'planetcuhz' };
+    l.applyIntent(ROOM, me, '!lounge unlock'); turn();
+    l.applyIntent(ROOM, me, '!lounge color black'); turn();
+    assert.equal(l.readState(ROOM).palette, 'black', 'chat can still choose opaque deliberately');
+    l.applyIntent(ROOM, me, '!lounge reset'); turn();
+    assert.equal(l.readState(ROOM).palette, 'transparent', 'reset returns to a usable overlay');
 });
 
 console.log(`\n${passed} lounge control checks passed (pure module; no network, database or bot boot).`);
