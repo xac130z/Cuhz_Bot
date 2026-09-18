@@ -76,6 +76,77 @@ const LOUNGE_ACCESS = process.env.LOUNGE_ACCESS === 'subscribers' ? 'subscribers
 const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT, access: LOUNGE_ACCESS });
 const loungeEnabled = () => process.env.LOUNGE_ENABLED !== 'false';   // kill switch; default on
 
+// ============================================================================
+// FIRST-TIMER ALERTS — a Discord ping the moment a brand-new human talks.
+//
+// "Brand new" means NEVER SEEN BEFORE ANYWHERE, read from the database, not the
+// in-memory welcome map. That distinction is the whole design: `_channelWelcomes`
+// is wiped on every restart, so keying off it would re-alert the entire regular
+// chat after each deploy. `user_profiles.total_messages` starts at 1 on the
+// first INSERT and only ever climbs, so the row itself is the dedup and it
+// survives redeploys for free.
+//
+// Inert unless DISCORD_ALERT_WEBHOOK_URL is set — no webhook, no alerts, no code
+// path taken. Failures are swallowed: an alert must never break chat handling.
+// ============================================================================
+const DISCORD_ALERT_WEBHOOK = (process.env.DISCORD_ALERT_WEBHOOK_URL || '').trim();
+const FIRST_TIMER_WINDOW_MS = 10 * 60 * 1000;
+const FIRST_TIMER_MAX_PER_WINDOW = 8;   // a raid shouldn't become 40 phone buzzes
+const _firstTimerSeen = new Set();      // race guard within a single boot
+let _firstTimerHits = [];               // timestamps inside the window
+let _firstTimerSuppressed = 0;
+let _alertFailures = 0;
+let _alertPausedUntil = 0;
+
+/** True only for a genuinely new human. Safe under the recordMessage race:
+ *  a missing profile and a profile at 1 message both mean "first ever". */
+async function isFirstTimeEver(login) {
+    if (_firstTimerSeen.has(login)) return false;
+    try {
+        const profile = await userMemory.getProfile(login);
+        return !profile || !Number.isFinite(profile.total_messages) || profile.total_messages <= 1;
+    } catch (err) {
+        return false;   // never guess "new" on a database error — that spams
+    }
+}
+
+async function alertFirstTimer(channel, login, displayName, message) {
+    if (!DISCORD_ALERT_WEBHOOK || Date.now() < _alertPausedUntil) return;
+    const t = Date.now();
+    _firstTimerHits = _firstTimerHits.filter(ms => t - ms < FIRST_TIMER_WINDOW_MS);
+    if (_firstTimerHits.length >= FIRST_TIMER_MAX_PER_WINDOW) {
+        _firstTimerSuppressed++;
+        if (_firstTimerSuppressed === 1) {
+            logger.info(`🔔 first-timer alerts throttled (>${FIRST_TIMER_MAX_PER_WINDOW}/10min) — likely a raid`);
+        }
+        return;
+    }
+    _firstTimerHits.push(t);
+    const room = String(channel).replace('#', '');
+    // Discord renders content as markdown, so anything a stranger typed is
+    // fenced as inline code and length-capped. Their first message is the most
+    // useful part of the alert and the least trustworthy string in it.
+    const safe = String(message || '').replace(/`/g, "'").slice(0, 180);
+    const extra = _firstTimerSuppressed ? ` _(+${_firstTimerSuppressed} more suppressed)_` : '';
+    _firstTimerSuppressed = 0;
+    try {
+        await axios.post(DISCORD_ALERT_WEBHOOK, {
+            username: 'CUHZ Bot — new face',
+            content: `👋 **First time in chat:** \`${login}\` in **#${room}**\n> \`${safe}\`\n<https://twitch.tv/${room}>${extra}`,
+            allowed_mentions: { parse: [] },   // a username must never ping @everyone
+        }, { timeout: 5000 });
+        _alertFailures = 0;
+        logger.info(`🔔 first-timer alert sent for ${login} in ${room}`);
+    } catch (err) {
+        _alertFailures++;
+        if (_alertFailures >= 5) {
+            _alertPausedUntil = Date.now() + 30 * 60 * 1000;
+            _alertFailures = 0;
+            logger.error('🔔 first-timer alerts paused 30m after 5 consecutive failures');
+        }
+    }
+}
+
 const _loungeReplies = new Map();   // channel -> [sentAt] within the last minute
 const _loungeLogins  = new Map();   // login -> user-id, learned from tags this session (for !lab mute <login>)
 const _loungeState   = new Map();   // roomId -> { seq, bootId, json } — serialized once per change, not per poll
@@ -2794,6 +2865,13 @@ async function handleMessage(channel, tags, message, self) {
                     sendMessage(channel, `${randomWelcome} @${tags.username} 🌌`);
                 }
                 _channelWelcomes.set(welcomeKey, { firstContactAt: nowMs, lastWelcomedAt: nowMs });
+                // Brand-new human? Ping Discord. Checked here rather than per
+                // message because this branch already only runs on first contact,
+                // so it costs one query per new arrival, not one per line of chat.
+                if (DISCORD_ALERT_WEBHOOK && await isFirstTimeEver(usernameL)) {
+                    _firstTimerSeen.add(usernameL);
+                    alertFirstTimer(channel, usernameL, tags.username, message);
+                }
             } else if (nowMs - welcomeState.lastWelcomedAt >= WELCOME_BACK_COOLDOWN_MS) {
                 // Only fire welcome-back if the user ALSO hasn't chatted in the last 4h
                 // (prevents re-welcoming someone who just idled in the tab).
