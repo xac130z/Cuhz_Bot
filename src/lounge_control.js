@@ -91,8 +91,13 @@ const LIMITS = Object.freeze({
 // null on a fine control means "whatever the vibe preset says". An explicit value
 // overrides the preset and KEEPS overriding it across later vibe changes, so
 // "I want 8 layers" survives "now make it hype". !lounge reset clears the lot.
+// palette 'transparent' (lab index 2) is the ONLY house default that works as an
+// OBS overlay. 'black' is an OPAQUE #000000 fill: on a browser source it paints a
+// solid square over whatever is behind it, measured at 100% canvas coverage against
+// production. The lab's own stream mode already defaults to transparent for the same
+// reason (lab.js INIT_BG). Chat can still pick black deliberately; it just isn't home.
 const HOUSE = Object.freeze({
-    vibe: 'chill', palette: 'black', card: 1,
+    vibe: 'chill', palette: 'transparent', card: 1,
     zoom: ZOOM_HOME, glow: false, shadow: false, frozen: false,
     depth: null, thickness: null, rotation: null, position: null, speed: null, tilt: null,
 });

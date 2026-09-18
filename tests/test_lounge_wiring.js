@@ -130,7 +130,7 @@ check('unknown, hash-prefixed, empty and hostile channels all get the SAME house
         assert.deepEqual(r.json, house, JSON.stringify(q));
     }
     assert.equal(house.seq, 0); assert.equal(house.locked, true); assert.equal(house.setByLogin, null);
-    assert.equal(house.vibe, 'chill'); assert.equal(house.palette, 'black');
+    assert.equal(house.vibe, 'chill'); assert.equal(house.palette, 'transparent');
 });
 check('the enabled payload and the house payload share a shape (a client cannot tell them apart structurally)', () => {
     const a = Object.keys(call({ channel: 'cuhz_bot' }).json).sort();
