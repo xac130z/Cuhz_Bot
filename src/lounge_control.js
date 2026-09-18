@@ -201,8 +201,18 @@ const INTENTS = table([
  * State lives in memory, keyed by numeric room id. Losing it on restart is the
  * safe default for VISUALS — but a lock must survive, so restart re-locks.
  */
-function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, limits = {} } = {}) {
+// access:
+//   'operators'   (DEFAULT) only the operator ids may change anything. Everyone
+//                 else -- subscribers included -- gets a polite refusal. Read-only
+//                 intents (!lounge, !lounge colors, !lounge whoami) stay open to all,
+//                 and moderators keep lock/unlock because that is a brake, not a
+//                 paintbrush. Owner decision 2026-09-18: "only Planet Cuhz and
+//                 Phoenix, everyone else blocked".
+//   'subscribers' the original wider ladder (subs steer the safe subset).
+// Fail closed: an unknown value is treated as 'operators'.
+function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, limits = {}, access = 'operators' } = {}) {
     if (typeof now !== 'function') throw new TypeError('now must be a function');
+    const operatorsOnly = access !== 'subscribers';
     const L = Object.freeze({ ...LIMITS, ...limits });
     const operators = new Set(
         (Array.isArray(operatorIds) ? operatorIds : [])
@@ -350,6 +360,12 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
                 quiet: !throttleReply(r, actor.userId, t) };
         }
 
+        // Operators-only mode: nobody but the operator list writes. Checked before
+        // the subscription gate so a sub gets the honest reason, not "subscribe".
+        if (operatorsOnly && !isOperator) {
+            return { status: 'rejected', reason: 'operators_only',
+                quiet: !throttleReply(r, actor.userId, t) };
+        }
         // Subscription gate. Read live from tags every time — a lapsed sub loses
         // control on their next message with no cleanup job.
         if (!isOperator && role !== 'subscriber') {
@@ -499,7 +515,7 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
     return Object.freeze({
         applyIntent, readState, tick, mute, setHouse, auditOf, setBadge,
         roleOf, parseCommand,
-        stats: () => ({ rooms: rooms.size, operators: operators.size, cardCount: cards }),
+        stats: () => ({ rooms: rooms.size, operators: operators.size, cardCount: cards, access: operatorsOnly ? 'operators' : 'subscribers' }),
     });
 }
 

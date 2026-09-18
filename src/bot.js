@@ -54,7 +54,9 @@ const { parseLab: parseLabCommand, renderMenu: renderLabMenu } = require('./loun
 // numeric id out of the bot's reply, then set on Railway:
 //     LOUNGE_OPERATOR_EXTRA_IDS=<her id>
 // (comma-separated for several). Non-numeric entries are dropped silently.
-const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['952381011', '1293717308']);
+// Owner decision 2026-09-18: ONLY planetcuhz and Phoenix. four_a_reason removed
+// from the base (he can be re-added through LOUNGE_OPERATOR_EXTRA_IDS in seconds).
+const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['1293717308']);
 const LOUNGE_OPERATOR_IDS = Object.freeze([
     ...LOUNGE_OPERATOR_BASE_IDS,
     ...String(process.env.LOUNGE_OPERATOR_EXTRA_IDS || '')
@@ -68,7 +70,10 @@ const LOUNGE_CARD_COUNT = 5;                 // lab.js loads five artworks; the 
 const LOUNGE_REPLY_BUDGET = 4;               // lounge lines per channel per minute, then silent drops
 const LOUNGE_INTENT_RE = /^!(lounge|lab)(\s|$)|^!(vibe|color|zoom|card|glow)\s/;
 
-const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT });
+// Who may steer (declared BEFORE the constructor that reads it — TDZ). Default 'operators' = only the operator list. Set
+// LOUNGE_ACCESS=subscribers on Railway to open the safe subset to subs later.
+const LOUNGE_ACCESS = process.env.LOUNGE_ACCESS === 'subscribers' ? 'subscribers' : 'operators';
+const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT, access: LOUNGE_ACCESS });
 const loungeEnabled = () => process.env.LOUNGE_ENABLED !== 'false';   // kill switch; default on
 
 const _loungeReplies = new Map();   // channel -> [sentAt] within the last minute
@@ -123,6 +128,7 @@ function loungeHouseJson() {
 function loungeReason(r, actor) {
     const at = actor.login ? `@${actor.login} ` : '';
     switch (r.reason) {
+        case 'operators_only':      return `${at}the lounge is operator-controlled right now — !lounge shows what's on.`;
         case 'subscribers_only':    return `${at}the lounge remote is a sub perk 💎 — !lounge shows what's on.`;
         case 'locked':              return `${at}the lounge is locked right now.`;
         case 'your_turn_soon':      return `${at}one change per 10s — you're up in ${Math.ceil((r.retryInMs || 0) / 1000)}s.`;
@@ -164,7 +170,7 @@ function handleLoungeIntent(channel, roomId, actor, message) {
     switch (r.status) {
         case 'status':
             loungeSay(channel, `🛋️ Lounge: ${describeLoungeState(r.state)}`
-                + (r.role === 'viewer' ? ' — subs steer it: !lounge vibe hype' : ''));
+                + (r.role === 'viewer' && LOUNGE_ACCESS === 'subscribers' ? ' — subs steer it: !lounge vibe hype' : ''));
             return true;
         case 'colors':
             loungeSay(channel, `🎨 Colors: ${r.palettes.join(' ')} — !lounge color <name>`);
@@ -220,7 +226,7 @@ function handleLabMenu(channel, roomId, actor, lab) {
             loungeSay(channel, '🧪 House look saved — !lounge reset brings it back.');
             return true;
         case 'ops':
-            loungeSay(channel, `🧪 Operators: ${LOUNGE_OPERATOR_IDS.join(' ')}`
+            loungeSay(channel, `🧪 Access: ${LOUNGE_ACCESS} · Operators: ${LOUNGE_OPERATOR_IDS.join(' ')}`
                 + (LOUNGE_OPERATOR_IDS.length > LOUNGE_OPERATOR_BASE_IDS.length ? ' (incl. LOUNGE_OPERATOR_EXTRA_IDS)' : ''));
             return true;
         case 'house_show':
@@ -3181,7 +3187,9 @@ async function handleMessage(channel, tags, message, self) {
             pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null,
             // Advertised only where it is live (honesty law: no doors that don't open).
             lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
-                       ? '🛋️ Lounge (subs): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
+                       ? (LOUNGE_ACCESS === 'subscribers'
+                           ? '🛋️ Lounge (subs): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
+                           : '🛋️ Lounge: !lounge shows what is on screen · !lounge colors · !lounge whoami — steering is operator-only right now')
                        : null
         };
 

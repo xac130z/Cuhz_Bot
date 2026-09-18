@@ -16,7 +16,9 @@ const PHOENIX = '900000001', FOUR = '952381011', OWNER = '1293717308';
 const ROOM = '175727753';
 let T = 1000000;
 const clock = () => T;
-const make = (o = {}) => createLoungeControl({ now: clock, operatorIds: [PHOENIX, FOUR, OWNER], cardCount: 5, ...o });
+// Most of this file exercises the WIDER ladder (subs steer), so it opts in with
+// access:'subscribers'. The default is operators-only; see the block at the end.
+const make = (o = {}) => createLoungeControl({ now: clock, operatorIds: [PHOENIX, FOUR, OWNER], cardCount: 5, access: 'subscribers', ...o });
 const sub = (id, login = 'subby') => ({ userId: id, login, subscriber: true });
 const viewer = (id, login = 'rando') => ({ userId: id, login });
 const op = () => ({ userId: PHOENIX, login: 'operator_a' });
@@ -352,6 +354,44 @@ check('whoami reports only the asker\u2019s own id, to everyone, and changes no 
     assert.equal(r.role, 'viewer');
     assert.equal(l.readState(ROOM).seq, before, 'whoami must not mutate state');
     assert.equal(l.applyIntent(ROOM, op(), '!lounge whoami').role, 'operator');
+});
+
+// ---- operators-only (the DEFAULT) -----------------------------------------
+check('DEFAULT access is operators-only: a subscriber cannot change anything', () => {
+    const l = createLoungeControl({ now: clock, operatorIds: [OWNER], cardCount: 5 });
+    assert.equal(l.stats().access, 'operators');
+    l.applyIntent(ROOM, { userId: OWNER, login: 'planetcuhz' }, '!lounge unlock'); turn();
+    for (const cmd of ['!lounge vibe hype', '!lounge color mint', '!lounge depth 8', '!lounge zoom in', '!lounge reset']) {
+        const r = l.applyIntent(ROOM, sub('31', 'paidsub'), cmd);
+        assert.equal(r.status, 'rejected', cmd); assert.equal(r.reason, 'operators_only', cmd);
+    }
+    assert.equal(l.readState(ROOM).vibe, 'chill', 'nothing moved');
+});
+check('operators-only: a random viewer and a moderator are blocked from steering too', () => {
+    const l = createLoungeControl({ now: clock, operatorIds: [OWNER], cardCount: 5 });
+    l.applyIntent(ROOM, { userId: OWNER, login: 'planetcuhz' }, '!lounge unlock'); turn();
+    assert.equal(l.applyIntent(ROOM, viewer('32'), '!lounge vibe hype').reason, 'operators_only');
+    assert.equal(l.applyIntent(ROOM, mod('33'), '!lounge vibe hype').reason, 'operators_only');
+});
+check('operators-only: read-only intents stay open, and a mod can still lock (a brake, not a paintbrush)', () => {
+    const l = createLoungeControl({ now: clock, operatorIds: [OWNER], cardCount: 5 });
+    assert.equal(l.applyIntent(ROOM, viewer('34'), '!lounge').status, 'status');
+    assert.equal(l.applyIntent(ROOM, viewer('34'), '!lounge colors').status, 'colors');
+    assert.equal(l.applyIntent(ROOM, viewer('34'), '!lounge whoami').status, 'whoami');
+    assert.equal(l.applyIntent(ROOM, mod('35'), '!lounge unlock').status, 'applied');
+    assert.equal(l.applyIntent(ROOM, mod('35'), '!lounge lock').status, 'applied');
+});
+check('operators-only: the operator has the full board', () => {
+    const l = createLoungeControl({ now: clock, operatorIds: [OWNER], cardCount: 5 });
+    const me = { userId: OWNER, login: 'planetcuhz' };
+    l.applyIntent(ROOM, me, '!lounge unlock');
+    for (const cmd of ['!lounge vibe turbo', '!lounge color transparent', '!lounge depth 8', '!lounge speed 100', '!lounge freeze on']) {
+        assert.equal(l.applyIntent(ROOM, me, cmd).status, 'applied', cmd); turn();
+    }
+});
+check('an unknown access value fails closed to operators-only', () => {
+    assert.equal(createLoungeControl({ now: clock, access: 'everyone' }).stats().access, 'operators');
+    assert.equal(createLoungeControl({ now: clock, access: 'subscribers' }).stats().access, 'subscribers');
 });
 
 console.log(`\n${passed} lounge control checks passed (pure module; no network, database or bot boot).`);

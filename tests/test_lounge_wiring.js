@@ -31,6 +31,15 @@ check('the BASE operator list is numeric literals only — never logins, never e
     for (const id of ids) assert.match(id, /^\d{1,12}$/, `operator "${id}" must be a numeric Twitch id`);
     assert.doesNotMatch(m[0], /process\.env/, 'the base list must not read env — the boot harness freezes it to {}');
 });
+check('access defaults to operators-only and only LOUNGE_ACCESS=subscribers widens it', () => {
+    assert.match(src, /const LOUNGE_ACCESS = process\.env\.LOUNGE_ACCESS === 'subscribers' \? 'subscribers' : 'operators';/);
+    assert.match(src, /createLoungeControl\(\{[^}]*access: LOUNGE_ACCESS/);
+});
+check('the base operator list is planetcuhz only (owner decision 2026-09-18)', () => {
+    const m = src.match(/const LOUNGE_OPERATOR_BASE_IDS = Object\.freeze\(\[([^\]]*)\]\)/);
+    const ids = m[1].split(',').map(x => x.trim().replace(/['"]/g, '')).filter(Boolean);
+    assert.deepEqual(ids, ['1293717308']);
+});
 check('the env operator list is ADDITIVE and numeric-filtered (env can add, never replace)', () => {
     const block = src.slice(src.indexOf('const LOUNGE_OPERATOR_IDS = Object.freeze(['),
                             src.indexOf('const LOUNGE_ROOMS'));
