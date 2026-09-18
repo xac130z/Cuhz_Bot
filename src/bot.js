@@ -19,6 +19,238 @@ const moderation = require('./moderation_service');
 const fs = require('fs');
 const path = require('path');
 const streakService = require('./streak_service');
+
+// ============================================================================
+// THE CUHZ LAB — chat-controlled lounge (Lane K). Subscribers steer the lounge
+// on stream through CUHZ Bot; operators get a menu. The state machine is
+// src/lounge_control.js and the menu is src/lounge_menu.js — both PURE modules
+// with zero requires, which is what makes "this never touches points" provable.
+// This block in bot.js only: reads tags, forwards text, prints replies, serves
+// a read-only JSON route. Nothing here imports the database or points service.
+//
+// Numeric IDs only, hardcoded on purpose: the isolated boot harness freezes
+// process.env to {}, so an env-read operator list would silently become
+// "nobody" under test. A Twitch user id is public, not a secret.
+//
+// Verified against Twitch's public GQL on 2026-09-17:
+//   four_a_reason 952381011 · planetcuhz 1293717308 · cuhz_bot room 175727753
+//
+// PHOENIX IS DELIBERATELY ABSENT until the owner confirms which account is hers.
+// Two accounts exist:  phoenixnyc = 757210754 (created 2021-12, default avatar)
+//                      phoenixpnyc = 823707557 (created 2022-09) — what earlier docs assumed.
+// A wrong guess hands the remote to a stranger or locks out the real person, and
+// an id gate that fails open is worse than one that fails closed. One line to add.
+// ============================================================================
+const { createLoungeControl, HOUSE: LOUNGE_HOUSE, PALETTES: LOUNGE_PALETTES } = require('./lounge_control');
+const { parseLab: parseLabCommand, renderMenu: renderLabMenu } = require('./lounge_menu');
+
+// Base list is hardcoded for the reason the K1 spec gives: the isolated boot
+// harness freezes process.env to {}, so an env-ONLY gate silently becomes
+// "nobody" in every test run. Env is therefore ADDITIVE, never the whole list —
+// tests stay deterministic on the base while production can add an operator
+// without a code change or a redeploy of code.
+//
+// To give Phoenix control: have her type `!lounge whoami` in chat, read her
+// numeric id out of the bot's reply, then set on Railway:
+//     LOUNGE_OPERATOR_EXTRA_IDS=<her id>
+// (comma-separated for several). Non-numeric entries are dropped silently.
+// Owner decision 2026-09-18: ONLY planetcuhz and Phoenix. four_a_reason removed
+// from the base (he can be re-added through LOUNGE_OPERATOR_EXTRA_IDS in seconds).
+const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['1293717308']);
+const LOUNGE_OPERATOR_IDS = Object.freeze([
+    ...LOUNGE_OPERATOR_BASE_IDS,
+    ...String(process.env.LOUNGE_OPERATOR_EXTRA_IDS || '')
+        .split(',').map(x => x.trim()).filter(x => /^\d{1,12}$/.test(x)),
+]);
+// login -> room-id for the channels where the lounge is on. Identity is the
+// room-id from tags; the login is only the public URL surface of the endpoint.
+const LOUNGE_ROOMS = Object.freeze({ cuhz_bot: '175727753' });
+const LOUNGE_ROOM_IDS = new Set(Object.values(LOUNGE_ROOMS));
+const LOUNGE_CARD_COUNT = 5;                 // lab.js loads five artworks; the 15 names are those five re-tilted
+const LOUNGE_REPLY_BUDGET = 4;               // lounge lines per channel per minute, then silent drops
+const LOUNGE_INTENT_RE = /^!(lounge|lab)(\s|$)|^!(vibe|color|zoom|card|glow)\s/;
+
+// Who may steer (declared BEFORE the constructor that reads it — TDZ). Default 'operators' = only the operator list. Set
+// LOUNGE_ACCESS=subscribers on Railway to open the safe subset to subs later.
+const LOUNGE_ACCESS = process.env.LOUNGE_ACCESS === 'subscribers' ? 'subscribers' : 'operators';
+const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT, access: LOUNGE_ACCESS });
+const loungeEnabled = () => process.env.LOUNGE_ENABLED !== 'false';   // kill switch; default on
+
+const _loungeReplies = new Map();   // channel -> [sentAt] within the last minute
+const _loungeLogins  = new Map();   // login -> user-id, learned from tags this session (for !lab mute <login>)
+const _loungeState   = new Map();   // roomId -> { seq, bootId, json } — serialized once per change, not per poll
+let _loungeHouseJson = null;
+
+function loungeActor(tags) {
+    const badges = (tags && tags.badges) || {};
+    return {
+        userId: tags && tags['user-id'],
+        login: tags && tags.username,
+        broadcaster: Object.hasOwn(badges, 'broadcaster'),
+        moderator: !!(tags && tags.mod) || Object.hasOwn(badges, 'moderator'),
+        // Read live from tags every time; founders are subscribers too.
+        subscriber: !!(tags && tags.subscriber) || Object.hasOwn(badges, 'subscriber') || Object.hasOwn(badges, 'founder'),
+    };
+}
+
+function loungeSay(channel, text) {
+    const t = Date.now();
+    const recent = (_loungeReplies.get(channel) || []).filter(ms => t - ms < 60000);
+    if (recent.length >= LOUNGE_REPLY_BUDGET) return false;
+    recent.push(t);
+    _loungeReplies.set(channel, recent);
+    sendMessage(channel, text);
+    return true;
+}
+
+function loungeStateChanged(roomId) { _loungeState.delete(String(roomId)); }
+
+function loungeStateJson(roomId) {
+    const s = loungeControl.readState(roomId);
+    let c = _loungeState.get(String(roomId));
+    if (!c || c.seq !== s.seq || c.bootId !== s.bootId) {
+        c = { seq: s.seq, bootId: s.bootId, json: JSON.stringify(s) };
+        _loungeState.set(String(roomId), c);
+    }
+    return c.json;
+}
+
+// Unknown, disabled and non-allowlisted channels all get THIS payload, so the
+// route cannot be used to enumerate which channels have the lounge on.
+function loungeHouseJson() {
+    if (!_loungeHouseJson) {
+        const s = loungeControl.readState(LOUNGE_ROOMS.cuhz_bot);
+        _loungeHouseJson = JSON.stringify({ ...s, seq: 0, updatedAtMs: 0, ...LOUNGE_HOUSE, locked: true, setByLogin: null });
+    }
+    return _loungeHouseJson;
+}
+
+function loungeReason(r, actor) {
+    const at = actor.login ? `@${actor.login} ` : '';
+    switch (r.reason) {
+        case 'operators_only':      return `${at}the lounge is operator-controlled right now — !lounge shows what's on.`;
+        case 'subscribers_only':    return `${at}the lounge remote is a sub perk 💎 — !lounge shows what's on.`;
+        case 'locked':              return `${at}the lounge is locked right now.`;
+        case 'your_turn_soon':      return `${at}one change per 10s — you're up in ${Math.ceil((r.retryInMs || 0) / 1000)}s.`;
+        case 'channel_floor':
+        case 'glow_floor':          return `${at}give it a second — the screen just changed.`;
+        case 'cooling':             return `${at}chat's been busy, the lounge is cooling for a minute.`;
+        case 'vibe_operator_only':  return `${at}turbo is operator-only. Try chill or hype.`;
+        case 'intent_operator_only': return `${at}${r.intent} is an operator control. Subs get: vibe color zoom card glow depth thickness.`;
+        case 'out_of_range':        return `${at}${r.intent} is out of range — !lounge art for the limits.`;
+        case 'bad_number':          return `${at}${r.intent} takes a number, or "auto" to follow the vibe.`;
+        case 'bad_switch':          return `${at}on or off.`;
+        case 'color_operator_only': return `${at}that color is operator-only — !lounge colors`;
+        case 'muted':               return `${at}you can't change the lounge right now.`;
+        case 'bad_vibe':            return `${at}vibes: chill, hype.`;
+        case 'bad_color':           return `${at}!lounge colors for the list.`;
+        case 'bad_zoom':            return `${at}zoom in, out or reset.`;
+        case 'bad_glow':            return `${at}glow on or off.`;
+        case 'bad_card':            return `${at}card 1–${LOUNGE_CARD_COUNT}.`;
+        default:                    return `${at}!lounge vibe|color|zoom|card|glow|reset`;
+    }
+}
+
+function describeLoungeState(s) {
+    // Only mention a fine control when it is actually overriding the vibe preset,
+    // so the common line stays short and a custom look is visibly custom.
+    const fine = ['depth', 'thickness', 'rotation', 'position', 'speed', 'tilt']
+        .filter(k => s[k] !== null && s[k] !== undefined).map(k => `${k} ${s[k]}`);
+    return `${s.vibe} · ${s.palette} · card ${s.card} · zoom ${s.zoom} · glow ${s.glow ? 'on' : 'off'}`
+        + (s.shadow ? ' · shadow' : '') + (s.frozen ? ' · FROZEN' : '')
+        + (fine.length ? ` · ${fine.join(' · ')}` : '')
+        + (s.locked ? ' · locked' : '') + (s.setByLogin ? ` · set by @${s.setByLogin}` : '');
+}
+
+// Returns true when the message was a lounge message (handled or deliberately
+// silenced), false when it is not ours and must fall through untouched.
+function handleLoungeIntent(channel, roomId, actor, message) {
+    const r = loungeControl.applyIntent(roomId, actor, message);
+    if (r === null) return false;
+    switch (r.status) {
+        case 'status':
+            loungeSay(channel, `🛋️ Lounge: ${describeLoungeState(r.state)}`
+                + (r.role === 'viewer' && LOUNGE_ACCESS === 'subscribers' ? ' — subs steer it: !lounge vibe hype' : ''));
+            return true;
+        case 'colors':
+            loungeSay(channel, `🎨 Colors: ${r.palettes.join(' ')} — !lounge color <name>`);
+            return true;
+        case 'whoami':
+            // Public data (it is in every message tag), and only ever the asker's own.
+            // This is how the owner confirms an operator's real id without guessing
+            // between similar logins.
+            loungeSay(channel, `🪪 @${actor.login} — Twitch id ${r.userId} · role ${r.role}`);
+            return true;
+        case 'applied':
+            loungeStateChanged(roomId);
+            // Visual changes are answered by the screen itself (the badge names the
+            // setter). Only the lock, which changes nothing visible, gets a line.
+            if (r.intent === 'lock')   loungeSay(channel, '🔒 Lounge locked — chat control paused.');
+            if (r.intent === 'unlock') loungeSay(channel, '🔓 Lounge unlocked — subs can steer again.');
+            return true;
+        case 'rejected':
+            if (!r.quiet) loungeSay(channel, loungeReason(r, actor));
+            return true;
+        default:                       // cosigned / silent / ignored — quiet by design
+            return true;
+    }
+}
+
+function handleLabMenu(channel, roomId, actor, lab) {
+    // Non-operators get silence and one audit line: a refusal confirms a gated
+    // surface exists and invites probing. !lab is never advertised.
+    if (loungeControl.roleOf(actor) !== 'operator') {
+        logger.info(`🧪 !lab ignored from ${actor.login || actor.userId} in ${channel}`);
+        return true;
+    }
+    if (lab.kind === 'menu')    { loungeSay(channel, renderLabMenu(lab.page)); return true; }
+    if (lab.kind === 'unknown') { loungeSay(channel, '🧪 Not a lab entry — !lab for the menu.'); return true; }
+    if (lab.kind === 'command') return handleLoungeIntent(channel, roomId, actor, lab.cmd);
+    switch (lab.action) {
+        case 'badge_on':
+        case 'badge_off': {
+            const on = lab.action === 'badge_on';
+            loungeControl.setBadge(roomId, on);
+            loungeStateChanged(roomId);
+            loungeSay(channel, `🧪 Badge ${on ? 'on' : 'off'}.`);
+            return true;
+        }
+        case 'house_set':
+            // The one action with a mandatory confirm: it is the only change to
+            // persistent-within-session state. Everything else is one !lounge reset away.
+            if (lab.arg !== 'confirm') {
+                loungeSay(channel, '🧪 This makes the current look the house default. Say: !lab house set confirm');
+                return true;
+            }
+            loungeControl.setHouse(roomId, actor);
+            loungeSay(channel, '🧪 House look saved — !lounge reset brings it back.');
+            return true;
+        case 'ops':
+            loungeSay(channel, `🧪 Access: ${LOUNGE_ACCESS} · Operators: ${LOUNGE_OPERATOR_IDS.join(' ')}`
+                + (LOUNGE_OPERATOR_IDS.length > LOUNGE_OPERATOR_BASE_IDS.length ? ' (incl. LOUNGE_OPERATOR_EXTRA_IDS)' : ''));
+            return true;
+        case 'house_show':
+            loungeSay(channel, `🧪 On screen now: ${describeLoungeState(loungeControl.readState(roomId))}`);
+            return true;
+        case 'queue': {
+            const rows = loungeControl.auditOf(roomId).slice(-6)
+                .map(e => `${e.login || e.actor}: ${e.intent}${e.value != null ? ' ' + e.value : ''} → ${e.decision}`);
+            loungeSay(channel, rows.length ? `🧪 Last: ${rows.join(' · ')}` : '🧪 Nothing yet this session.');
+            return true;
+        }
+        case 'mute':
+        case 'unmute': {
+            const login = String(lab.arg || '').replace(/^@/, '').toLowerCase();
+            const id = _loungeLogins.get(login);
+            if (!id) { loungeSay(channel, `🧪 Haven't seen @${login} talk this session — need a message from them first.`); return true; }
+            loungeControl.mute(roomId, actor, id, lab.action === 'mute');
+            loungeSay(channel, `🧪 @${login} ${lab.action === 'mute' ? 'can no longer' : 'can'} change the lounge.`);
+            return true;
+        }
+        default:
+            return true;
+    }
+}
 // Only Twitch USERNOTICE events populate the channel-scoped streak tracker.
 const streakTracker = streakService.createTracker();
 
@@ -226,13 +458,22 @@ function buildAiCommandList(personaCommands) {
 // against them right now. These costs may be confirmed or LOWERED, never raised.
 // The reward AT a price point may only be swapped for equal-or-greater value.
 //
+// FIXED VALUE ONLY (owner decision 2026-09-15). Every tier is a bounded good. The
+// 1000 tier used to be "25% off the store": an uncapped percentage on an unbounded
+// order, the only tier whose cost to us scaled with the buyer's cart. The ladder
+// itself prices a point (2500 = the $7 emote pack, ~0.28¢/point, so 1000 ≈ $2.80);
+// 25% paid that on an $11 order and $15 on a $60 one. The swap to a flat $5 credit
+// is equal-or-greater value at every order under $20 and above the implied point
+// rate, so §2c holds — and it can never again pay out more than $5. Do NOT
+// reintroduce a percentage tier; if you must, cap it in dollars in the name.
+//
 // No 7500 "grail" tier here on purpose — it is net-new and awaits owner approval.
 const POINT_REWARDS = [
     { cost: 500,  name: 'Custom Chain PFP',     note: 'Made-to-order Chain Studio profile art — any finish, your nameplate, delivered in Discord' },
-    // 25% tier: copy says "issued via Discord" and never "instant"/"auto-applied".
+    // Store-credit tier: copy says "issued via Discord" and never "instant"/"auto-applied".
     // Spec §4 E1 (store platform's single-use discount codes) is UNVERIFIED, and the
-    // fallback is a manual 25% refund — so nothing here may imply automatic delivery.
-    { cost: 1000, name: '25% off the store',    note: 'Single-use 25% discount code for anything at planetcuhz.com — issued via Discord' },
+    // fallback is a manual $5 refund — so nothing here may imply automatic delivery.
+    { cost: 1000, name: '$5 off the store',     note: 'Single-use $5 discount code for anything at planetcuhz.com, one per order — issued via Discord' },
     { cost: 2500, name: 'Emote Pack Vol.1',     note: 'The full $7 emote pack, free — 8 emotes, Twitch + Discord sizes, via Discord DM' },
     // Scoped to the Planet Cuhz channel on purpose: the bot's speech is ours, but a
     // greeting firing in a HOST's chat is our promo in their house. Never advertise
@@ -1302,6 +1543,134 @@ const MAHNI_QUOTES = [
     "Mahni — the music speaks, the hustle screams, the heart inspires 🏆🌌"
 ];
 
+// Placement is load-bearing: this registry holds direct references to the quote
+// pools, so it MUST come after every one of them. Declared earlier it throws
+// 'Cannot access RICO_QUOTES before initialization' at boot — the same temporal
+// dead-zone class as the September P0. tests/test_boot_isolated.js catches it.
+// ============================================================================
+// THE CUHZNS — arrival recognition.
+//
+// The bot already had ~30 hand-written personality pools, but the ONLY way to
+// reach one was for somebody to type that person's command. So a cuhzn walked
+// in and got the same generic "Welcome to the Planet, cuhz!" as a stranger,
+// while a line written specifically for them sat unused two screens away.
+// This connects the two: your own line fires when YOU arrive.
+//
+// KEYED ON THE IMMUTABLE NUMERIC TWITCH ID, never a login. handleAutoShoutout()
+// keys on `streamer_username` and that is exactly the bug that silently broke
+// recognition when qweenstormygirlnz89 became stormygirlnz89. Twitch also
+// recycles abandoned logins after ~6 months, so a login key eventually greets
+// an impostor with a friend's line. Every id below was resolved from Twitch's
+// public GQL on 2026-09-17 and each pool was read to confirm it names that
+// person (e.g. QWEEN_QUOTES says "QWEEN STORMY", WESTSIDE says "@westsiderelly").
+//
+// ECONOMY NOTE: POINT_REWARDS sells a 5,000-point "Custom bot greeting" — a
+// line YOU choose, on planetcuhz, for a month. This registry is a different
+// thing: house-written lines for the known crew, content that is already free
+// to trigger via !four, !rico, !snowy and so on. It automates existing free
+// content; it does not give away the paid product. Keep it that way — if a
+// viewer wants THEIR OWN words on arrival, that stays the 5,000-point reward.
+// ============================================================================
+// `receipt` is ONE sentence of character, grounded in what the production logs
+// actually show this person doing (Railway runtime logs 2026-09-02..09 and the
+// 2026-09-09 reconciliation evidence; per-line citations in
+// verification/CUHZN_RECOGNITION_EVIDENCE_2026-09-17.md). It describes durable
+// BEHAVIOUR, never a number — numbers go stale in a week and are printed live by
+// cuhznReceipt() instead. Where the evidence is too thin to characterise someone
+// honestly, receipt is null and the live stats speak alone.
+const CUHZNS = {
+    // 607 command rows; !grouch x20 !pnx x16 !famous x12 !mahni x12 !ac x11 — he
+    // runs more shoutouts for OTHER people than anyone in the fam. Six channels.
+    '952381011':  { login: 'four_a_reason',     pool: FOUR_QUOTES,
+                    receipt: 'The one who puts everybody else on \u2014 nobody runs more shoutouts in this fam.' },
+    // 127 retained messages spread over five channels.
+    '1354688041': { login: 'rico2ez',           pool: RICO_QUOTES,
+                    receipt: 'In the building across the whole planet.' },
+    // Runs the bot on #thatgirlmahni_ (CHANNEL_TIERS) and still chats in
+    // #four_a_reason and #grouch392.
+    '732620163':  { login: 'thatgirlmahni_',    pool: MAHNI_QUOTES,
+                    receipt: 'Runs CUHZ Bot on her own stream and still pulls up to everybody else\u2019s.' },
+    // Every retained message is in #four_a_reason; 17 log mentions as
+    // qweenstormygirlnz89 + 130 as stormygirlnz89 — the rename that broke the
+    // old login-keyed recognition, and exactly why this registry keys on id.
+    '824566475':  { login: 'stormygirlnz89',    pool: QWEEN_QUOTES,
+                    receipt: 'Reason\u2019s-chat regular \u2014 same energy under every name.' },
+    // !W x7 !quote x4 !AC x3; 1,269 messages across five channels; the highest
+    // earned balance in the reconciliation (the number is printed live, not here).
+    '1388723253': { login: 'snowy_wolfies_ttv', pool: SNOWY_QUOTES,
+                    receipt: 'Calls the Ws, pulls up to everybody\u2019s chat, and it shows.' },
+    // 1,230 messages across six channels; 5,053 log mentions — more than anyone
+    // but Reason. If the bot is in a room, Grouch has been in it.
+    '557152408':  { login: 'grouch392',         pool: GROUCH_QUOTES,
+                    receipt: 'In every room on the planet \u2014 if the bot is there, Grouch is there.' },
+    // Four channels; the most recent ledger activity in the 2026-09-12 snapshots
+    // (ten consecutive rows) — earning and spending, not lurking.
+    '128186931':  { login: 'westsiderelly',     pool: WESTSIDE_QUOTES,
+                    receipt: 'Pulls up across the planet and always cashing in.' },
+    // 166 messages but present in FIVE channels — low volume, high presence.
+    '199116767':  { login: 'razredg1',    pool: ['Raz Red G in the building! Keeping it 100 since day one \u{1F534}'],
+                    receipt: 'Doesn\u2019t say much \u2014 never misses.' },
+    // 17 retained messages in two channels: not enough to characterise honestly.
+    // The live receipt (messages / watch time / points) says what there is to say.
+    '731191493':  { login: 'ohthatztayy', pool: ['It\u2019s giving 2K legend energy \u2014 ohthatztayy locked in! \u{1F3AE}\u{1F3C0}'],
+                    receipt: null },
+    // Phoenix is deliberately absent: phoenixnyc (757210754) vs phoenixpnyc
+    // (823707557) is still unconfirmed, and greeting the wrong account with
+    // someone's personal line is worse than a generic welcome. Same rule as
+    // LOUNGE_OPERATOR_IDS. One line to add once the owner confirms.
+};
+
+/** The arriving user's own line, or null for everyone else. Id only. */
+function cuhznGreeting(userId, channelLogin) {
+    const c = CUHZNS[String(userId || '').trim()];
+    if (!c) return null;
+    // Don't greet someone in their own house — they're the broadcaster there.
+    if (c.login === String(channelLogin || '').replace('#', '').toLowerCase()) return null;
+    const line = pickNoRepeat(`cuhzn:${c.login}`, c.pool, Math.min(3, c.pool.length));
+    return c.receipt ? `${line} ${c.receipt}` : line;
+}
+
+/**
+ * Pure. Live stats -> one honest receipt line, or null when there is not enough
+ * to say. Every number is the same one the person would get from !points,
+ * !watchtime and their profile — same helpers, same rows — so the greeting can
+ * never contradict the commands. Pure so it is testable without a database.
+ */
+function formatCuhznReceipt(login, profile, balance, nowMs = Date.now()) {
+    const parts = [];
+    const msgs = profile && Number.isSafeInteger(profile.total_messages) ? profile.total_messages : 0;
+    const mins = profile && Number.isSafeInteger(profile.total_watch_minutes) ? profile.total_watch_minutes : 0;
+    const pts  = Number.isSafeInteger(balance) ? balance : 0;
+    if (msgs > 0) parts.push(`${msgs.toLocaleString('en-US')} messages`);
+    if (mins > 0) parts.push(`${formatMinutes(mins)} watched`);
+    if (pts > 0)  parts.push(`${pts.toLocaleString('en-US')} CUHZ Points`);
+    if (profile && profile.first_seen) {
+        const t = new Date(profile.first_seen).getTime();
+        // Only cite tenure that is real. A profile created in the last day is
+        // "new", and "here since today" would read as a bug.
+        if (Number.isFinite(t) && nowMs - t >= 24 * 60 * 60 * 1000) {
+            parts.push(`here since ${new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`);
+        }
+    }
+    // Two real facts minimum, or say nothing: a one-item receipt reads as padding.
+    if (parts.length < 2) return null;
+    return `\u{1F9FE} @${login} \u2014 ${parts.join(' \u00b7 ')}`;
+}
+
+/** Live lookup. A stats failure must never suppress the greeting itself. */
+async function cuhznReceipt(login) {
+    try {
+        const [profile, balance] = await Promise.all([
+            userMemory.getProfile(login),
+            pointsService.getBalance(login),
+        ]);
+        return formatCuhznReceipt(login, profile, balance);
+    } catch (err) {
+        logger.error('cuhzn receipt failed (greeting still sent):', err.message);
+        return null;
+    }
+}
+
 // --- CUHZ Vibe Commands (All Tiers) ---
 const VIBE_MESSAGES = [
     'We on a different frequency cuhz 🌌',
@@ -1403,6 +1772,13 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 ]);
 
 const TIMER_MESSAGES = [
+    // ORIENTATION FIRST. A viewer who lands on an unattended stream sees artwork
+    // and silence; they do not know this channel has a bot, points, or an AI.
+    // These three lines answer "what am I looking at / what can I do / why stay"
+    // before any link drop, because a link means nothing to someone with no context.
+    "👋 New here? This is CUHZ Bot's own channel — the bot running this chat is the product. Type !tools to see the whole rig, or !help for every command 🤖",
+    "🛋️ That artwork on screen is the CUHZ Bot Infinity Lounge — our mascot rendered inside itself, forever. Built live on this channel 🌌",
+    "💬 Talk to the bot: !ask <anything> for AI · !hype !vibe !w for the vibes · !points for your bag. It answers, try it 💎",
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
     "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
@@ -2393,15 +2769,25 @@ async function handleMessage(channel, tags, message, self) {
         // A direct request gets its answer, not a welcome/shoutout AND an answer.
         const isDirectedRequest = isCommand || contextHandler.isQuestionOrRequest(message);
         const canWelcome = !isKnownBot && !isDirectedRequest && (!persona.settings || persona.settings.auto_welcome);
+        let cuhznGreeted = false;   // a personal greeting replaces the generic auto-shoutout, never stacks on it
         if (canWelcome) {
             const welcomeKey = `${channel}:${usernameL}`;
             const welcomeState = _channelWelcomes.get(welcomeKey);
             const joinTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
             const nowMs = now.getTime();
 
+            const cuhznLine = cuhznGreeting(tags['user-id'], channel);
+
             if (!welcomeState) {
-                // First Contact for this channel — full hype welcome.
-                if (joinTier === TIERS.BASIC) {
+                // A known cuhzn gets their OWN line on arrival, in any tier —
+                // recognition is the point, and it reads as generic otherwise.
+                // Then the receipt: what THEY have actually put in, live.
+                if (cuhznLine) {
+                    sendMessage(channel, `${cuhznLine}`);
+                    const receipt = await cuhznReceipt(usernameL);
+                    if (receipt) sendMessage(channel, receipt);
+                    cuhznGreeted = true;
+                } else if (joinTier === TIERS.BASIC) {
                     sendMessage(channel, `Wassup cuhz, Welcome to the stream! @${tags.username}`);
                 } else {
                     const randomWelcome = WELCOME_QUOTES[Math.floor(Math.random() * WELCOME_QUOTES.length)];
@@ -2413,8 +2799,15 @@ async function handleMessage(channel, tags, message, self) {
                 // (prevents re-welcoming someone who just idled in the tab).
                 const lastSeenMs = user ? new Date(user.last_seen).getTime() : 0;
                 if (!user || (nowMs - lastSeenMs) >= WELCOME_BACK_COOLDOWN_MS) {
-                    const line = pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3);
-                    sendMessage(channel, `${line} @${tags.username}`);
+                    // Their own line here too: being recognised once and then
+                    // generically thereafter is worse than never being recognised.
+                    const line = cuhznLine || `${pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3)} @${tags.username}`;
+                    sendMessage(channel, line);
+                    if (cuhznLine) {
+                        const receipt = await cuhznReceipt(usernameL);
+                        if (receipt) sendMessage(channel, receipt);
+                        cuhznGreeted = true;
+                    }
                     welcomeState.lastWelcomedAt = nowMs;
                 }
             }
@@ -2422,7 +2815,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // Auto-shoutout for fellow streamers (pro/premium only)
         const joinChannelTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
-        if (!isKnownBot && !isDirectedRequest && joinChannelTier !== TIERS.BASIC) {
+        if (!isKnownBot && !isDirectedRequest && !cuhznGreeted && joinChannelTier !== TIERS.BASIC) {
             await handleAutoShoutout(channel, usernameL, tags.username);
         }
 
@@ -2481,6 +2874,33 @@ async function handleMessage(channel, tags, message, self) {
         } catch (error) {
             logger.error('Context-aware response error:', error.message);
         }
+    }
+
+    // 0.65. !tools — the stream title has advertised "!tools" while no such command
+    // existed, so every viewer who tried it got silence. That is the worst possible
+    // first interaction: the channel's most visible copy making a promise the bot
+    // breaks. One source of truth for "what is this channel running".
+    if (msg === '!tools' || msg === '!rig' || msg === '!setup') {
+        sendMessage(channel, '🛠️ THE RIG — CUHZ Bot: points, AI chat, mod tools, hype & shoutouts (all live in this chat) · the Infinity Lounge overlay you\'re watching · planetcuhz.com. All of it built open, on stream.');
+        sendMessage(channel, '👉 Try it: !help (every command) · !ask <question> (AI) · !points (your bag) · !rewards (what points buy) · !bot (get CUHZ Bot in YOUR channel) 🚀');
+        return;
+    }
+
+    // 0.7. THE CUHZ LAB — chat-controlled lounge. Sits ABOVE the bare !vibe
+    // handler on purpose: `!vibe hype` belongs to the lounge, bare `!vibe` does
+    // not and keeps its existing reply. Only allowlisted room-ids ever reach the
+    // state machine; every other channel falls through this block untouched.
+    // No points, no database, no network in here.
+    if (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')) && LOUNGE_INTENT_RE.test(msg)) {
+        const roomId = String(tags['room-id']);
+        const actor = loungeActor(tags);
+        if (actor.login && /^\d{1,12}$/.test(String(actor.userId || ''))) {
+            _loungeLogins.set(String(actor.login).toLowerCase(), String(actor.userId));
+        }
+        const lab = parseLabCommand(message);
+        const handled = lab ? handleLabMenu(channel, roomId, actor, lab)
+                            : handleLoungeIntent(channel, roomId, actor, message);
+        if (handled) return;
     }
 
     // 0.8. CUHZ Vibe Commands (ALL tiers)
@@ -2763,7 +3183,7 @@ async function handleMessage(channel, tags, message, self) {
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
             // CTA, so the people who most need to see it are in Basic channels.
-            brand:     '🌌 Brand: !bot !prices !pay !cuhz !planet'
+            brand:     '🌌 Brand: !tools !bot !prices !pay !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
                        ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
@@ -2773,7 +3193,13 @@ async function handleMessage(channel, tags, message, self) {
             // !mod leads: it's the self-documenting panel with live scope status.
             mods:      '🛡️ Mods: !mod !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
                        + (isPP ? ' !addstreamer !removestreamer' : ''),
-            pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null
+            pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null,
+            // Advertised only where it is live (honesty law: no doors that don't open).
+            lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
+                       ? (LOUNGE_ACCESS === 'subscribers'
+                           ? '🛋️ Lounge (subs): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
+                           : '🛋️ Lounge: !lounge shows what is on screen · !lounge colors · !lounge whoami — steering is operator-only right now')
+                       : null
         };
 
         // `!help <category>` — one targeted line
@@ -3779,6 +4205,31 @@ app.get('/api/rewards', (req, res) => {
     }
 });
 
+// THE CUHZ LAB — read-only lounge state for the OBS page (Lane K). This is the
+// ONLY lounge route and it is GET-only. Route-level CORS because the global
+// cors() above allows POST and would otherwise be inherited. Unknown, disabled
+// and non-allowlisted channels get the identical house-default payload, so the
+// route is not a channel-enumeration oracle. The JSON is serialized once per
+// state change, not per request, so a poll flood cannot starve the IRC loop.
+app.use('/api/lounge', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    res.set('Allow', 'GET');
+    res.status(405).json({ error: 'GET only' });
+});
+app.get('/api/lounge/state', cors({ methods: ['GET'], origin: '*' }), (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.type('application/json');
+        const raw = typeof req.query.channel === 'string' ? req.query.channel : '';
+        const login = String(sanitizeChannel(raw) || '').replace(/^#/, '');
+        const roomId = loungeEnabled() ? LOUNGE_ROOMS[login] : null;
+        res.send(roomId ? loungeStateJson(roomId) : loungeHouseJson());
+    } catch (err) {
+        logger.error('/api/lounge/state failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
 app.get('/', (req, res) => {
     try {
         const templatePath = path.join(__dirname, 'dashboard.html');
@@ -3791,5 +4242,13 @@ app.get('/', (req, res) => {
 
 app.listen(config.port, () => {
     logger.info(`Bot API listening on port ${config.port}`);
+    // Lane K: turbo decay and idle revert. Started here, not at module level —
+    // the isolated boot harness forbids timers and never invokes this callback.
+    const loungeClock = setInterval(() => {
+        for (const roomId of LOUNGE_ROOM_IDS) {
+            if (loungeControl.tick(roomId)) loungeStateChanged(roomId);
+        }
+    }, 5000);
+    if (typeof loungeClock.unref === 'function') loungeClock.unref();
     initializeTwitchClient();
 });

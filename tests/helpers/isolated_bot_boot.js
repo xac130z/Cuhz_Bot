@@ -80,6 +80,17 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             });
             if (name === './duration') return Object.freeze({});
             if (name === './streak_service') return Object.freeze({ createTracker: () => Object.freeze({}) });
+            // Pure string helpers (added on main by 7fb95f5): no requires, no I/O,
+            // so the real module is safe here and keeps channel normalization faithful.
+            if (name === './channel_identity') return require('../../src/channel_identity');
+            // Pure in-memory factory (added on main by 2d79d41); no timer or I/O at
+            // import, so the real module is also safe here.
+            if (name === './shared_chat_guard') return require('../../src/shared_chat_guard');
+            // Lane K: the two lounge modules are PURE (zero requires, no I/O, injected
+            // clock) and are loaded for real for that reason. tests/test_lounge_wiring.js
+            // asserts the zero-require property so this line can never become a hole.
+            if (name === './lounge_control') return require('../../src/lounge_control');
+            if (name === './lounge_menu') return require('../../src/lounge_menu');
             if (name === 'fs') return Object.freeze({
                 existsSync() { evidence.fileExistenceProbes++; return false; },
                 readFileSync: forbid('fs.readFileSync'),

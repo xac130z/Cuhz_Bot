@@ -27,9 +27,12 @@
  *  8. The four public costs stay exactly 500/1000/2500/5000. Viewers are banking
  *     against those numbers right now — they may be lowered, never raised, and a
  *     net-new tier (e.g. the 7500 grail) needs the owner, not an agent.
- *  9. The 25% discount tier never claims instant/automatic delivery — spec §4 E1
+ *  9. The store-credit tier never claims instant/automatic delivery — spec §4 E1
  *     (store platform single-use codes) is UNVERIFIED and the fallback is a
  *     manual refund, so the copy must stay "issued via Discord" by a human.
+ *     FIXED VALUE ONLY (owner, 2026-09-15): the tier is a flat dollar credit,
+ *     never an uncapped percentage of an unbounded order. No tier name may
+ *     contain "%".
  * 10. NAMING LAW (ladder v2, owner-locked 2026-08-06). The internal tier keys
  *     (basic/pro/premium) are plumbing, not products: "Pro" collides with the
  *     planetcuhz.com site membership and "Premium" is a plan nobody can buy, so
@@ -143,14 +146,28 @@ check('bot-greeting scope survives into the rendered !rewards line',
     /planet\s*cuhz/i.test(shippedRewards.replace(/CUHZ POINTS REWARDS/i, '')));
 
 // Spec §4 E1 is UNVERIFIED (can the store issue single-use codes at all?), and the
-// documented fallback is William refunding 25% by hand. So the discount tier must
-// read as human-issued — never instant, never automatic.
-const discount = tiersData.find(t => /%/.test(t.name));
-check('discount tier exists at 1000', !!discount && discount.cost === 1000);
-check('discount tier does NOT claim instant/automatic delivery (E1 unverified)',
+// documented fallback is William refunding the credit by hand. So the discount
+// tier must read as human-issued — never instant, never automatic.
+const discount = tiersData.find(t => /off the store/i.test(t.name));
+check('store-credit tier exists at 1000', !!discount && discount.cost === 1000);
+check('store-credit tier does NOT claim instant/automatic delivery (E1 unverified)',
     !!discount && !/instant|automatic|auto-appl|immediately/i.test(`${discount.name} ${discount.note}`));
-check('discount tier says a human issues it via Discord',
+check('store-credit tier says a human issues it via Discord',
     !!discount && /issued via Discord/i.test(discount.note));
+
+// FIXED VALUE ONLY (owner decision 2026-09-15). The old "25% off the store" was an
+// uncapped percentage of an unbounded order — the one tier whose cost scaled with
+// the cart ($15 on a $60 haul for ~$2.80 of points). A flat dollar credit is
+// equal-or-greater value on any order under $20, so §2c still holds; it can never
+// pay out more than its face value. Regression: no tier may be a percentage.
+check('store-credit tier is a flat dollar amount in the chat-visible name',
+    !!discount && /^\$\d+ off the store$/.test(discount.name));
+check('store-credit tier is single-use and bounded to one order in its note',
+    !!discount && /single-use/i.test(discount.note) && /one per order/i.test(discount.note));
+check('no reward tier is an uncapped percentage (name or note)',
+    tiersData.every(t => !/%/.test(`${t.name} ${t.note}`)));
+check('rendered !rewards line carries the flat credit, not a percentage',
+    /\$5 off the store/.test(shippedRewards) && !/%/.test(shippedRewards));
 
 // The 7500 grail is net-new value (a $15 SKU) — owner approval, not agent action.
 check('no unapproved 7500 grail tier snuck in',
