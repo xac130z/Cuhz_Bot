@@ -22,6 +22,7 @@ const rosterService = require('./roster_service');
 const keywordListener = require('./keyword_listener');
 const followageService = require('./followage_service');
 const streakService = require('./streak_service');
+const clipsService = require('./clips_service');
 
 // Watch Streak truth is session-scoped: only Twitch's verified USERNOTICE can
 // populate this tracker. Ordinary chat text never becomes a detected streak.
@@ -2271,7 +2272,7 @@ async function handleMessage(channel, tags, message, self) {
     // under Twitch's 500-char per-line limit. Audited against actual dispatch
     // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
     if (msg === '!help' || msg === '!commands') {
-        const utility   = streamContent.utilityHelp(config.enableGambling) + ' !streak';
+        const utility   = streamContent.utilityHelp(config.enableGambling) + ' !streak !clip';
         const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
         const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !storm !juan !rico !bern !dame';
@@ -2630,6 +2631,14 @@ async function handleMessage(channel, tags, message, self) {
         const brain = `🧠${s.brain.available ? '✅' : '❌'}(${s.brain.failures})`;
         const hands = `🔧${s.hands.available ? '✅' : '❌'}(${s.hands.failures})`;
         client.say(channel, `🤖 Tri-Brain: ${eyes} ${brain} ${hands} | ${s.requestsThisMinute}/${s.maxRequestsPerMinute} req/min | Cache: ${cacheStats.active_entries}`);
+        return;
+    }
+
+    // --- Community Clips & Free Promo Engine (!clip) ---
+    if (msg === '!clip' || msg.startsWith('!clip ')) {
+        const rawTitle = message.substring(5).trim();
+        const clipRes = await clipsService.handleClipCommand(channel, tags.username, rawTitle);
+        sendMessage(channel, clipRes.announcement || clipRes.message);
         return;
     }
 

@@ -38,6 +38,13 @@ class DBAdapter {
       this.sqlite = new Database(dbPath);
       this.sqlite.pragma('journal_mode = WAL');
       this.initSqlite();
+
+      // Clean exit handler for Node 24 V8 environment hooks
+      process.on('exit', () => {
+        if (this.sqlite && this.sqlite.open) {
+          try { this.sqlite.close(); } catch (_) {}
+        }
+      });
     }
   }
 
@@ -301,6 +308,19 @@ class DBAdapter {
         twitch_login TEXT PRIMARY KEY,
         request_id TEXT,
         joined_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Wave 7: Community Clips & Highlight Promo =====
+      `CREATE TABLE IF NOT EXISTS community_clips (
+        id ${SERIAL} ${PK},
+        channel TEXT NOT NULL,
+        clipped_by TEXT NOT NULL,
+        title TEXT,
+        clip_url TEXT,
+        clip_id TEXT,
+        timecode TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`
     ];
   }
@@ -313,6 +333,7 @@ class DBAdapter {
       'CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username)',
       'CREATE INDEX IF NOT EXISTS idx_mood_history_channel ON mood_history(channel, created_at)',
       'CREATE INDEX IF NOT EXISTS idx_achievements_username ON achievements(username)',
+      'CREATE INDEX IF NOT EXISTS idx_community_clips_channel ON community_clips(channel, created_at)',
       // Points economy: (username, reason) serves the claimBonus idempotency
       // lookup; (created_at) serves the weekly leaderboard rollup. The ledger
       // gets a row per chat message, so these matter.
