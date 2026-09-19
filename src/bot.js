@@ -453,6 +453,55 @@ async function fetchSyncedChannels() {
     }
 }
 
+// ============================================================================
+// WATCH TIME — two different questions, answered honestly.
+//
+//   "How long have I been in THIS stream?"  -> time since your FIRST MESSAGE in
+//   this channel after the stream went live. Read from chat_log, so it survives
+//   bot restarts. The bot cannot know when you opened the player: Twitch sends
+//   no join event for anonymous viewers, and the 'join' handler here only
+//   handles the bot's own join. So the copy says "since your first message",
+//   never "since you got here" -- that would be a claim the bot can't back.
+//
+//   "How long have I watched ALL-TIME?"     -> user_profiles.total_watch_minutes,
+//   the number !watchtime already printed. It is chat-presence time, credited in
+//   10-30 minute chunks by the passive paycheck (see PRESENCE_GAP_MS below): you
+//   must keep typing for it to grow. A silent lurker earns none of it.
+// ============================================================================
+
+/** SQL-comparable UTC timestamp: 'YYYY-MM-DD HH:MM:SS'. Matches how both
+ *  dialects render CURRENT_TIMESTAMP, so a lexical compare on SQLite and a
+ *  parsed compare on Postgres both do the right thing (ISO 'T' would not). */
+function sqlTimestamp(d) {
+    return new Date(d).toISOString().replace('T', ' ').slice(0, 19);
+}
+
+/** First message this user sent in this channel since the stream started, or null. */
+async function sessionFirstSeen(channel, usernameL, startedAt) {
+    if (!startedAt) return null;
+    const row = await db.prepare(
+        'SELECT MIN(created_at) AS first_at FROM chat_log WHERE channel = ? AND username = ? AND created_at >= ?'
+    ).get(channel, usernameL, sqlTimestamp(startedAt));
+    const t = row && row.first_at ? new Date(row.first_at).getTime() : NaN;
+    return Number.isFinite(t) ? t : null;
+}
+
+/** Pure. Builds the !watchtime / !session reply from already-fetched facts. */
+function formatWatchLine(login, { live, firstSeenMs, totalMinutes, nowMs = Date.now() }) {
+    const parts = [];
+    if (live && firstSeenMs) {
+        const mins = Math.max(0, Math.round((nowMs - firstSeenMs) / 60000));
+        parts.push(mins < 1 ? 'in this stream: just got here' : `in this stream: ${formatMinutes(mins)}`);
+    } else if (live) {
+        parts.push('in this stream: just got here');
+    } else {
+        parts.push('stream is offline right now');
+    }
+    const total = Number.isSafeInteger(totalMinutes) && totalMinutes > 0 ? totalMinutes : 0;
+    parts.push(total > 0 ? `all-time across the fam: ${formatMinutes(total)}` : 'all-time: just started tracking — keep chatting and it stacks');
+    return `⏱️ @${login} — ${parts.join(' · ')} 💎`;
+}
+
 // Passive paycheck tuning: a viewer is "still here" if their previous message
 // was within PRESENCE_GAP_MS; they get paid at most once per PAYCHECK_INTERVAL_MS.
 const PRESENCE_GAP_MS = 15 * 60 * 1000;
@@ -1798,7 +1847,19 @@ const BASIC_USER_COMMANDS = {
     // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
     '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
     '!tay': 'It\'s giving 2K legend energy — ohthatztayy locked in! 🕹️🏀',
-    '!yoo': 'Yoo! Welcome to the stream. 👋'
+    '!yoo': 'Yoo! Welcome to the stream. 👋',
+    // Added 2026-09-19 from four_a_reason's live viewer list (owner request):
+    // every regular gets a door. Lines name the person and the fam only --
+    // no invented facts about them; the owner can sharpen these any time.
+    // Display names verified against Twitch public GQL the same day.
+    '!huie':     '🔥 lilhuie5 in the building! Pull up and show love 💎',
+    '!lilhuie':  '🔥 lilhuie5 in the building! Pull up and show love 💎',
+    '!lovlee':   '💜 Lovlee_ttv on deck! Good vibes only, that\'s the standard 💎',
+    '!neno':     '🧠 NenosMindset in the chat — locked in, different focus 💎',
+    '!nenos':    '🧠 NenosMindset in the chat — locked in, different focus 💎',
+    '!smokey':   '💨 smokeyyhg pulled up! CUHZ fam all day 💎',
+    '!smokeyy':  '💨 smokeyyhg pulled up! CUHZ fam all day 💎',
+    '!imreacts': '👀 ImReactsTV in the building — reactions on deck 💎',
 };
 
 // --- Commands blocked for Basic tier (info/link dumps) ---
@@ -3227,7 +3288,7 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!help' || msg === '!commands' || msg.startsWith('!help ')) {
         const isPP = isProOrPremium;
         const sections = {
-            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim !streak'
+            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !session !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim !streak'
                        + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
@@ -3686,15 +3747,17 @@ async function handleMessage(channel, tags, message, self) {
 
     // !watchtime — all tiers. Aggregate watch minutes across every CUHZ channel,
     // accrued alongside presence points (passive paycheck) in handleMessage.
-    if (msg === '!watchtime') {
+    if (msg === '!watchtime' || msg === '!session' || msg === '!here' || msg === '!howlong') {
         try {
-            const profile = await userMemory.getProfile(tags.username);
-            const mins = profile && profile.total_watch_minutes ? profile.total_watch_minutes : 0;
-            if (mins > 0) {
-                sendMessage(channel, `@${tags.username} has watched for ${formatMinutes(mins)} across the CUHZ fam 💎`);
-            } else {
-                sendMessage(channel, `@${tags.username} just started tracking! Hang out in chat and your watch time stacks up 💎`);
-            }
+            const state = streamStates.get(streamKey(channel));
+            const live = !!(state && state.isLive && state.startedAt);
+            const [profile, firstSeenMs] = await Promise.all([
+                userMemory.getProfile(tags.username),
+                live ? sessionFirstSeen(channel, usernameL, state.startedAt) : Promise.resolve(null),
+            ]);
+            sendMessage(channel, formatWatchLine(tags.username, {
+                live, firstSeenMs, totalMinutes: profile ? profile.total_watch_minutes : 0,
+            }));
         } catch (err) {
             logger.error('Error in !watchtime:', err.message);
         }
