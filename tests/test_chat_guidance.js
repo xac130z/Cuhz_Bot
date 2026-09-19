@@ -64,4 +64,14 @@ check('no crypto vocabulary in any proactive copy (standing law)', () => {
     assert.equal(m, null, `forbidden vocabulary "${m && m[0]}" in bot copy`);
 });
 
+check('every regular from the 2026-09-19 viewer list has a shoutout door', () => {
+    const m = src.match(/const BASIC_USER_COMMANDS = \{([\s\S]*?)\n\};/);
+    assert.ok(m, 'BASIC_USER_COMMANDS present');
+    for (const k of ['!huie', '!lovlee', '!neno', '!smokey', '!imreacts']) assert.match(m[1], new RegExp(`'${k}':`), k);
+    // dispatch is a plain map lookup; a key here IS a working command
+    assert.match(src, /if \(BASIC_USER_COMMANDS\[msg\]\) \{\n\s+client\.say\(channel, BASIC_USER_COMMANDS\[msg\]\);/);
+    // and none of the lines carry forbidden vocabulary
+    assert.equal(m[1].match(/\b(blockchain|crypto\w*|token|web3|nft|bitcoin|solana)\b/i), null);
+});
+
 console.log(`\n${passed} chat-guidance checks passed.`);
