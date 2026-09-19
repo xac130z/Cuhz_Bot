@@ -415,6 +415,45 @@ function drainQueue(key) {
 }
 
 // ============================================================================
+// WEBSITE → BOT CHANNEL SYNC (the missing pipe, 2026-09-19).
+//
+// planetcuhz.com's "Get CUHZ Bot" flow writes public.bot_requests through the
+// `bot-request` edge function (auto-approved), and `bot-worker-sync` serves the
+// desired-state list of approved/active channels to a worker holding
+// BOT_API_SECRET. Nothing in this process ever READ that list: channels came
+// only from the legacy dashboard (API_BASE) + the hardcoded CHANNEL_TIERS, so a
+// website request could never reach the running bot. This closes the loop.
+//
+// Set BOT_SYNC_URL on Railway to the function's URL
+//   https://<project>.supabase.co/functions/v1/bot-worker-sync
+// Unset = feature off; nothing changes. Same BOT_API_SECRET the bot already has.
+// ============================================================================
+const BOT_SYNC_URL = (process.env.BOT_SYNC_URL || '').trim();
+const BOT_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const LOGIN_SHAPE = /^[a-z0-9_]{2,25}$/;
+
+/** Approved/active channel logins from bot_requests, as '#login'. [] on any failure. */
+async function fetchSyncedChannels() {
+    if (!BOT_SYNC_URL || !config.botApiSecret) return [];
+    try {
+        const res = await axios.get(BOT_SYNC_URL, {
+            headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+            timeout: 10000,
+        });
+        const rows = Array.isArray(res.data && res.data.channels) ? res.data.channels : [];
+        // Only the login field, only Twitch-shaped logins, only approved/active.
+        const logins = rows
+            .filter(r => r && typeof r.twitch_login === 'string' && ['approved', 'active'].includes(r.status))
+            .map(r => r.twitch_login.toLowerCase())
+            .filter(l => LOGIN_SHAPE.test(l));
+        return normalizeChannels(logins);
+    } catch (err) {
+        logger.error('bot-worker-sync fetch failed (website requests will not join until it recovers):', err.message);
+        return [];
+    }
+}
+
+// ============================================================================
 // WATCH TIME — two different questions, answered honestly.
 //
 //   "How long have I been in THIS stream?"  -> time since your FIRST MESSAGE in
@@ -2198,6 +2237,12 @@ async function initializeTwitchClient() {
             logger.error('Error fetching channels from dashboard:', error.message);
         }
     }
+
+    // Website requests: approved/active rows from bot_requests via bot-worker-sync.
+    // Merged (not replacing) so the dashboard and config paths keep working.
+    const synced = await fetchSyncedChannels();
+    for (const ch of synced) if (!channelsToJoin.includes(ch)) channelsToJoin.push(ch);
+    if (synced.length) logger.info(`Found ${synced.length} channel(s) from website requests (bot-worker-sync):`, synced);
 
     // Fallback to config if no dashboard channels
     if (channelsToJoin.length === 0 && config.channels && config.channels.length > 0) {
@@ -4329,6 +4374,25 @@ app.get('/', (req, res) => {
 
 app.listen(config.port, () => {
     logger.info(`Bot API listening on port ${config.port}`);
+    // Website → bot: every 5 minutes, join any newly approved channel. Inside
+    // listen() so the isolated boot harness (which forbids timers) never sees it.
+    if (BOT_SYNC_URL) {
+        const syncClock = setInterval(async () => {
+            try {
+                if (!client || client.readyState() !== 'OPEN') return;
+                const wanted = await fetchSyncedChannels();
+                for (const ch of wanted) {
+                    if (connectedChannels.has(ch)) continue;
+                    await client.join(ch);
+                    logger.info(`🔗 Joined ${ch} from a website request`);
+                }
+            } catch (err) {
+                logger.error('website channel re-sync failed:', err.message);
+            }
+        }, BOT_SYNC_INTERVAL_MS);
+        if (typeof syncClock.unref === 'function') syncClock.unref();
+    }
+
     // Lane K: turbo decay and idle revert. Started here, not at module level —
     // the isolated boot harness forbids timers and never invokes this callback.
     const loungeClock = setInterval(() => {
