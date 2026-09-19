@@ -1759,7 +1759,19 @@ const BASIC_USER_COMMANDS = {
     // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
     '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
     '!tay': 'It\'s giving 2K legend energy — ohthatztayy locked in! 🕹️🏀',
-    '!yoo': 'Yoo! Welcome to the stream. 👋'
+    '!yoo': 'Yoo! Welcome to the stream. 👋',
+    // Added 2026-09-19 from four_a_reason's live viewer list (owner request):
+    // every regular gets a door. Lines name the person and the fam only --
+    // no invented facts about them; the owner can sharpen these any time.
+    // Display names verified against Twitch public GQL the same day.
+    '!huie':     '🔥 lilhuie5 in the building! Pull up and show love 💎',
+    '!lilhuie':  '🔥 lilhuie5 in the building! Pull up and show love 💎',
+    '!lovlee':   '💜 Lovlee_ttv on deck! Good vibes only, that\'s the standard 💎',
+    '!neno':     '🧠 NenosMindset in the chat — locked in, different focus 💎',
+    '!nenos':    '🧠 NenosMindset in the chat — locked in, different focus 💎',
+    '!smokey':   '💨 smokeyyhg pulled up! CUHZ fam all day 💎',
+    '!smokeyy':  '💨 smokeyyhg pulled up! CUHZ fam all day 💎',
+    '!imreacts': '👀 ImReactsTV in the building — reactions on deck 💎',
 };
 
 // --- Commands blocked for Basic tier (info/link dumps) ---
