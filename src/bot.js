@@ -1947,7 +1947,11 @@ async function checkStreamStatus(channelName) {
                 isLive: true,
                 startedAt: new Date(stream.started_at),
                 title: stream.title,
-                game: stream.game_name
+                game: stream.game_name,
+                // Helix Get Streams returns viewer_count; it was dropped here, so
+                // status.viewers was undefined everywhere downstream (!viewers,
+                // stream_intel's INSERT/UPDATE). This is the only live source.
+                viewers: Number.isFinite(Number(stream.viewer_count)) ? Number(stream.viewer_count) : 0
             };
         } else {
             return { isLive: false };
@@ -3271,6 +3275,13 @@ async function handleMessage(channel, tags, message, self) {
             sendMessage(channel, `Follow-age is an upgraded-channel perk cuhz 💎 — !prices`);
             return;
         }
+        // Twitch does not let a channel follow itself, so the broadcaster asking
+        // about themselves got "is not following #planetcuhz (yet)!" on stream.
+        // Literally true, terrible look. Say the true thing warmly instead.
+        if (targetUsername.toLowerCase() === cleanChannel) {
+            sendMessage(channel, `👑 @${targetUsername} that's your own planet cuhz — you don't follow it, you built it.`);
+            return;
+        }
         try {
             // 2. Get IDs for Channel and Target User
             const channelUser = await getTwitchUser(channel.replace('#', ''));
@@ -3349,12 +3360,20 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!streamstats') {
         if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         const stats = await streamIntel.getStats(channel);
-        if (!stats) {
+        const live = streamStates.get(streamKey(channel));
+        const fmtTime = d => { const t = new Date(d); return Number.isFinite(t.getTime()) ? t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : 'unknown'; };
+        const fmtDate = d => { const t = new Date(d); return Number.isFinite(t.getTime()) ? t.toLocaleDateString('en-US', { timeZone: 'America/New_York' }) : 'unknown'; };
+        if (!stats || (!stats.started_at && !(live && live.isLive))) {
             client.say(channel, "📊 No stream data available yet.");
-        } else if (stats.isLive) {
-            client.say(channel, `🔴 LIVE | Viewers: ${stats.viewers} (Peak: ${stats.peak_viewers || stats.viewers}) | Started: ${new Date(stats.started_at).toLocaleTimeString()}`);
+        } else if (live && live.isLive) {
+            const now = Number.isFinite(Number(live.viewers)) ? Number(live.viewers) : 'n/a';
+            const peak = Math.max(Number(stats.peak_viewers) || 0, Number(live.viewers) || 0);
+            // Start time from the live poll (always present) rather than the DB
+            // row, which printed "Invalid Date" whenever the session INSERT failed.
+            client.say(channel, `🔴 LIVE | Viewers: ${now} (Peak: ${peak}) | Started: ${fmtTime(live.startedAt || stats.started_at)} ET`);
         } else {
-            client.say(channel, `⚫ OFFLINE | Last Stream: ${new Date(stats.started_at).toLocaleDateString()} | Duration: ${stats.ended_at ? Math.round((new Date(stats.ended_at) - new Date(stats.started_at)) / 60000) + 'm' : 'Unknown'}`);
+            const dur = stats.ended_at && stats.started_at ? Math.round((new Date(stats.ended_at) - new Date(stats.started_at)) / 60000) + 'm' : 'Unknown';
+            client.say(channel, `⚫ OFFLINE | Last Stream: ${fmtDate(stats.started_at)} | Duration: ${dur}`);
         }
         return;
     }
@@ -3449,12 +3468,17 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!viewers') {
         if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
+        // "Current" comes from the last Helix poll (streamStates), which is the
+        // only place the live count exists. stream_sessions has no `viewers`
+        // column -- reading stats.viewers printed "undefined" in production.
+        const live = streamStates.get(streamKey(channel));
+        if (!live || !live.isLive) { client.say(channel, `📴 Stream is currently offline.`); return; }
+        const now = Number.isFinite(Number(live.viewers)) ? Number(live.viewers) : null;
         const stats = await streamIntel.getStats(channel);
-        if (stats && stats.isLive) {
-            client.say(channel, `👥 Current viewers: ${stats.viewers} (Peak: ${stats.peak_viewers || stats.viewers}) 🔴`);
-        } else {
-            client.say(channel, `📴 Stream is currently offline.`);
-        }
+        const peak = stats && Number.isFinite(Number(stats.peak_viewers)) ? Number(stats.peak_viewers) : null;
+        const peakShown = Math.max(peak ?? 0, now ?? 0);
+        if (now === null) { client.say(channel, `👥 Viewer count isn't in yet — next poll lands within a minute 🔴`); return; }
+        client.say(channel, `👥 Current viewers: ${now} (Peak this stream: ${peakShown}) 🔴`);
         return;
     }
 
