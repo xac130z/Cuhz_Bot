@@ -2,6 +2,12 @@ const db = require('./database');
 const logger = require('./logger');
 const aiService = require('./ai_service');
 
+/** Live viewer count as a safe integer, never undefined/NaN. */
+function viewersOf(status) {
+    const n = Number(status && status.viewers);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
 class StreamIntel {
     constructor() {
         this.activeSessions = new Map(); // channel -> sessionId
@@ -32,9 +38,12 @@ class StreamIntel {
                 this.activeSessions.set(channel, sessionId);
                 logger.info(`📺 Resumed tracking stream session #${sessionId} for ${channel}`);
             } else {
-                // Start new session
+                // Start new session. viewers is coerced: an undefined bound param
+                // reaches Postgres as `unknown`, which is half of the 12,744 errors
+                // the captured week logged ("function max(integer, unknown)").
+                const v = viewersOf(status);
                 const res = await db.prepare('INSERT INTO stream_sessions (channel, started_at, peak_viewers, avg_viewers) VALUES (?, CURRENT_TIMESTAMP, ?, ?)')
-                    .run(channel, status.viewers, status.viewers);
+                    .run(channel, v, v);
                 sessionId = res.lastInsertRowid;
                 this.activeSessions.set(channel, sessionId);
                 logger.info(`📺 STREAM STARTED! Tracking session #${sessionId} for ${channel}`);
@@ -43,9 +52,17 @@ class StreamIntel {
 
         // Update stats
         try {
-            // Update peak viewers if current is higher
-            await db.prepare('UPDATE stream_sessions SET peak_viewers = MAX(peak_viewers, ?), avg_viewers = (avg_viewers + ?) / 2 WHERE id = ?')
-                .run(status.viewers, status.viewers, sessionId);
+            const v = viewersOf(status);
+            // Two-argument MAX(a, b) is a SQLite scalar. Postgres has no such
+            // function -- it is GREATEST -- and this line threw on every poll of
+            // every live channel in production (12,744 times in one captured
+            // week), so peak_viewers never moved off its INSERT value. Dialect
+            // is read from the adapter, and NULL columns are coalesced so the
+            // first UPDATE after a NULL insert cannot poison the comparison.
+            const sql = db.type === 'postgres'
+                ? 'UPDATE stream_sessions SET peak_viewers = GREATEST(COALESCE(peak_viewers, 0), ?), avg_viewers = (COALESCE(avg_viewers, ?) + ?) / 2 WHERE id = ?'
+                : 'UPDATE stream_sessions SET peak_viewers = MAX(COALESCE(peak_viewers, 0), ?), avg_viewers = (COALESCE(avg_viewers, ?) + ?) / 2 WHERE id = ?';
+            await db.prepare(sql).run(v, v, v, sessionId);
         } catch (err) {
             logger.error(`Failed to update stream stats for ${channel}: ${err.message}`);
         }
@@ -120,3 +137,4 @@ class StreamIntel {
 }
 
 module.exports = new StreamIntel();
+module.exports.viewersOf = viewersOf;
