@@ -429,15 +429,21 @@ function drainQueue(key) {
 // Unset = feature off; nothing changes. Same BOT_API_SECRET the bot already has.
 // ============================================================================
 const BOT_SYNC_URL = (process.env.BOT_SYNC_URL || '').trim();
+// Use the dedicated website-roster credential when it is configured. Keep the
+// legacy BOT_API_SECRET fallback so existing installations continue to work,
+// but do not force Railway's dashboard/API secret to be reused by Supabase.
+const BOT_SYNC_SECRET = (
+    process.env.CUHZ_ROSTER_SYNC_SECRET || config.botApiSecret || ''
+).trim();
 const BOT_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const LOGIN_SHAPE = /^[a-z0-9_]{2,25}$/;
 
 /** Approved/active channel logins from bot_requests, as '#login'. [] on any failure. */
 async function fetchSyncedChannels() {
-    if (!BOT_SYNC_URL || !config.botApiSecret) return [];
+    if (!BOT_SYNC_URL || !BOT_SYNC_SECRET) return [];
     try {
         const res = await axios.get(BOT_SYNC_URL, {
-            headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
+            headers: { 'Authorization': `Bearer ${BOT_SYNC_SECRET}` },
             timeout: 10000,
         });
         const rows = Array.isArray(res.data && res.data.channels) ? res.data.channels : [];

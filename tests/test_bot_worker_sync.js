@@ -8,10 +8,11 @@ let passed = 0; const check = (n, f) => { f(); passed++; console.log(`PASS ${n}`
 const src = readBotSource();
 const fn = src.slice(src.indexOf('async function fetchSyncedChannels'), src.indexOf('// Passive paycheck tuning'));
 
-check('sync is inert without BOT_SYNC_URL and never uses a second secret', () => {
+check('sync is inert without BOT_SYNC_URL and prefers the dedicated roster secret', () => {
     assert.match(src, /const BOT_SYNC_URL = \(process\.env\.BOT_SYNC_URL \|\| ''\)\.trim\(\);/);
-    assert.match(fn, /if \(!BOT_SYNC_URL \|\| !config\.botApiSecret\) return \[\];/);
-    assert.match(fn, /Bearer \$\{config\.botApiSecret\}/, 'same BOT_API_SECRET bot-worker-sync expects');
+    assert.match(src, /process\.env\.CUHZ_ROSTER_SYNC_SECRET \|\| config\.botApiSecret/);
+    assert.match(fn, /if \(!BOT_SYNC_URL \|\| !BOT_SYNC_SECRET\) return \[\];/);
+    assert.match(fn, /Bearer \$\{BOT_SYNC_SECRET\}/);
 });
 check('only approved/active, Twitch-shaped logins can become channels (never free text)', () => {
     assert.match(fn, /\['approved', 'active'\]\.includes\(r\.status\)/);
