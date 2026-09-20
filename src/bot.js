@@ -3118,7 +3118,15 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!bot' || msg === '!getcuhzbot' || msg === '!addbot') {
         sendMessage(channel, '🤖 CUHZ Bot — moderation, hype, points, shoutouts & AI for your stream. Free to try 🚀');
-        sendMessage(channel, '➡️ Get it in YOUR channel: 1️⃣ type /mod cuhz_bot in your chat 2️⃣ pull up to https://discord.com/invite/wt6Zc7Sgjx and say you want the bot. More → https://planetcuhz.com 🌌');
+        sendMessage(channel, '➡️ Get it in YOUR channel: 1️⃣ visit https://planetcuhz.com/bot 2️⃣ sign in as the channel owner 3️⃣ press Add CUHZ Bot 4️⃣ type /mod cuhz_bot once in your chat. Free 🌌');
+        return;
+    }
+
+    // A public, generic route only — no channel names, user IDs, tokens, or
+    // OAuth state ever go into chat. Twitch requires the broadcaster (not a
+    // mod) to approve ad-schedule access for their own channel.
+    if (msg === '!reauth' || msg === '!permissions' || msg === '!botpermissions') {
+        sendMessage(channel, '🔐 Update CUHZ Bot permissions: https://planetcuhz.com/bot?intent=permissions — sign in as the channel owner, then choose Connect ad permissions. Mods cannot approve this scope.');
         return;
     }
 
@@ -3303,7 +3311,7 @@ async function handleMessage(channel, tags, message, self) {
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
             // CTA, so the people who most need to see it are in Basic channels.
-            brand:     '🌌 Brand: !tools !bot !prices !pay !cuhz !planet'
+            brand:     '🌌 Brand: !tools !bot !reauth !prices !pay !cuhz !planet'
                        + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
             shoutouts: '🎤 Shoutouts: ' + (isPP
                        ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
