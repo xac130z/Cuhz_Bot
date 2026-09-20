@@ -26,7 +26,7 @@ check('!bot / !getcuhzbot / !addbot dispatch exists', !!block);
 const body = block ? block[0] : '';
 
 check('tells the streamer to /mod cuhz_bot', /\/mod cuhz_bot/.test(body));
-check('gives a real next step (discord or site)', /discord\.com\/invite|planetcuhz\.com/.test(body));
+check('gives a real website activation step', /planetcuhz\.com\/bot/.test(body));
 
 // Must never send someone to a token/OAuth flow — onboarding needs no credentials.
 check('does NOT link a token/OAuth generator',
@@ -40,6 +40,14 @@ check("stale '!bot' joke removed from USER_COMMANDS",
 const brand = src.match(/brand:\s*'🌌 Brand: [^']*'/);
 check('!bot listed in help for ALL tiers (not behind isPP)',
     !!brand && /!bot/.test(brand[0]));
+check('!reauth listed in help for ALL tiers',
+    !!brand && /!reauth/.test(brand[0]));
+
+const reauthBlock = src.match(/if \(msg === '!reauth'[\s\S]{0,750}?\n    \}/);
+check('!reauth / !permissions / !botpermissions dispatch exists', !!reauthBlock);
+const reauthBody = reauthBlock ? reauthBlock[0] : '';
+check('reauth points to the generic permissions center', /planetcuhz\.com\/bot\?intent=permissions/.test(reauthBody));
+check('reauth never exposes OAuth state or tokens', !/oauth2\/authorize|access[_ ]?token|client_secret/i.test(reauthBody));
 
 // It's no longer a crew joke, so it shouldn't be advertised there too.
 const crew = src.match(/crew:\s*isPP \? '[^']*'/);
