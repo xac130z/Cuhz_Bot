@@ -1088,17 +1088,21 @@ const LYRICAL_QUOTES = [
     "🔥 @lyricalmindsetttv here — day-one CUHZ poet, we appreciate you 📝"
 ];
 
-// !grouch for grouch392 — "Mr Get Too It", NBA 2K hooper energy. Palette 🏀 🔴 💪 🔥 🎮 💎.
-// 8 variants, no-repeat-last-2. Tone: hype + hoops + hustle.
+// !grouch for grouch392 — "Mr. Get To It", NBA 2K hooper energy. Palette 🏀 🔴 💪 🔥 🎮 💎.
+// 12 variants, no-repeat-last-2. Tone: hype + hoops + hustle + CUHZ family love.
 const GROUCH_QUOTES = [
-    "🏀 GROUCH in the building! @grouch392 — Mr Get Too It himself 🔴",
-    "🔴 @grouch392 pulled up! Buckets on buckets, no days off 🏀",
-    "💪 Mr Get Too It touched down — @grouch392 stay grinding cuhz 🔥",
-    "🎮 @grouch392 in the chat! Court vision on AND off the sticks 🏀",
-    "🔥 Grouch here! Real hooper, real one — welcome home cuhz 💎",
-    "🏀 Ayy it's Grouch! @grouch392 get TOO it every single day 💪",
-    "💎 @grouch392 slid in — 2K legend, CUHZ fam certified 🔴",
-    "🔴 Mr Get Too It in the frequency — @grouch392 we see the work 🏀"
+    "🏀 GROUCH in the building! @grouch392 — Mr. Get To It himself 🔴",
+    "🔴 @grouch392 pulled up! Buckets on buckets, hustle on repeat 🏀",
+    "💪 Mr. Get To It touched down — @grouch392 stays ready, cuhz 🔥",
+    "🎮 @grouch392 in the chat! Court vision on the hardwood and the sticks 🏀",
+    "🔥 Grouch is here! @grouch392 is a real hooper, a real one — welcome home, cuhz 💎",
+    "🏀 Ayy, Grouch pulled up! @grouch392 gets to it every single day 💪",
+    "💎 @grouch392 slid in — 2K pressure, CUHZ family certified 🔴",
+    "🔴 Mr. Get To It is in the frequency — @grouch392, we see the work 🏀",
+    "🎮 Controller locked, jumper green — @grouch392 came to compete 🔥",
+    "🏀 @grouch392 checked in — all hustle, no wasted possessions 💪",
+    "💎 Grouch brings that day-one energy — good to see you, @grouch392 🔴",
+    "🔥 Clear the lane! @grouch392 is here, and the whole CUHZ family knows the name 🏀"
 ];
 
 // !brady / !blitz for BradyBlitz — four_a_reason channel regular.
