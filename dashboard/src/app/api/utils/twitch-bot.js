@@ -1,4 +1,5 @@
 import sql from "@/app/api/utils/sql";
+import crypto from "node:crypto";
 
 export async function ensureTwitchBotUserColumns() {
   try {
@@ -10,10 +11,5 @@ export async function ensureTwitchBotUserColumns() {
 }
 
 export function generateBotToken() {
-  // Simple token generator (32 chars). Not cryptographically strong but sufficient for webhook auth here.
-  return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
-  ).slice(0, 48);
+  return crypto.randomBytes(32).toString("base64url");
 }

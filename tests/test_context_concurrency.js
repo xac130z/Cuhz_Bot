@@ -12,6 +12,12 @@ function load({ get = async () => null, generate = async () => 'hello' } = {}) {
             if (name === './logger') return { info() {}, error() {}, debug() {} };
             if (name === './database') return { prepare: () => ({ get, run: async () => ({}) }) };
             if (name === './ai_service') return { generateContextAwareResponse: generate };
+            // stream-commerce merge 2026-09-26: context_handler now filters
+            // buffered lines through the central safety policy.
+            if (name === './safety_policy') return {
+                assessViewerInput: t => ({ allowed: true, text: String(t) }),
+                safeUsername: u => u
+            };
             throw new Error(`Unexpected dependency ${name}`);
         }
     };

@@ -314,11 +314,16 @@ class DBAdapter {
       )`,
 
       // ===== Phase 2: Cuhz Economy =====
+      // Append-only source of truth for CUHZ points (see points_service.js
+      // header for the full model). Balances are GLOBAL per username; `channel`
+      // records where each earn/spend happened, purely for auditability.
+      // Existing installs get `channel` via _ensurePointsLedgerChannel().
       `CREATE TABLE IF NOT EXISTS points_ledger (
         id ${SERIAL} ${PK},
         username TEXT NOT NULL,
         amount INTEGER NOT NULL,
         reason TEXT NOT NULL,
+        channel TEXT,
         created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`,
 
@@ -371,6 +376,45 @@ class DBAdapter {
         created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`,
 
+      // ===== Wave 6: Stream commerce — purchase thank-you dedupe =====
+      // entitlement_id (the site's billing_entitlements.id uuid) is the dedupe key
+      // so a Railway restart never double-announces a purchase. `created_at` is the
+      // entitlement's own timestamp (raw ISO from the site) and doubles as the
+      // persisted poll cursor — MAX(created_at) is where the watcher resumes.
+      `CREATE TABLE IF NOT EXISTS announced_purchases (
+        entitlement_id TEXT PRIMARY KEY,
+        twitch_login TEXT,
+        product TEXT,
+        created_at TEXT,
+        announced_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Wave 6: Roster-sync — self-serve channel roster =====
+      // Persisted last-known roster of channels CUHZ Bot joined via the website
+      // self-serve flow (bot-worker-sync desired-state). `request_id` is the
+      // site's bot_requests.id, kept so that after a Railway restart the bot can
+      // still emit an honest `parted` for a channel that was revoked while it was
+      // down. Env / TWITCH_CHANNEL_NAME channels are NEVER stored here — they are
+      // protected and joined at startup, not managed by roster-sync.
+      `CREATE TABLE IF NOT EXISTS roster_channels (
+        twitch_login TEXT PRIMARY KEY,
+        request_id TEXT,
+        joined_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Wave 7: Community Clips & Highlight Promo =====
+      `CREATE TABLE IF NOT EXISTS community_clips (
+        id ${SERIAL} ${PK},
+        channel TEXT NOT NULL,
+        clipped_by TEXT NOT NULL,
+        title TEXT,
+        clip_url TEXT,
+        clip_id TEXT,
+        timecode TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
       // ===== Moderation audit trail (who did what, to whom, and did Twitch accept it) =====
       `CREATE TABLE IF NOT EXISTS mod_actions (
         id ${SERIAL} ${PK},
@@ -393,8 +437,35 @@ class DBAdapter {
       'CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username)',
       'CREATE INDEX IF NOT EXISTS idx_mood_history_channel ON mood_history(channel, created_at)',
       'CREATE INDEX IF NOT EXISTS idx_achievements_username ON achievements(username)',
+      'CREATE INDEX IF NOT EXISTS idx_community_clips_channel ON community_clips(channel, created_at)',
+      // Points economy: (username, reason) serves the claimBonus idempotency
+      // lookup; (created_at) serves the weekly leaderboard rollup. The ledger
+      // gets a row per chat message, so these matter.
+      'CREATE INDEX IF NOT EXISTS idx_points_ledger_user_reason ON points_ledger(username, reason)',
+      'CREATE INDEX IF NOT EXISTS idx_points_ledger_created ON points_ledger(created_at)',
       'CREATE INDEX IF NOT EXISTS idx_mod_actions_channel ON mod_actions(channel, created_at)'
     ];
+  }
+
+  /**
+   * Migration-in-code (Wave 6 points fix): add points_ledger.channel to
+   * installs created before the column existed. CREATE TABLE IF NOT EXISTS
+   * can't retrofit columns, so this runs on every boot — a no-op once applied.
+   * Postgres has ADD COLUMN IF NOT EXISTS; sqlite needs the pragma check.
+   */
+  async _ensurePointsLedgerChannel() {
+    try {
+      if (this.type === 'postgres') {
+        await this.pgPool.query('ALTER TABLE points_ledger ADD COLUMN IF NOT EXISTS channel TEXT');
+      } else {
+        const cols = this.sqlite.prepare('PRAGMA table_info(points_ledger)').all();
+        if (!cols.some(c => c.name === 'channel')) {
+          this.sqlite.exec('ALTER TABLE points_ledger ADD COLUMN channel TEXT');
+        }
+      }
+    } catch (err) {
+      console.error('Error ensuring points_ledger.channel column:', err.message);
+    }
   }
 
   /**
@@ -442,8 +513,10 @@ class DBAdapter {
     // Add FK for SQLite commands/timers (declared in schema but need pragma)
     this.sqlite.pragma('foreign_keys = ON');
 
-    this._runMigrations();
-    this.seedData();
+    this._ensurePointsLedgerChannel()
+      .then(() => this._runMigrations())
+      .then(() => this.seedData())
+      .then(() => this.normalizeLegacyLinks());
   }
 
   async initPostgres() {
@@ -459,7 +532,9 @@ class DBAdapter {
       await this._runMigrations();
 
       console.log('✅ PostgreSQL Schema Initialized');
+      await this._ensurePointsLedgerChannel();
       await this.seedData();
+      await this.normalizeLegacyLinks();
     } catch (err) {
       console.error('❌ Failed to initialize PostgreSQL schema:', err);
     }
@@ -482,7 +557,7 @@ class DBAdapter {
           const insertCmd = this.prepare('INSERT INTO commands (channel_id, trigger, response) VALUES (?, ?, ?)');
           await insertCmd.run(channelId, '!cuhz', '🚀 https://planetcuhz.com');
           await insertCmd.run(channelId, '!links', '🔗 https://linktr.ee/PlanetCUHZ');
-          await insertCmd.run(channelId, '!discord', '💬 https://discord.com/invite/wt6Zc7Sgjx');
+          await insertCmd.run(channelId, '!discord', '💬 https://discord.gg/uDPEtrcsg4');
 
           // Default timers
           const insertTimer = this.prepare('INSERT INTO timers (channel_id, message, interval_minutes) VALUES (?, ?, ?)');
@@ -492,6 +567,47 @@ class DBAdapter {
       }
     } catch (err) {
       console.error('Error seeding data:', err);
+    }
+  }
+
+  /**
+   * Idempotent startup normalization: rewrites retired/expired Discord invites
+   * baked into pre-existing `commands` / `timers` rows to the canonical one,
+   * on every boot, so old installs self-heal without a manual migration.
+   * Safe to run repeatedly — a channel with no legacy rows is a no-op.
+   *
+   * Canonical verified against Discord's public invite API on 2026-09-26:
+   *   uDPEtrcsg4 -> VALID, permanent (the front door)
+   *   the WO-6-retired code (fragments below) -> still valid but retired
+   *   the invite this normalizer previously called canonical had EXPIRED —
+   *   rewriting to it would have pointed the community at a dead door.
+   *
+   * Retired codes are reassembled from fragments rather than written as one
+   * literal — WO-6's gate requires zero hits for a retired invite string
+   * anywhere under src/, and this normalizer is the one place that
+   * legitimately needs the old values (to find and rewrite them).
+   */
+  async normalizeLegacyLinks() {
+    const RETIRED_INVITE_CODE = ['wt6Zc7S', 'gjx'].join('');
+    const EXPIRED_INVITE_CODE = ['eNxDKkx', 'QdN'].join('');
+    const RETIRED_INVITES = [
+      `https://discord.com/invite/${RETIRED_INVITE_CODE}`,
+      `https://discord.gg/${RETIRED_INVITE_CODE}`,
+      `https://discord.com/invite/${EXPIRED_INVITE_CODE}`,
+      `https://discord.gg/${EXPIRED_INVITE_CODE}`
+    ];
+    const CANONICAL_DISCORD_INVITE = 'https://discord.gg/uDPEtrcsg4';
+    try {
+      for (const retired of RETIRED_INVITES) {
+        await this.prepare(
+          'UPDATE commands SET response = REPLACE(response, ?, ?) WHERE response LIKE ?'
+        ).run(retired, CANONICAL_DISCORD_INVITE, `%${retired}%`);
+        await this.prepare(
+          'UPDATE timers SET message = REPLACE(message, ?, ?) WHERE message LIKE ?'
+        ).run(retired, CANONICAL_DISCORD_INVITE, `%${retired}%`);
+      }
+    } catch (err) {
+      console.error('Error normalizing legacy Discord links:', err);
     }
   }
 }

@@ -241,6 +241,207 @@ For detailed deployment steps, see [`.agent/workflows/deploy.md`](file:///Users/
 
 ---
 
+## 💎 Stream Commerce & Tier Sync (Wave 6)
+
+Bridges CUHZ Bot to the Planet Cuhz site's Stripe-backed entitlements so paid
+viewers get their promised in-chat perks — and, optionally, so verified purchases
+can get a thank-you. **Everything here is default-OFF behind flags and fails open
+to `community` on any error.** Honest states only: an unknown viewer is always
+`community`, prices come only from the code-owned `commerce_content.js` registry
+(never the AI), and the bot never claims a payment state from chat. NO crypto.
+
+### Two ladders, never touching
+- **CUHZ Bot tiers** (viewers): Community FREE · Silver $4.99/mo · Gold $14.99/mo,
+  plus the streamer Affiliate Pack $49.99/mo and quote-only Architect build.
+- **Site membership** (separate): Free · Pro $9.99/mo · Team $24.99/mo.
+
+Buying one never changes the other — bot tiers are their own DB entitlements
+(`bot_silver`/`bot_gold`/`bot_affiliate`) and deliberately don't touch site
+membership. `!mytier` reports only the bot ladder.
+
+### How it works
+- `src/tier_service.js` resolves a viewer's tier from the site's `bot-worker-sync`
+  edge function (batched, 10-min cache, 3s timeout, fail-open). Contract shapes
+  mirror that function exactly: `{ event:'entitlements', logins:[...] }` →
+  `{ viewers: { login: { products, bot_tier } } }`.
+- Perks (gated by tier resolution): Silver/Gold get free/discounted AI brains, a
+  `💎✅` Verified Cuhz badge, monthly point stipends (Silver +1,000 / Gold +5,000,
+  idempotent per month via `pointsService.claimBonus`), and Gold gets a custom
+  arrival + bounded priority on the AI limiter.
+- `src/commerce_content.js` owns the `!plans !silver !gold !affiliate !architect
+  !mytier !site !store !pro` command copy and the promo / thank-you line pools.
+- The purchase watcher polls `{ event:'entitlements_recent', since }` every 60s
+  (home channels, live-only, ≤1 shout-out per 5 min) and dedupes by
+  `entitlement_id` in the `announced_purchases` SQLite table so a restart never
+  double-announces.
+
+### CUHZ points — the model (Wave 6 points fix)
+
+Loyalty points for the community — never currency, never crypto, no cash value.
+The full model is documented in the `src/points_service.js` header; the short
+version:
+
+- **One global balance** per Twitch username across every channel the bot is in.
+  Each ledger row records the channel it happened in (`points_ledger.channel`,
+  added by a boot-time migration-in-code) purely for auditability.
+- **Earn (real configured rates, single source `pointsService.EARN`):** +1 per
+  chat message · +10 activity bonus at most once per 10 minutes while you keep
+  chatting · +300 one-time `!claim` follow bonus · monthly Silver +1,000 / Gold
+  +5,000 stipends (idempotent per calendar month via `claimBonus`).
+- **Spend (`pointsService.COSTS`):** `!ask` 10 · `!ask -brain` 50 · `!code` 25,
+  with the published tier perks (Silver: base `!ask` free, brain 80% off → 10;
+  Gold: all free) applied in `bot.js`. `deductPoints` is atomic — the balance
+  check lives inside the UPDATE, so spends can never overdraw.
+- **Persistence:** `users.points` is the balance cache, `points_ledger` the
+  append-only source of truth; both survive restarts and every query is
+  dialect-safe on sqlite AND Postgres. Points never expire and never reset.
+- **What was broken before this fix:** the "passive paycheck" parsed UTC DB
+  timestamps as local time and never fired (and only paid users who went silent
+  10–30 min); `!top` used SQLite-only `datetime()` and was dead on Railway
+  Postgres; `!pointsinfo` advertised rates that didn't match the code; deduct
+  and claim had check-then-write races. `!points` / `!pointsinfo` copy is now
+  built from the `EARN`/`COSTS` constants so displayed rates can't drift again.
+
+### New environment variables
+`SITE_API_*` are a **different trust domain** from the created.app dashboard's
+`BOT_API_SECRET`/`API_BASE` — never reuse or confuse them.
+
+| Var | Meaning |
+| --- | --- |
+| `SITE_API_URL` | Supabase functions base, e.g. `https://<project-ref>.functions.supabase.co` |
+| `SITE_API_SECRET` | The **value** of the site's `bot-worker-sync` `BOT_API_SECRET` secret |
+| `ENABLE_TIER_SYNC` | `false` — resolve viewer tiers + grant perks/stipends |
+| `ENABLE_COMMERCE_COMMANDS` | `false` — the `!plans` command family + promo rotation line (Premium only) |
+| `ENABLE_PURCHASE_SHOUTOUTS` | `false` — consent-gated purchase thank-yous in home channels |
+| `ENABLE_GOLD_POINTS_2X` | `false` — reserved; do NOT enable until the perk is published on the ladder |
+| `ENABLE_KEYWORD_REPLIES` | `false` — one short, code-owned keyword-intent reply on non-command chat (home surfaces, live-only, hard-cooldowned) |
+| `ENABLE_ROSTER_SYNC` | `false` — self-serve join: auto-join channels streamers approve on the site, part revoked ones (see below) |
+
+### Owner go-live order (do this by hand — nothing auto-deploys)
+1. In Supabase, confirm the Stripe bot-tier price ids are configured (checkout
+   stops returning `PRICE_NOT_CONFIGURED`), then `supabase functions deploy
+   bot-worker-sync` (it now serves the two read-only tier events; no new secret).
+2. In **Railway**, set `SITE_API_URL` and `SITE_API_SECRET` on the bot.
+3. Flip `ENABLE_TIER_SYNC=true`, redeploy, and soak — verify `!mytier` and that
+   Silver/Gold perks resolve. Any site hiccup silently falls back to community.
+4. Flip `ENABLE_COMMERCE_COMMANDS=true`, redeploy, and soak — verify `!plans`,
+   the promo rotation line (Premium only), and the site-pointed `!store`/`!build`.
+5. Decide the consent posture, then optionally flip `ENABLE_PURCHASE_SHOUTOUTS=true`
+   and redeploy. Leave `ENABLE_GOLD_POINTS_2X=false` until that perk is published.
+
+Each flag is independent and secure-off; a Railway redeploy is always the owner's
+hand on the button.
+
+### Putting CUHZ Bot in its own channel's chat
+
+The bot chooses which chats to join from the **`TWITCH_CHANNEL_NAME`** env var
+(`src/config.js` → `config.channels`, consumed in `src/bot.js` at client init).
+**To put CUHZ Bot in its own channel's chat, set `TWITCH_CHANNEL_NAME=<channel-login>`
+on Railway** (the channel login is the bare name, no `#` — the config adds it).
+
+**Multi-channel join IS supported.** `TWITCH_CHANNEL_NAME` is comma-separated, so
+`TWITCH_CHANNEL_NAME=cuhzbot,planetcuhz,somestreamer` joins all three (each entry
+is trimmed, lowercased, and `#`-prefixed automatically). Two other sources are
+merged on top of this at startup: any channels returned by the dashboard API, and
+every channel in the code's `CHANNEL_TIERS` map (force-joined even if not in the
+dashboard). If nothing is configured anywhere, the bot logs `No channels
+configured to join!` and sits idle. A Railway redeploy applies the change.
+
+### Self-serve roster-sync (`ENABLE_ROSTER_SYNC`, default-OFF)
+
+`src/roster_service.js` makes the **planetcuhz.com self-serve flow real**: a
+streamer requests CUHZ Bot on the site → the site records an `approved`
+`bot_request` → the bot **auto-joins that channel** (and **parts** it when the
+streamer revokes). It reconciles the site's desired-state against the channels
+the bot is actually in, so no human has to edit env vars per streamer.
+
+- **Contract (`bot-worker-sync`, exact field names).** It polls `GET
+  /bot-worker-sync` (Bearer `SITE_API_SECRET`) for the desired list:
+  `{ channels: [ { id, twitch_user_id, twitch_login, status, is_mod,
+  channel_bot_granted, can_send, blocked_reason, last_seen_at } ] }` (status in
+  `approved` | `active`). It reports lifecycle back with the same shapes the
+  edge function accepts: `{ id, event:'joined', twitch_login, is_mod, can_send }`,
+  `{ id, event:'parted' }`, `{ id, event:'error', message }`, and a batch
+  `{ event:'heartbeat', ids:[...] }` (≤500) every ~60s.
+- **Reconcile loop.** Every ~30s (jittered): desired-but-not-joined → **join**
+  (+ report `joined`); joined-but-`approved` → confirm `joined` so the site flips
+  it `active`; in-our-roster-but-no-longer-desired → **part** (+ report `parted`).
+- **Join pacing.** JOINs are held under Twitch's limit (**≤15 JOINs / 10s**,
+  ≤10 per cycle, spaced) with a per-channel exponential backoff on failure (a
+  failed join reports `error` and does **not** enter the roster).
+- **PROTECTED env channels.** Every channel in `TWITCH_CHANNEL_NAME` is
+  **never parted** by roster-sync, even if it is absent from desired-state.
+  Roster-sync only ever parts channels it *itself* joined via the site.
+- **Fail-open.** If the site is unreachable/misconfigured, the bot **keeps its
+  current roster**, never crashes chat, and retries with exponential backoff. A
+  site outage never joins or parts anything.
+- **Persisted roster.** The last-known roster (login + the site's request `id`)
+  lives in the SQLite/Postgres `roster_channels` table, so a Railway restart can
+  still emit an honest `parted` for a channel revoked while the bot was down.
+  Env channels are never stored here.
+
+**Channel-tier note (important):** channels joined via roster-sync default to the
+**Basic / free experience**. Roster-sync **never** adds a channel to
+`CHANNEL_TIERS`, and the message path already falls through to `TIERS.BASIC` for
+any unlisted channel (`CHANNEL_TIERS[channel] || TIERS.BASIC`). So a self-serve
+channel gets **no Pro/Premium surfaces** — no marketing rotation, no `!plans`
+commerce family (Premium-gated), no premium-only behaviors — unless it is
+explicitly promoted in `CHANNEL_TIERS`, or a viewer's own paid entitlement lifts
+*that viewer* via `tier_service.js`. Pro surfaces are never auto-granted to a
+channel just because the bot joined it.
+
+### Keyword-intent replies (`ENABLE_KEYWORD_REPLIES`, default-OFF)
+
+`src/keyword_listener.js` adds an optional, code-owned reply on **non-command**
+chat. It runs last in the message path (after every command handler and webhook
+forwarding), only on **home/selling surfaces** (Pro/Premium — never Basic, which
+are other streamers' chats), and only when the flag is on.
+
+- **Intents** (word-boundary regexes, first match wins): `price` (`price`, `cost`,
+  `how much`, `subscribe`, `sub tier`), `help` (`help`, `how do i`, `how does`),
+  `what_question` (message starts with `what` **and** has a `?` or mentions the
+  bot), `bot_mention` (mentions the bot **and** has a `?`).
+- **Replies** come from a fixed registry in `keyword_listener.js` — short cuhz-voice
+  lines pointing only at `!plans` / `!mytier` / `!help` / `planetcuhz.com`. They
+  carry **no prices** (prices live only in `commerce_content.js`) and every line
+  passes `safety_policy.validateOutbound` (re-applied by `sendMessage`).
+- **Hard rails:** ≥45s cooldown per intent, ≥5min per user, ≤1 keyword reply per
+  60s overall, never replies to other bots/self (`KNOWN_BOTS` + the bot's own
+  names), never fires on a `!command`, and live-only (mirrors the marketing
+  rotation's live-gate; `USE_MOCK_API` stands in for live locally). A blocked
+  attempt never burns a cooldown.
+
+### Reviewing chat logs (Railway logs vs the DB)
+
+Two independent surfaces, for two different jobs:
+
+- **Railway logs = live ops.** `node fetch_chat_history.js` shells out to
+  `npx railway logs --limit 15000 --service "Twitch Bot"`, writes the raw stream to
+  `railway_logs_dump.txt`, and parses `PRIVMSG #<channel>` lines into a unique-chatter
+  list. Run `npx railway login` first (the script checks `npx railway status` and
+  exits if you're not authed). This shows the bot's recent **operational** stream —
+  connects, sends, errors, and whatever chat lines are still in the buffer — not a
+  durable, queryable history. (The `PROJECT_ID` / `ENV_ID` / `CHANNEL` / date
+  constants near the top of the script are hard-coded and edited by hand per pull.)
+- **DB (`chat_log`) = "Cuhz language" study.** When `STORE_CHAT_CONTENT=true`,
+  `userMemory.recordMessage` (`src/user_memory.js`) inserts each message into the
+  **`chat_log`** table (`channel, username, message, is_command, created_at`;
+  indexes `idx_chat_log_channel_time`, `idx_chat_log_username`). Raw storage is
+  **opt-in and pruned** to `CHAT_RETENTION_DAYS` (1–30, default 7). Related tables:
+  **`user_profiles`** (per-user totals, `last_seen`, follower/sub flags) and
+  **`mood_history`**. Query it with the DB adapter (`src/database.js`): SQLite at
+  `data/bot.db` locally, or the Railway Postgres `DATABASE_URL` in prod — e.g.
+  `SELECT username, message, created_at FROM chat_log WHERE channel = '#planetcuhz'
+  AND is_command = 0 ORDER BY created_at DESC LIMIT 200;`.
+
+**Recommended flow:** use **Railway logs for live ops** (is the bot up, is it
+sending, what errored right now), and use the **DB / `fetch_chat_history` path for
+"Cuhz language" study** (how the community actually talks, for tuning replies) —
+but only while `STORE_CHAT_CONTENT` is intentionally on, and mind the retention
+window.
+
+---
+
 ## 🧭 Future Roadmap
 
 1. **Dynamic Help**: Update `!help` to pull directly from a CMS or external config.
@@ -257,6 +458,12 @@ For detailed deployment steps, see [`.agent/workflows/deploy.md`](file:///Users/
 - **[DOCUMENTATION.md](file:///Users/DeveloperOps/Desktop/Antigravity%20Agent/DOCUMENTATION.md)** - Complete documentation index
 - **[CHANGELOG.md](file:///Users/DeveloperOps/Desktop/Antigravity%20Agent/CHANGELOG.md)** - Version history
 - **[BRAND_AND_CAPABILITIES.md](file:///Users/DeveloperOps/Desktop/Antigravity%20Agent/BRAND_AND_CAPABILITIES.md)** - Planet CUHZ brand guide
+
+---
+
+## 🧭 Canon
+
+`docs/CANON.mirror.json` is a **read-only, version-stamped mirror** of the single source of truth for Planet CUHZ prices, tiers, links, and brand — `SITE/canon/canon.json` (site repo: `vqnc-labs-website`, path `Planet Cuhz/Planet Cuhz Website/canon/canon.json`). Do not hand-edit the mirror; a product fact (price, tier, link, spelling, mark) is born and changed only in the site's `canon.json`, then propagated here on the next sync wave. If this bot's links/prices ever disagree with the canon, that's a bug in the bot, never in the canon. Canonical Discord invite: `https://discord.gg/eNxDKkxQdN`.
 
 ---
 

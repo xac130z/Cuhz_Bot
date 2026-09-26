@@ -76,6 +76,14 @@ async function integration() {
         TIERS: { BASIC: 'basic', PRO: 'pro', PREMIUM: 'premium' },
         _channelWelcomes: new Map(), streamStates: new Map(), streamKey: c => c.replace('#', ''),
         buildAiCommandList: x => x,
+        // Branch-era module-level helpers (stream-commerce merge 2026-09-26):
+        // the sliced handler references them, so the sandbox must supply them.
+        markChatted() {},
+        hasChattedThisSession() { return false; },
+        tierService: { getChannelPlan() { return null; } },
+        commerceContent: { pickGoldArrival() { return '💎'; } },
+        streamContent: { launchCommandResponse() { return null; }, RESPONSES: {} },
+        keywordReplies: { evaluate() { return null; } },
         handleAutoShoutout() { throw Error('direct request must not also shout out'); },
         sendMessage: (channel, message) => effects.sends.push({ channel, message }),
         client: { say: (channel, message) => effects.sends.push({ channel, message }) }

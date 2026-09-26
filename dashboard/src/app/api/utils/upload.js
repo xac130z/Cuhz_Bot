@@ -13,4 +13,5 @@ async function upload({ url, buffer, base64 }) {
 	};
 }
 
+export { upload };
 export default upload;

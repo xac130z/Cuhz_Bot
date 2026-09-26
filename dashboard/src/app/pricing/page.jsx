@@ -1,325 +1,164 @@
 "use client";
-import { useMemo } from "react";
 
-function buildPrefillUrl({ details, requestType }) {
-  const params = new URLSearchParams();
-  if (requestType) params.set("requestType", requestType);
-  if (details) params.set("details", details);
-  const qs = params.toString();
-  // Note: query string must come before the hash fragment
-  return `/cuhz-bot${qs ? `?${qs}` : ""}#ai`;
-}
+import { OFFER_SECTIONS } from "../../config/offers";
 
-function PlanCard({ title, price, subtitle, bullets, accent = false, cta }) {
+const gradient =
+  "linear-gradient(90deg,#00f5ff,#b24bf3,#ff1493,#ffd700)";
+
+function OfferCard({ offer }) {
   return (
-    <div
+    <article
       className={
-        accent
-          ? "rounded-2xl border border-[#b24bf3]/40 bg-white/5 p-6 shadow-[0_0_24px_rgba(178,75,243,0.25)]"
-          : "rounded-2xl border border-white/10 bg-white/5 p-6"
+        offer.featured
+          ? "flex h-full flex-col rounded-2xl border border-[#b24bf3]/50 bg-white/[0.08] p-6 shadow-[0_0_28px_rgba(178,75,243,0.22)]"
+          : "flex h-full flex-col rounded-2xl border border-white/10 bg-white/[0.05] p-6"
       }
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold">{title}</h2>
-          {subtitle ? (
-            <div className="mt-1 text-sm text-white/70">{subtitle}</div>
-          ) : null}
-        </div>
-        {price ? (
-          <div className="text-right">
-            <div className="text-3xl font-extrabold">{price}</div>
-          </div>
+      <div className="flex items-start justify-between gap-4">
+        <h3 className="text-xl font-bold tracking-wide">{offer.name}</h3>
+        {offer.featured ? (
+          <span className="rounded-full bg-[#b24bf3]/20 px-2.5 py-1 text-xs font-semibold text-[#e4b8ff]">
+            Popular
+          </span>
         ) : null}
       </div>
+      <p className="mt-3 text-2xl font-extrabold text-white">{offer.price}</p>
 
-      <ul className="mt-5 space-y-2 text-white/80 text-sm">
-        {bullets.map((b, idx) => (
-          <li key={idx}>• {b}</li>
-        ))}
-      </ul>
+      {offer.description ? (
+        <p className="mt-4 text-sm leading-6 text-white/75">
+          {offer.description}
+        </p>
+      ) : null}
 
-      {cta ? <div className="mt-6">{cta}</div> : null}
-    </div>
+      {offer.features.length > 0 ? (
+        <ul className="mt-5 flex-1 space-y-3 text-sm leading-6 text-white/80">
+          {offer.features.map((feature) => (
+            <li key={feature} className="flex gap-2">
+              <span aria-hidden="true" className="mt-0.5 text-[#00f5ff]">
+                ✓
+              </span>
+              <span>{feature}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="flex-1" />
+      )}
+
+      <div className="mt-6">
+        <a
+          href={offer.cta.href}
+          target="_blank"
+          rel="noreferrer"
+          className={
+            offer.featured
+              ? "block rounded-xl px-5 py-3 text-center font-semibold text-black transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#00f5ff] focus:ring-offset-2 focus:ring-offset-[#0a0e27]"
+              : "block rounded-xl border border-white/20 px-5 py-3 text-center font-semibold transition-colors hover:border-white/50 focus:outline-none focus:ring-2 focus:ring-[#00f5ff] focus:ring-offset-2 focus:ring-offset-[#0a0e27]"
+          }
+          style={offer.featured ? { background: gradient } : undefined}
+        >
+          {offer.cta.label}
+          <span className="sr-only"> (opens on PlanetCuhz.com)</span>
+        </a>
+        {offer.cta.checkout ? (
+          <p className="mt-2 text-center text-xs text-white/55">
+            Secure checkout happens on PlanetCuhz.com.
+          </p>
+        ) : null}
+      </div>
+    </article>
   );
 }
 
 export default function PricingPage() {
-  const bgStyle = useMemo(
-    () => ({
-      background:
-        "radial-gradient(1200px 600px at 20% -10%, rgba(178,75,243,0.25), transparent), radial-gradient(1000px 500px at 80% 0%, rgba(0,245,255,0.20), transparent), radial-gradient(1200px 600px at 50% 110%, rgba(255,20,147,0.18), transparent)",
-    }),
-    [],
-  );
-
   return (
-    <div
-      className="min-h-screen text-white"
-      style={{ backgroundColor: "#0a0e27" }}
+    <main
+      className="min-h-screen overflow-hidden text-white"
+      style={{
+        backgroundColor: "#0a0e27",
+        backgroundImage:
+          "radial-gradient(1200px 600px at 20% -10%, rgba(178,75,243,0.25), transparent), radial-gradient(1000px 500px at 80% 0%, rgba(0,245,255,0.20), transparent), radial-gradient(1200px 600px at 50% 110%, rgba(255,20,147,0.18), transparent)",
+      }}
     >
-      <div className="absolute inset-0 -z-10" style={bgStyle} />
-
-      <div className="max-w-[1200px] mx-auto px-6 py-10">
-        <header className="flex items-center justify-between">
+      <div className="mx-auto max-w-[1280px] px-6 py-10">
+        <header className="flex items-center justify-between gap-4">
           <a href="/" className="flex items-center gap-3">
             <img
               src="https://ucarecdn.com/3afc6131-98f7-42f7-ba95-e117ff1896f9/-/format/auto/"
-              alt="Planet Cuhz logo"
+              alt="Planet CUHZ"
               className="h-10 w-auto rounded-sm"
             />
             <span className="text-lg font-semibold tracking-wide">
-              Cuhz_Bot Pricing & Plans
+              Pricing & Plans
             </span>
           </a>
           <a
             href="/dashboard"
-            className="px-4 py-2 rounded-xl border border-white/15 hover:border-white/30 transition-colors"
+            className="rounded-xl border border-white/15 px-4 py-2 transition-colors hover:border-white/40 focus:outline-none focus:ring-2 focus:ring-[#00f5ff]"
           >
             Dashboard
           </a>
         </header>
 
-        {/* Intro + CTAs */}
-        <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h1 className="text-3xl md:text-4xl font-extrabold">
-            Level up your Twitch community
-          </h1>
-          <p className="mt-3 text-white/80 max-w-[70ch]">
-            Whether you're a viewer looking for more power or a streamer wanting
-            a custom-built companion, Planet CUHZ has a plan for you.
+        <div className="py-16 text-center">
+          <p className="text-sm font-bold uppercase tracking-[0.24em] text-[#00f5ff]">
+            One planet. Clear choices.
           </p>
-          <div className="mt-6 flex flex-col sm:flex-row gap-3">
-            <a
-              href="/cuhz-bot"
-              className="px-6 py-3 rounded-xl font-semibold text-black text-center"
-              style={{
-                background:
-                  "linear-gradient(90deg,#00f5ff,#b24bf3,#ff1493,#ffd700)",
-              }}
-            >
-              Request CuhzBot (Free)
-            </a>
-            <a
-              href={buildPrefillUrl({
-                requestType: "ai_dev_team",
-                details:
-                  "I want a quote for a custom AI build (home assistant or AI dev team).",
-              })}
-              className="px-6 py-3 rounded-xl font-semibold border border-white/20 hover:border-white/40 transition-colors text-center"
-            >
-              Get a quote for custom AI
-            </a>
-          </div>
-          <div className="mt-4 text-xs text-white/60">
-            Note: requesting CuhzBot saves your Twitch username so we can add
-            the bot. We'll add it in less than 48 hours for free.
-          </div>
+          <h1 className="mx-auto mt-4 max-w-4xl text-4xl font-extrabold leading-tight md:text-6xl">
+            Build, stream, and grow with Planet CUHZ
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/75 md:text-lg">
+            Pick a site membership, equip an entire Twitch channel, or choose a
+            one-time offer. Every plan has a clear scope and destination.
+          </p>
         </div>
 
-        {/* Viewer plans */}
-        <section className="mt-10">
-          <h2 className="text-2xl font-bold">Choose Your Tier</h2>
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <PlanCard
-              title="Community"
-              subtitle="FREE"
-              price="$0"
-              bullets={[
-                "Earn 1 point per chat message",
-                "Base AI: !ask (Gemini) for 10 points per request",
-                "Directory Access: !shoutouts to see community VIPs",
-                "Standard commands: links, hype, and gambling",
-              ]}
-              cta={
-                <a
-                  href="/cuhz-bot"
-                  className="inline-block px-5 py-3 rounded-xl font-semibold border border-white/20 hover:border-white/40 transition-colors"
-                >
-                  Request CuhzBot
-                </a>
-              }
-            />
-            <PlanCard
-              title="Silver Supporter"
-              subtitle="$4.99 / mo"
-              price="$4.99"
-              bullets={[
-                "Unlimited base AI: !ask (no points)",
-                "Claude AI (!ask -brain) cost reduced by 80%",
-                "Verified Cuhz icon when the bot talks to you",
-                "1,000 bonus points monthly",
-              ]}
-              cta={
-                <a
-                  href={buildPrefillUrl({
-                    requestType: "ai_dev_team",
-                    details:
-                      "I want Silver Supporter ($4.99/mo). Please send payment + setup instructions.",
-                  })}
-                  className="inline-block px-5 py-3 rounded-xl font-semibold border border-white/20 hover:border-white/40 transition-colors"
-                >
-                  Get Silver (instructions)
-                </a>
-              }
-            />
-            <PlanCard
-              title="Gold Executive"
-              subtitle="$14.99 / mo"
-              price="$14.99"
-              accent
-              bullets={[
-                "Absolute unlimited AI: ZERO point cost for all brains",
-                "Priority brain: skip the line during high-traffic moments",
-                "Custom arrival: the bot greets you when you join",
-                "5,000 bonus points monthly",
-              ]}
-              cta={
-                <a
-                  href={buildPrefillUrl({
-                    requestType: "ai_dev_team",
-                    details:
-                      "I want Gold Executive ($14.99/mo). Please send payment + setup instructions.",
-                  })}
-                  className="inline-block px-5 py-3 rounded-xl font-semibold text-black"
-                  style={{
-                    background:
-                      "linear-gradient(90deg,#00f5ff,#b24bf3,#ff1493,#ffd700)",
-                  }}
-                >
-                  Get Gold (instructions)
-                </a>
-              }
-            />
-          </div>
-        </section>
-
-        {/* Streamer plans */}
-        <section className="mt-12">
-          <h2 className="text-2xl font-bold">
-            Streamer & Enterprise Solutions
-          </h2>
-          <p className="mt-2 text-white/80 max-w-[80ch]">
-            Want the full Cuhz_Bot experience in your own channel? Pick a pack
-            below and we’ll email instructions + a quote if needed.
-          </p>
-
-          <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <PlanCard
-              title="The Affiliate Pack"
-              subtitle="$49.99 / mo"
-              price="$49.99"
-              bullets={[
-                "Branding: bot name stays Cuhz_Bot + your links and socials",
-                "Moderation intelligence: !chatreport and !mood for mods",
-                "Automated marketing: your socials on a timer rotation",
-              ]}
-              cta={
-                <a
-                  href={buildPrefillUrl({
-                    requestType: "ai_dev_team",
-                    details:
-                      "I want The Affiliate Pack ($49.99/mo). Please send payment + onboarding steps for my channel.",
-                  })}
-                  className="inline-block px-5 py-3 rounded-xl font-semibold border border-white/20 hover:border-white/40 transition-colors"
-                >
-                  Request Affiliate Pack
-                </a>
-              }
-            />
-
-            <PlanCard
-              title='The "Architect" Custom Build'
-              subtitle="Contact for Quote"
-              price={null}
-              accent
-              bullets={[
-                "Custom branding: name, avatar, and backstory",
-                "Private intelligence: trained on your rules, lore, and knowledge",
-                "Dedicated server: private instance",
-                "Full ownership + integrations (Home Assistant + Discord)",
-              ]}
-              cta={
-                <a
-                  href={buildPrefillUrl({
-                    requestType: "ai_dev_team",
-                    details:
-                      "I want an Architect Custom Build. Please email instructions and a quote.",
-                  })}
-                  className="inline-block px-5 py-3 rounded-xl font-semibold text-black"
-                  style={{
-                    background:
-                      "linear-gradient(90deg,#00f5ff,#b24bf3,#ff1493,#ffd700)",
-                  }}
-                >
-                  Contact for Quote
-                </a>
-              }
-            />
-          </div>
-        </section>
-
-        {/* FAQ + contact */}
-        <section className="mt-12 rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h2 className="text-2xl font-bold">Frequently Asked Questions</h2>
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-white/80">
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="font-semibold text-white">How do I pay?</div>
-              <div className="mt-2">
-                We’ll email you payment + setup instructions when you request a
-                plan.
-              </div>
-            </div>
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="font-semibold text-white">Do points expire?</div>
-              <div className="mt-2">
-                No. Once you earn or buy CUHZ points, they stay on your account.
-              </div>
-            </div>
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="font-semibold text-white">
-                Can I upgrade / downgrade?
-              </div>
-              <div className="mt-2">
-                Yep. You can change your tier anytime — just request the new
-                plan and we’ll handle the switch.
-              </div>
-            </div>
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="font-semibold text-white">
-                How do I get started?
-              </div>
-              <div className="mt-2">
-                Contact @fourareason4 in Discord or email
-                SUPPORT@PLANETCUHZ.COM.
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-col sm:flex-row gap-3">
-            <a
-              href="/cuhz-bot"
-              className="px-6 py-3 rounded-xl font-semibold border border-white/20 hover:border-white/40 transition-colors text-center"
+        <div className="space-y-12">
+          {OFFER_SECTIONS.map((section) => (
+            <section
+              key={section.id}
+              aria-labelledby={`${section.id}-title`}
+              className="rounded-3xl border border-white/10 bg-black/20 p-6 md:p-8"
             >
-              Request CuhzBot
-            </a>
-            <a
-              href={buildPrefillUrl({
-                requestType: "ai_dev_team",
-                details:
-                  "Please email me instructions and a quote for Cuhz_Bot services.",
-              })}
-              className="px-6 py-3 rounded-xl font-semibold text-black text-center"
-              style={{
-                background:
-                  "linear-gradient(90deg,#00f5ff,#b24bf3,#ff1493,#ffd700)",
-              }}
-            >
-              Request quote by email
-            </a>
-          </div>
-        </section>
+              <div className="max-w-3xl">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#e4b8ff]">
+                  {section.eyebrow}
+                </p>
+                <h2
+                  id={`${section.id}-title`}
+                  className="mt-2 text-3xl font-extrabold"
+                >
+                  {section.title}
+                </h2>
+                <p className="mt-3 inline-flex rounded-full border border-[#00f5ff]/30 bg-[#00f5ff]/10 px-3 py-1.5 text-sm font-semibold text-[#9afaff]">
+                  Scope: {section.scope}
+                </p>
+                <p className="mt-4 leading-7 text-white/70">
+                  {section.description}
+                </p>
+              </div>
+
+              <div
+                className={`mt-7 grid grid-cols-1 gap-5 ${
+                  section.id === "bot"
+                    ? "md:grid-cols-2 xl:grid-cols-3"
+                    : "md:grid-cols-2 lg:grid-cols-3"
+                }`}
+              >
+                {section.offers.map((offer) => (
+                  <OfferCard key={offer.id} offer={offer} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <footer className="py-10 text-center text-sm text-white/55">
+          Paid purchase links open the canonical Planet CUHZ pricing page for
+          authenticated checkout. This dashboard does not process those
+          purchases locally.
+        </footer>
       </div>
-    </div>
+    </main>
   );
 }

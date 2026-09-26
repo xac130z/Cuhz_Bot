@@ -18,7 +18,30 @@ const modIntel = require('./mod_intel');
 const moderation = require('./moderation_service');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const safetyPolicy = require('./safety_policy');
+const streamContent = require('./stream_content');
+const commerceContent = require('./commerce_content');
+const tierService = require('./tier_service');
+const rosterService = require('./roster_service');
+const keywordListener = require('./keyword_listener');
+const followageService = require('./followage_service');
 const streakService = require('./streak_service');
+const clipsService = require('./clips_service');
+const raiderService = require('./raider_service');
+const twitchEdge = require('./twitch_edge_service');
+
+// Watch Streak truth is session-scoped: only Twitch's verified USERNOTICE can
+// populate this tracker. Ordinary chat text never becomes a detected streak.
+const streakTracker = streakService.createTracker();
+
+// Single keyword-intent listener instance (Wave 6, default-OFF). Owns its own
+// cooldown state. Bot names cover the login + the customer-facing "CUHZ Bot"
+// spellings so it never talks back to itself. Fully inert until
+// ENABLE_KEYWORD_REPLIES is on and the bot.js hook (end of handleMessage) calls it.
+const keywordReplies = keywordListener.createListener({
+    botNames: [config.username, 'cuhz bot', 'cuhzbot']
+});
 
 // ============================================================================
 // THE CUHZ LAB — chat-controlled lounge (Lane K). Subscribers steer the lounge
@@ -251,8 +274,6 @@ function handleLabMenu(channel, roomId, actor, lab) {
             return true;
     }
 }
-// Only Twitch USERNOTICE events populate the channel-scoped streak tracker.
-const streakTracker = streakService.createTracker();
 
 // --- Tier System Definition ---
 // Canonical access list. Keys MUST be lowercase — lookups do `.toLowerCase()`
@@ -359,6 +380,20 @@ let _personaSummaryLogged = false;
 const _channelWelcomes = new Map();
 const WELCOME_BACK_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 
+// Per-channel session chatters (lowercased logins). Powers the "name the buyer
+// only if they've chatted this session" rule for purchase thank-yous — so we
+// never @-mention someone who isn't present + public. Cleared on restart.
+const _sessionChatters = new Map(); // channel -> Set<login>
+function markChatted(channel, login) {
+    let set = _sessionChatters.get(channel);
+    if (!set) { set = new Set(); _sessionChatters.set(channel, set); }
+    set.add(String(login || '').toLowerCase());
+}
+function hasChattedThisSession(channel, login) {
+    const set = _sessionChatters.get(channel);
+    return !!(set && set.has(String(login || '').toLowerCase()));
+}
+
 // Random pick that avoids repeating the last N picks for a given key.
 const _recentPicks = new Map(); // key -> string[]
 function pickNoRepeat(key, arr, avoidLast = 3) {
@@ -375,17 +410,36 @@ function pickNoRepeat(key, arr, avoidLast = 3) {
 // Per-channel outbound queue: Twitch rate-limited the bot when welcome + achievement
 // sends fired within the same second. Queue guarantees ≥1.5s spacing per channel.
 const SEND_SPACING_MS = 1500;
+const MAX_SEND_QUEUE = 25;
+const DUPLICATE_WINDOW_MS = 10000;
 const _sendQueues = new Map(); // channel -> { queue: [], draining: bool, lastSentAt: number }
+const _recentOutbound = new Map(); // `${channel}:${text}` -> timestamp
 
-function sendMessage(channel, text) {
+function sendMessage(channel, text, options = {}) {
     if (!client || !channel || !text) return;
+    const checked = safetyPolicy.validateOutbound(text, {
+        source: options.source || 'bot',
+        moderatorAction: options.moderatorAction === true
+    });
+    if (!checked.allowed) {
+        logger.warn(`🛡️ Outbound message blocked: ${checked.reason}`);
+        return;
+    }
     const key = channel;
     let state = _sendQueues.get(key);
     if (!state) {
         state = { queue: [], draining: false, lastSentAt: 0 };
         _sendQueues.set(key, state);
     }
-    state.queue.push(text);
+    if (state.queue.length >= MAX_SEND_QUEUE) {
+        logger.warn(`🛡️ Outbound queue full for ${key}; dropping message`);
+        return;
+    }
+    const duplicateKey = `${key}:${checked.text}`;
+    const lastSent = _recentOutbound.get(duplicateKey) || 0;
+    if (Date.now() - lastSent < DUPLICATE_WINDOW_MS) return;
+    _recentOutbound.set(duplicateKey, Date.now());
+    state.queue.push(checked.text);
     if (!state.draining) drainQueue(key);
 }
 
@@ -605,13 +659,15 @@ const PUBLIC_COMMANDS = {
     // "what is planet cuhz?" with the website link. Intentional dual-registration.
     '!cuhz': '🚀 https://planetcuhz.com',
     '!links': '🔗 https://linktr.ee/PlanetCUHZ',
-    '!discord': '💬 Join the CUHZ fam → https://discord.com/invite/wt6Zc7Sgjx',
+    '!discord': '💬 Join the CUHZ fam → https://discord.gg/uDPEtrcsg4',
     '!whatiscuhz': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!faq': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!whitepaper': '📄 https://planetcuhz.com/whitepaper',
     '!roadmap': '🧭 https://planetcuhz.com/whitepaper#roadmap',
     '!rules': '📌 Be respectful. No hate. No spam. Stay CUHZ.',
     '!privacy': '🔒 Privacy & security → https://planetcuhz.com/privacy',
+    '!cuhzchain': '🔗 CUHZ Chain Studio → https://planetcuhz.com/chain',
+    '!chain': '🔗 CUHZ Chain Studio → https://planetcuhz.com/chain',
     '!gm': 'Good morning CUHZ ☀️',
     '!gn': 'Good night CUHZ 🌙',
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
@@ -933,16 +989,16 @@ const TIMER_POOLS = {
         "🌌 CUHZ fam, first time here? → https://planetcuhz.com"
     ],
     discord: [
-        "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 CUHZ fam on Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Real convos happening in Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Don't lurk, join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Link up with the fam → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Where the CUHZ planning happens → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Free to join, hard to leave → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Slide in the Discord → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 CUHZ Discord — come say what's up → https://discord.com/invite/wt6Zc7Sgjx",
-        "💬 Planet CUHZ Discord is active 24/7 → https://discord.com/invite/wt6Zc7Sgjx"
+        "💬 Join the Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 CUHZ fam on Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 Real convos happening in Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 Don't lurk, join the Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 Link up with the fam → https://discord.gg/uDPEtrcsg4",
+        "💬 Where the CUHZ planning happens → https://discord.gg/uDPEtrcsg4",
+        "💬 Free to join, hard to leave → https://discord.gg/uDPEtrcsg4",
+        "💬 Slide in the Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 CUHZ Discord — come say what's up → https://discord.gg/uDPEtrcsg4",
+        "💬 Planet CUHZ Discord is active 24/7 → https://discord.gg/uDPEtrcsg4"
     ],
     socials: [
         "🔗 All links → https://linktr.ee/PlanetCUHZ",
@@ -955,6 +1011,18 @@ const TIMER_POOLS = {
         "🔗 Planet CUHZ universe in one link → https://linktr.ee/PlanetCUHZ",
         "🔗 One link, all the vibes → https://linktr.ee/PlanetCUHZ",
         "🔗 Tap in across platforms → https://linktr.ee/PlanetCUHZ"
+    ],
+    tools: [
+        "🔗 CUHZ Chain Studio → https://planetcuhz.com/chain",
+        "⛓️ Try the Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain",
+        "🔗 Make your own CUHZ chain → https://planetcuhz.com/chain",
+        "⛓️ Chain Studio — free to use, nothing leaves your browser → https://planetcuhz.com/chain",
+        "🔗 Chain Studio is live — pick from 10 finishes → https://planetcuhz.com/chain",
+        "⛓️ Build a chain in seconds → https://planetcuhz.com/chain",
+        "🔗 CUHZ chains for the culture → https://planetcuhz.com/chain",
+        "⛓️ Drape the chain, pick a finish, download the PNG → https://planetcuhz.com/chain",
+        "🔗 Chain Studio — drop in and cook → https://planetcuhz.com/chain",
+        "⛓️ The Chain Studio is how we move → https://planetcuhz.com/chain"
     ],
     rules: [
         "📌 Be respectful. No hate. No spam. Stay CUHZ.",
@@ -1353,7 +1421,7 @@ const USER_VARIANT_POOLS = {
 const SOCIAL_LINKS = {
     website:  'https://planetcuhz.com',
     linktree: 'https://linktr.ee/PlanetCUHZ',
-    discord:  'https://discord.com/invite/wt6Zc7Sgjx',
+    discord:  'https://discord.gg/uDPEtrcsg4',
     // Drop IG/TikTok/YT URLs in here when ready.
     instagram: null,
     tiktok:    null,
@@ -1876,9 +1944,12 @@ const BASIC_USER_COMMANDS = {
 const BASIC_BLOCKED_COMMANDS = new Set([
     '!cuhz', '!links', '!discord', '!whatiscuhz', '!faq',
     '!whitepaper', '!roadmap', '!rules', '!privacy',
-    '!giveaway', '!enter',
-    '!dashboard', '!schedule', '!stream',
-    '!followage', '!viewers', '!streamstats'
+    '!cuhzchain', '!chain', '!giveaway', '!enter',
+    '!dashboard', '!pointsinfo', '!schedule', '!stream',
+    '!followage', '!viewers', '!streamstats',
+    // Basic channels are third-party chats; consume the canonical registry so
+    // new commerce commands and legacy aliases are denied automatically.
+    ...commerceContent.COMMERCE_COMMAND_NAMES
 ]);
 
 const TIMER_MESSAGES = [
@@ -1891,7 +1962,8 @@ const TIMER_MESSAGES = [
     "💬 Talk to the bot: !ask <anything> for AI · !hype !vibe !w for the vibes · !points for your bag. It answers, try it 💎",
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
-    "💬 Join the Discord → https://discord.com/invite/wt6Zc7Sgjx",
+    "💬 Join the Discord → https://discord.gg/uDPEtrcsg4",
+    "⛓️ CUHZ Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain",
     // Points line: the timer loop is the bot's only proactive surface, so it's how
     // the earn loop gets discovered. Claims mirror verified code (chat_message +1,
     // passive_paycheck +10, claimBonus 300) — and "in chat" because the paycheck is
@@ -1906,7 +1978,7 @@ const BASIC_TIMER_MESSAGES = [
     // retired "pull up to @four_a_reason's stream" pointer superseded by PR #4.
     '🤖 Want CUHZ Bot in your channel — mod tools, hype, points & AI? Type !bot to pull up 🚀',
     '🌌 Planet CUHZ — the creator ecosystem where we all level up together 💎',
-    '💬 Join the CUHZ fam on Discord → https://discord.com/invite/wt6Zc7Sgjx',
+    '💬 Join the CUHZ fam on Discord → https://discord.gg/uDPEtrcsg4',
     '🔥 Type !hype, !vibe, or !w to show love in the chat!',
     '💎 Every message stacks CUHZ Points: +1 per chat, +10 for hanging out in chat, +300 one-time with !claim. !points for your bag, !rewards for the goods 💎'
 ];
@@ -2148,6 +2220,19 @@ async function getFollowData(broadcasterId, userId) {
     }
 }
 
+// Helix auth bundle for followage_service — reuses the same validated identity
+// (fetchClientId) every other Helix helper here relies on. Returns null when the
+// token can't be validated so the service can reply honestly instead of erroring.
+async function getHelixAuth() {
+    if (!twitchClientId) await fetchClientId();
+    if (!twitchClientId) return null;
+    return {
+        clientId: twitchClientId,
+        token: config.oauthToken.replace('oauth:', ''),
+        botUserId
+    };
+}
+
 async function updateChannelInfo(broadcasterId, data) {
     if (!twitchClientId) await fetchClientId();
     if (!twitchClientId) return false;
@@ -2294,6 +2379,24 @@ async function initializeTwitchClient() {
 
     targetChannels = [...channelsToJoin];
 
+    const rawSay = client.say.bind(client);
+    client.say = (targetChannel, outboundText) => {
+        const isModeratorAction = /^\/(?:announce\s+.{1,400}|raid\s+[a-z0-9_]{1,25}|ban\s+[a-z0-9_]{1,25}|timeout\s+[a-z0-9_]{1,25}\s+\d{1,6}|clear|slow\s+\d{1,4}|slowoff|unban\s+[a-z0-9_]{1,25}|untimeout\s+[a-z0-9_]{1,25})$/i.test(String(outboundText || '').trim());
+        const checked = safetyPolicy.validateOutbound(outboundText, {
+            source: 'bot',
+            moderatorAction: isModeratorAction
+        });
+        if (!checked.allowed) {
+            logger.warn(`🛡️ Twitch egress blocked: ${checked.reason}`);
+            return Promise.reject(new Error(`Outbound policy blocked: ${checked.reason}`));
+        }
+        if (config.enableVoice) {
+            const cleanText = checked.text.replace(/[^a-zA-Z0-9\s\.,!\?]/g, '');
+            require('child_process').exec(`say -v "Daniel" "CUHZ Bot says: ${cleanText}"`);
+        }
+        return rawSay(targetChannel, checked.text);
+    };
+
     client.connect().then(() => {
         logger.info('Successfully initiated connection to Twitch IRC.');
         // Verify actual IRC membership ~60s after connect (joins are async and
@@ -2303,6 +2406,33 @@ async function initializeTwitchClient() {
         logger.error('Twitch connection FAILED:', err);
     });
     setupEventHandlers();
+
+    // Wave 6 — stream commerce wiring. init() hands tier_service the queue-routed
+    // sender. The purchase watcher
+    // self-gates on ENABLE_PURCHASE_SHOUTOUTS and only fires while a home channel
+    // is live, so it is always safe to start.
+    tierService.init({ sendMessage });
+    tierService.startPurchaseWatcher({
+        homeChannels: ['#planetcuhz', '#four_a_reason'],
+        isLive: (ch) => { const s = streamStates.get(ch); return !!(s && s.isLive); },
+        hasChatted: hasChattedThisSession,
+        sendMessage
+    });
+
+    // Wave 6 — roster-sync (self-serve join). Flag-gated (ENABLE_ROSTER_SYNC),
+    // fail-open, and default-OFF: when the flag is off it schedules nothing. When
+    // on, it polls the site's bot-worker-sync desired-state and auto-joins the
+    // channels streamers approve on planetcuhz.com (parting revoked ones), paced
+    // within Twitch's JOIN limits. Env TWITCH_CHANNEL_NAME channels are PROTECTED
+    // and never parted. Roster-joined channels are NOT added to CHANNEL_TIERS, so
+    // they get the Basic/free experience — no Pro/Premium surfaces are granted.
+    rosterService.start({
+        client,
+        join: (ch) => client.join(ch),
+        part: (ch) => client.part(ch),
+        getJoined: () => client.getChannels(),
+        protectedChannels: config.channels
+    });
 }
 
 function setupEventHandlers() {
@@ -2430,12 +2560,16 @@ function setupEventHandlers() {
         }
     });
 
+    // Twitch emits Watch Streak shares as an IRC USERNOTICE with
+    // msg-id=viewermilestone and msg-param-category=watch-streak. tmi.js 1.8
+    // forwards unrecognized USERNOTICE types through this generic event.
     client.on('usernotice', streakService.createNoticeHandler({
         tracker: streakTracker,
         send: sendMessage,
         info: (message) => logger.info(message),
         error: (message, err) => logger.error(message, err && err.message ? err.message : err)
     }));
+
     logger.info('🚨 Raid / sub / resub / subgift / watch-streak event handlers registered');
 }
 
@@ -2710,11 +2844,25 @@ function startRotationalTimer(channel) {
                     const lastKey = `timerCat:${channel}`;
                     const lastCat = _recentPicks.get(lastKey) || [];
                     const allCats = Object.keys(TIMER_POOLS);
+                    // Wave 6: Premium channels with commerce enabled get ONE extra
+                    // rotation slot for a commerce promo. It's just another category,
+                    // so at most one commerce line can fire per cycle and the rotation
+                    // interval stays the rate limit — no second scheduler, and it
+                    // inherits the live-gate above (commerce never fires offline).
+                    const cleanCh = channel.replace('#', '').toLowerCase();
+                    if (config.enableCommerceCommands && CHANNEL_TIERS[cleanCh] === TIERS.PREMIUM) {
+                        allCats.push('__commerce__');
+                    }
                     const available = allCats.filter(c => !lastCat.includes(c));
                     const cat = (available.length ? available : allCats)[Math.floor(Math.random() * (available.length || allCats.length))];
                     _recentPicks.set(lastKey, [cat]);
-                    const line = pickNoRepeat(`timer:${channel}:${cat}`, TIMER_POOLS[cat], 3);
-                    if (line) sendMessage(channel, line);
+                    if (cat === '__commerce__') {
+                        const promo = commerceContent.pickPromoLine(channel);
+                        if (promo) sendMessage(channel, promo);
+                    } else {
+                        const line = pickNoRepeat(`timer:${channel}:${cat}`, TIMER_POOLS[cat], 3);
+                        if (line) sendMessage(channel, line);
+                    }
                 }
 
                 // Rotate daily-slot alternation
@@ -2784,6 +2932,11 @@ async function handleMessage(channel, tags, message, self) {
         logger.info(`⌨️ CMD ${message.split(' ')[0]} by ${tags.username} in ${channel}`);
     }
 
+    if (config.enableVoice && !message.startsWith('!')) {
+        const cleanText = message.replace(/[^a-zA-Z0-9\s\.,!\?]/g, '');
+        require('child_process').exec(`say -v "Daniel" "${tags.username} says: ${cleanText}"`);
+    }
+
     // --- Add to AI Context & Mood Buffers ---
     const username = tags.username;
     if (config.enableMoodDetection) {
@@ -2800,6 +2953,15 @@ async function handleMessage(channel, tags, message, self) {
     // Declared here so both the points/welcome block and later command dispatch can read it.
     const msg = message.toLowerCase();
 
+    // --- Channel CUHZ Bot plan (Wave 6) ---
+    // One plan belongs to the broadcaster login. Every chatter in this Twitch
+    // channel therefore observes the same plan; a chatter's entitlement in some
+    // other channel can never elevate this one.
+    const viewerLogin = username.toLowerCase();
+    const channelLogin = channel.replace('#', '').toLowerCase();
+    markChatted(channel, viewerLogin);
+    const channelPlan = tierService.getChannelPlan(channelLogin);
+
     // --- Track User Activity ---
     // Other channels' bots (nightbot, streamelements, ...) get NO points, NO
     // watch-minute accrual, and NO welcomes — they earned 13/85 points in
@@ -2808,7 +2970,6 @@ async function handleMessage(channel, tags, message, self) {
     try {
         const usernameL = username.toLowerCase();
         const now = new Date();
-        const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
 
         // 1. Passive Paycheck (+10 points per 10 minutes of continuous presence)
         //
@@ -2907,6 +3068,12 @@ async function handleMessage(channel, tags, message, self) {
                     const receipt = await cuhznReceipt(usernameL);
                     if (receipt) sendMessage(channel, receipt);
                     cuhznGreeted = true;
+                } else if (channelPlan === 'gold') {
+                    // Gold-plan channels get a dedicated arrival — but ONLY when the
+                    // channel plan is already cache-warm. A cold first-ever message
+                    // still gets the normal welcome — honest, never laggy.
+                    const goldLine = commerceContent.pickGoldArrival(channel);
+                    sendMessage(channel, `${goldLine} @${tags.username} 💎`);
                 } else if (joinTier === TIERS.BASIC) {
                     sendMessage(channel, `Wassup cuhz, Welcome to the stream! @${tags.username}`);
                 } else {
@@ -2960,6 +3127,39 @@ async function handleMessage(channel, tags, message, self) {
     // 0. Global Connectivity Test
     if (msg === '!ping') {
         client.say(channel, `Pong! 🏓 The bot is active in ${channel}.`);
+        return;
+    }
+
+    // Commerce is enabled for THIS message only when the flag is on AND this is a
+    // selling surface (Pro/Premium — Basic channels are other streamers' chats).
+    const commerceEnabled = config.enableCommerceCommands && isProOrPremium;
+
+    // Launch-facing commands are code-owned so stale dashboard content cannot
+    // override the request-only language or introduce unapproved claims. When
+    // commerce is enabled, !build/!tools point at the site and !shop defers to the
+    // commerce registry below; otherwise the honest request-only lines stand.
+    const launchResponse = streamContent.launchCommandResponse(msg, { commerceEnabled });
+    if (launchResponse) {
+        sendMessage(channel, launchResponse);
+        return;
+    }
+
+    // Commerce command family (code-owned, deterministic — never model output).
+    // Prices live only in commerce_content.js. Gated + selling-surface-only.
+    if (commerceEnabled) {
+        if (msg === '!mytier') {
+            const resolved = await tierService.getChannelPlanAwait(channelLogin);
+            sendMessage(channel, commerceContent.myTierLine(resolved, tags.username));
+            return;
+        }
+        const commerceResponse = commerceContent.commerceCommandResponse(msg);
+        if (commerceResponse) {
+            sendMessage(channel, commerceResponse);
+            return;
+        }
+    }
+    if ((msg === '!gamble' || msg.startsWith('!gamble ')) && !config.enableGambling) {
+        sendMessage(channel, streamContent.RESPONSES.gamblingDisabled);
         return;
     }
 
@@ -3077,7 +3277,7 @@ async function handleMessage(channel, tags, message, self) {
         if (OWN_CHANNELS.includes(cleanChannel)) {
             sendMessage(channel, '💸 Pay the Planet: venmo.com/u/WRodriguezx — put your TWITCH NAME + what you\'re grabbing in the note (e.g. "yourname — Chain Pack $9"). Delivery lands on your planetcuhz.com account + Discord. Menu: !prices 💎');
         } else {
-            sendMessage(channel, '💸 Ready to grab something? Pull up to the Discord and the fam sorts payment direct: https://discord.com/invite/wt6Zc7Sgjx · menu: !prices 💎');
+            sendMessage(channel, '💸 Ready to grab something? Pull up to the Discord and the fam sorts payment direct: https://discord.gg/uDPEtrcsg4 · menu: !prices 💎');
         }
         return;
     }
@@ -3131,7 +3331,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.84. Mahni Rotation (ALL tiers)
-    if (msg === '!streak') {
+    if (msg === '!streak' || msg === '!watchstreak') {
         sendMessage(channel, streakTracker.commandReply(channel));
         return;
     }
@@ -3305,8 +3505,11 @@ async function handleMessage(channel, tags, message, self) {
     // 3-5 message wall of text that flooded chat for ~7 seconds.
     if (msg === '!help' || msg === '!commands' || msg.startsWith('!help ')) {
         const isPP = isProOrPremium;
+        // Kept as one quoted literal: test_commerce_content asserts its contents
+        // (current public plan names only, canonical pricing link).
+        const commerceHelp = '💎 CUHZ Bot plans: !community !silver !gold !partner !architect | Membership: !membership | One-time: !store | Pricing: https://planetcuhz.com/pricing';
         const sections = {
-            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !session !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim !streak'
+            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !session !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim !streak !clip !topclip !vod !age !followers !emotes !tags !category !chatrules'
                        + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
             vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
             // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
@@ -3319,7 +3522,7 @@ async function handleMessage(channel, tags, message, self) {
             crew:      isPP ? '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
             ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
             // !mod leads: it's the self-documenting panel with live scope status.
-            mods:      '🛡️ Mods: !mod !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
+            mods:      '🛡️ Mods: !mod !so !raid !raider !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
                        + (isPP ? ' !addstreamer !removestreamer' : ''),
             pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null,
             // Advertised only where it is live (honesty law: no doors that don't open).
@@ -3327,7 +3530,9 @@ async function handleMessage(channel, tags, message, self) {
                        ? (LOUNGE_ACCESS === 'subscribers'
                            ? '🛋️ Lounge (subs): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
                            : '🛋️ Lounge: !lounge shows what is on screen · !lounge colors · !lounge whoami — steering is operator-only right now')
-                       : null
+                       : null,
+            // Advertised only where the commerce registry actually answers.
+            plans:     commerceEnabled ? commerceHelp : null
         };
 
         // `!help <category>` — one targeted line
@@ -3435,7 +3640,9 @@ async function handleMessage(channel, tags, message, self) {
                 client.say(channel, `@${targetUsername} is not following ${channel} (yet)!`);
             }
         } catch (err) {
-            logger.error('Error in !followage:', err.message);
+            // getFollowage never throws by contract; this is a last-resort belt.
+            logger.error('Error in !followage:', err && err.message ? err.message : err);
+            sendMessage(channel, `The follow-checker glitched for a sec, cuhz — run it back in a minute 🔧`);
         }
         return;
     }
@@ -3541,6 +3748,13 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // !raider / !raiders / !raidtarget — scans live roster and recommends who to raid!
+    if (msg === '!raider' || msg === '!raiders' || msg === '!raidtarget') {
+        const reply = await raiderService.getRaiderRecommendation(cleanChannel);
+        sendMessage(channel, reply);
+        return;
+    }
+
     // --- Phase 8: Utility commands ---
     if (msg === '!lurk') {
         const line = pickNoRepeat(`lurk:${cleanChannel}`, LURK_QUOTES, 2).replace('{user}', tags.username);
@@ -3574,16 +3788,28 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!uptime') {
-        const state = streamStates.get(streamKey(channel));
+        let state = streamStates.get(streamKey(channel));
         const channelName = channel.replace('#', '');
+
+        // Resilient fallback to Twitch Edge GQL if state is missing or reports offline
+        if (!state || !state.isLive) {
+            const edgeStream = await twitchEdge.getLiveStream(cleanChannel);
+            if (edgeStream && edgeStream.isLive) {
+                state = edgeStream;
+                streamStates.set(streamKey(channel), {
+                    ...edgeStream,
+                    isLive: true,
+                    startedAt: edgeStream.startedAt,
+                    game: edgeStream.game
+                });
+            }
+        }
 
         if (state && state.isLive && state.startedAt) {
             // startedAt may be a string if the state was rehydrated/serialized — coerce.
             const startedAt = state.startedAt instanceof Date ? state.startedAt : new Date(state.startedAt);
-            const diff = Date.now() - startedAt.getTime();
-            const hours = Math.floor(diff / (1000 * 60 * 60));
-            const minutes = Math.floor((diff / (1000 * 60)) % 60);
-            sendMessage(channel, `🔴 ${channelName} has been live for ${hours}h ${minutes}m — grinding 💎`);
+            const duration = twitchEdge.formatUptimeDuration(startedAt);
+            sendMessage(channel, `🔴 ${channelName} has been live for ${duration} — grinding 💎`);
         } else {
             sendMessage(channel, `Stream's offline right now cuhz. Check the schedule 📅`);
         }
@@ -3609,6 +3835,96 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!schedule' || msg === '!stream') {
         if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         client.say(channel, `@${tags.username} 🗓 Check the schedule tab & turn on notifications for updates!`);
+        return;
+    }
+
+    // --- Twitch Edge Intelligence Suite ---
+    if (msg === '!topclip' || msg === '!bestclip') {
+        const clip = await twitchEdge.getTopClip(cleanChannel);
+        if (clip) {
+            sendMessage(channel, `🎬 Most Legendary Clip: "${clip.title}" (${clip.viewCount} views) clipped by @${clip.curator} → ${clip.url} 🔥`);
+        } else {
+            sendMessage(channel, `🎬 No community clips recorded yet cuhz. Type !clip to make history! 💎`);
+        }
+        return;
+    }
+
+    if (msg === '!vod' || msg === '!laststream' || msg === '!pastbroadcast') {
+        const vod = await twitchEdge.getLastVOD(cleanChannel);
+        if (vod) {
+            sendMessage(channel, `📼 Previous Broadcast: "${vod.title}" (${vod.durationFormatted} · ${vod.viewCount} views) → ${vod.url} 💎`);
+        } else {
+            sendMessage(channel, `📼 No past broadcast archives found for this channel cuhz! 🌌`);
+        }
+        return;
+    }
+
+    if (msg === '!age' || msg.startsWith('!age ') || msg === '!accountage' || msg.startsWith('!accountage ')) {
+        const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
+        const target = (match && match.length >= 2) ? match[1].replace('@', '') : tags.username;
+        const age = await twitchEdge.getAccountAge(target);
+        if (age) {
+            const tenure = age.yearsOld > 0 ? `${age.yearsOld}y ${age.remainingDays}d` : `${age.daysOld} days`;
+            sendMessage(channel, `🎂 @${age.displayName} joined Twitch on ${age.dateFormatted} (${tenure} ago) — Certified OG! 🚀`);
+        } else {
+            sendMessage(channel, `🎂 Couldn't find Twitch account creation date for @${target} cuhz! 🌌`);
+        }
+        return;
+    }
+
+    if (msg === '!followers' || msg === '!goal') {
+        const f = await twitchEdge.getFollowerCount(cleanChannel);
+        if (f) {
+            sendMessage(channel, `🎯 Community Count: @${f.displayName} currently has ${f.formatted} verified followers on Twitch! Keep that frequency rising 💎`);
+        } else {
+            sendMessage(channel, `🎯 Follower count unavailable right now cuhz — check back in a sec! 🌌`);
+        }
+        return;
+    }
+
+    if (msg === '!emotes' || msg === '!subemotes') {
+        const tokens = await twitchEdge.getSubEmotes(cleanChannel);
+        if (tokens && tokens.length > 0) {
+            sendMessage(channel, `💎 Official Sub Emotes for @${cleanChannel}: ${tokens.slice(0, 10).join(' ')} — Sub up to unlock cosmic status! 🌌`);
+        } else {
+            sendMessage(channel, `💎 Check the emote menu in chat to unlock custom creator emotes! 🚀`);
+        }
+        return;
+    }
+
+    if (msg === '!tags') {
+        const stream = await twitchEdge.getLiveStream(cleanChannel);
+        if (stream && stream.tags && stream.tags.length > 0) {
+            sendMessage(channel, `🏷️ Stream Tags: [${stream.tags.join('] [')}]`);
+        } else {
+            sendMessage(channel, `🏷️ No special tags set on this stream right now cuhz.`);
+        }
+        return;
+    }
+
+    if (msg === '!category' || msg === '!rank') {
+        const stream = await twitchEdge.getLiveStream(cleanChannel);
+        const gameName = stream && stream.game ? stream.game : 'NBA 2K26';
+        const cat = await twitchEdge.getCategoryRank(gameName, cleanChannel);
+        if (cat) {
+            const rankStr = cat.rank ? `and holds rank #${cat.rank} in the category!` : `in the category!`;
+            sendMessage(channel, `🎮 Directory Scouting: ${cat.game} currently has ${cat.categoryViewers.toLocaleString()} total viewers across Twitch. @${cleanChannel} is live ${rankStr} 🔥`);
+        } else {
+            sendMessage(channel, `🎮 Category scouting unavailable right now cuhz.`);
+        }
+        return;
+    }
+
+    if (msg === '!chatrules' || msg === '!chatmode') {
+        const rules = await twitchEdge.getChatRules(cleanChannel);
+        if (rules) {
+            const slow = rules.slowModeSeconds ? `${rules.slowModeSeconds}s delay` : 'OFF';
+            const follow = rules.followersOnlyMinutes ? `${rules.followersOnlyMinutes}m minimum` : 'OFF';
+            const links = rules.blockLinks ? 'Blocked' : 'Allowed';
+            sendMessage(channel, `🛡️ Chat Rules: Slow mode: ${slow} | Followers-only: ${follow} | Links: ${links} — Keep the chat hype and stay CUHZ! ⚡`);
+        } else {
+            sendMessage(channel, `🛡️ Chat Rules: Keep the vibes high, respect the community, and stay CUHZ! ⚡`);
+        }
         return;
     }
 
@@ -3698,16 +4014,6 @@ async function handleMessage(channel, tags, message, self) {
 
 
     // --- Dev Service Promotion Commands ---
-    if (['!build', '!agents'].includes(msg)) {
-        let promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @planetcuhz know right here in the stream! 🚀";
-
-        if (cleanChannel === 'planetcuhz') promo = "Looking to level up your brand with a custom bot or AI team? Let @planetcuhz know — they're in the chat! 🌌";
-        if (cleanChannel === 'rico2ez') promo = "Yo cuhz, if you want your own custom Twitch bot, home assistant, or a full AI development team, let @planetcuhz know right here in the stream! 🚀";
-
-        client.say(channel, promo);
-        return;
-    }
-
     // Mood Detection Commands
     if (msg === '!mood' && isMod) {
         if (!config.enableMoodDetection) {
@@ -3740,6 +4046,14 @@ async function handleMessage(channel, tags, message, self) {
         const brain = `🧠${s.brain.available ? '✅' : '❌'}(${s.brain.failures})`;
         const hands = `🔧${s.hands.available ? '✅' : '❌'}(${s.hands.failures})`;
         client.say(channel, `🤖 Tri-Brain: ${eyes} ${brain} ${hands} | ${s.requestsThisMinute}/${s.maxRequestsPerMinute} req/min | Cache: ${cacheStats.active_entries}`);
+        return;
+    }
+
+    // --- Community Clips & Free Promo Engine (!clip) ---
+    if (msg === '!clip' || msg.startsWith('!clip ')) {
+        const rawTitle = message.substring(5).trim();
+        const clipRes = await clipsService.handleClipCommand(channel, tags.username, rawTitle);
+        sendMessage(channel, clipRes.announcement || clipRes.message);
         return;
     }
 
@@ -3810,13 +4124,16 @@ async function handleMessage(channel, tags, message, self) {
         const target = args[1]?.replace('@', '');
         const amount = parseInt(args[2]);
 
-        if (target && !isNaN(amount)) {
+        // Positive amounts only, and only announce a grant that actually landed.
+        if (target && Number.isFinite(amount) && amount > 0) {
             const granted = await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`);
             if (granted) {
                 client.say(channel, `💸 @${tags.username} gave ${amount} points to @${target}!`);
             } else {
                 client.say(channel, `⚠️ @${tags.username} the points grant to @${target} could not be confirmed. Check the balance before trying again.`);
             }
+        } else {
+            client.say(channel, `Usage: !give @user <positive amount>`);
         }
         return;
     }
@@ -3878,8 +4195,11 @@ async function handleMessage(channel, tags, message, self) {
             question = question.substring(6).trim();
         }
 
+        // Viewer subscriptions and their old discounts were retired. Plan lookup is
+        // channel-scoped and does not alter an individual chatter's points price.
+
         if (question) {
-            const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}`);
+            const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}`, channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
                 const balanceText = balance === null ? 'Balance is unavailable.' : `Current balance: ${balance}.`;
@@ -3890,7 +4210,7 @@ async function handleMessage(channel, tags, message, self) {
             }
 
             try {
-                const reply = await aiService.askBrain(brain, question, tags.username);
+                const reply = await aiService.askBrain(brain, question, tags.username, false);
                 const prefix = brain === 'brain' ? '🧠' : '👁️';
                 client.say(channel, `${prefix} ${reply}`);
             } catch (err) {
@@ -3906,7 +4226,7 @@ async function handleMessage(channel, tags, message, self) {
         const cost = 25;
 
         if (query) {
-            const success = await pointsService.deductPoints(tags.username, cost, 'ask_hands');
+            const success = await pointsService.deductPoints(tags.username, cost, 'ask_hands', channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
                 const balanceText = balance === null ? 'Balance is unavailable.' : `Current balance: ${balance}.`;
@@ -3915,7 +4235,7 @@ async function handleMessage(channel, tags, message, self) {
             }
 
             try {
-                const reply = await aiService.askBrain('hands', query, tags.username);
+                const reply = await aiService.askBrain('hands', query, tags.username, false);
                 client.say(channel, `💻 ${reply}`);
             } catch (err) {
                 logger.error('Error in !code:', err.message);
@@ -4186,18 +4506,52 @@ async function handleMessage(channel, tags, message, self) {
             }
         }
     }
+
+    // --- Keyword-intent replies (Wave 6, default-OFF: ENABLE_KEYWORD_REPLIES) ---
+    // Runs LAST, after every command handler has had its chance (they all return
+    // early) and after webhook forwarding, so it only ever sees genuine non-command
+    // chat that nothing else answered. Home/selling surfaces only (isProOrPremium)
+    // — never Basic channels, which are other streamers' chats. All prices stay in
+    // commerce_content.js; these lines only point to !plans / !mytier / !help /
+    // planetcuhz.com. Hard cooldowns + bot/self + intent detection live in
+    // keyword_listener.js; sendMessage() re-applies validateOutbound + the queue.
+    if (config.enableKeywordReplies && isProOrPremium && !isCommand) {
+        const kwState = streamStates.get(channel);
+        const kwIsLive = kwState ? kwState.isLive : false;
+        const kw = keywordReplies.evaluate({
+            username: tags.username,
+            message,
+            isLive: kwIsLive,
+            useMockApi: config.useMockApi
+        });
+        if (kw.reply) sendMessage(channel, kw.reply);
+    }
 }
 
 // --- Express Setup ---
 const cors = require('cors');
 const app = express();
-app.use(cors());
-app.use(express.json());
+const allowedOrigins = new Set([config.dashboardUrl, config.apiBase].filter(Boolean).map(url => {
+    try { return new URL(url).origin; } catch (_) { return null; }
+}).filter(Boolean));
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+        return callback(new Error('Origin not allowed'));
+    },
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Authorization', 'Content-Type']
+}));
+app.use(express.json({ limit: '16kb' }));
 
 function verifyDashboardRequest(req, res, next) {
-    // Simple verification - enhance as needed
     const authHeader = req.headers.authorization;
-    if (!authHeader || authHeader !== `Bearer ${config.botApiSecret}`) {
+    if (!config.botApiSecret || !authHeader) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const supplied = Buffer.from(authHeader);
+    const expected = Buffer.from(`Bearer ${config.botApiSecret}`);
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     next();
@@ -4206,11 +4560,12 @@ function verifyDashboardRequest(req, res, next) {
 app.post('/send-message', verifyDashboardRequest, (req, res) => {
     const { channel, message } = req.body;
     if (!client) return res.status(503).json({ error: 'Bot not connected' });
-
-    const target = channel.startsWith('#') ? channel : `#${channel}`;
-    client.say(target, message)
-        .then(() => res.json({ status: 'success' }))
-        .catch(err => res.status(500).json({ error: err.message }));
+    const target = sanitizeChannel(channel);
+    if (!target) return res.status(400).json({ error: 'Invalid channel' });
+    const checked = safetyPolicy.validateOutbound(message, { source: 'dashboard' });
+    if (!checked.allowed) return res.status(400).json({ error: `Message blocked: ${checked.reason}` });
+    sendMessage(target, checked.text);
+    return res.status(202).json({ status: 'queued' });
 });
 
 app.post('/join-channel', verifyDashboardRequest, async (req, res) => {
@@ -4232,7 +4587,8 @@ app.post('/leave-channel', verifyDashboardRequest, async (req, res) => {
     if (!client) return res.status(503).json({ error: 'Bot not connected' });
 
     try {
-        const target = channel.startsWith('#') ? channel : `#${channel}`;
+        const target = sanitizeChannel(channel);
+        if (!target) return res.status(400).json({ error: 'Invalid channel' });
         await client.part(target);
         connectedChannels.delete(target);
         res.json({ status: 'success' });
@@ -4263,7 +4619,7 @@ app.get('/health/full', verifyDashboardRequest, (req, res) => {
     });
 });
 
-app.get('/api/system-status', (req, res) => {
+app.get('/api/system-status', verifyDashboardRequest, (req, res) => {
     res.json({
         tiers: CHANNEL_TIERS,
         ai: {

@@ -3,7 +3,29 @@
  * Run with: node tests/test_sentiment.js
  */
 
+const assert = require('assert');
 const aiService = require('../src/ai_service');
+
+// ─── Knowledge-base accuracy (deterministic, runs even with no API keys) ───
+// The AI brains are briefed with the real planetcuhz.com surfaces from the
+// SITE TRUTH PACK — never the retired created.app chain generator — and the
+// honesty rules (Architect quote-only, store items buyable, never "instant").
+const kb = aiService.CUHZ_KNOWLEDGE;
+assert.ok(!kb.includes('created.app'), 'CUHZ_KNOWLEDGE must not reference created.app');
+assert.match(kb, /https:\/\/planetcuhz\.com\/chain/);
+assert.match(kb, /ten finishes/i);
+assert.match(kb, /https:\/\/planetcuhz\.com\/bot/);
+assert.match(kb, /https:\/\/planetcuhz\.com\/store/);
+assert.match(kb, /https:\/\/planetcuhz\.com\/solutions/);
+assert.match(kb, /Silver Supporter \$4\.99\/mo/);
+assert.match(kb, /Gold Executive \$14\.99\/mo/);
+assert.match(kb, /Affiliate Pack \$49\.99\/mo/);
+assert.match(kb, /Pro \$9\.99\/mo, Team \$24\.99\/mo/);
+assert.match(kb, /Chain Full Pack \$9, Emote Pack Vol\. 1 \$7, Orbit Overlay Kit \$15/);
+assert.match(kb, /NEVER state a number for Architect/);
+assert.match(kb, /never promise instant delivery/i);
+assert.match(kb, /NEVER quote a price in chat/i);
+console.log('✅ CUHZ knowledge-base accuracy checks passed');
 
 // Sample chat messages for testing
 const testMessages = [
