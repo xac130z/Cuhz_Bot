@@ -1,0 +1,1234 @@
+{
+ "_comment": "CUHZ Points seed reconstructed from Railway log exports. Award events only \u2014 no chat content. Applied idempotently at boot by src/points_seed.js; each event is keyed by hash so re-running never double-counts.",
+ "coverage": {
+  "from": "2026-07-27T19:36:57.747Z",
+  "to": "2026-07-29T18:53:58.896Z"
+ },
+ "generated_from": "2 Railway log exports",
+ "events": [
+  {
+   "h": "a72caba39d464f6b",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "0c577c074bc73ba4",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d80efaf32c2d779a",
+   "u": "antisocialtv_",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "5eb8c5f93669ebaf",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "5f6793e8453e57bc",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "6629e62633163f5a",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7960c2956cb01f3e",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a31674fd36751d8a",
+   "u": "antisocialtv_",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "977522fdfb0c01c2",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "c5828baa5fece06c",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4df5c99729f88f17",
+   "u": "antisocialtv_",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "806f6e38eebf3ce5",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "89a2a584a5b97faa",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7e4afbb8c0a35ea4",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "871d82f61d9a9d71",
+   "u": "antisocialtv_",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "548f644a235dd20f",
+   "u": "breezyxd23",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "e45b2867497297b6",
+   "u": "breezyxd23",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3d397e299fd66528",
+   "u": "breezyxd23",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "93b07269fbc46a97",
+   "u": "breezyxd23",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7ec11094c070ca4d",
+   "u": "edward1chuckk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "acff0c48df343540",
+   "u": "edward1chuckk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a08dade036972100",
+   "u": "edward1chuckk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "dc566588a0fc472b",
+   "u": "edward1chuckk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "96ce7bd69ae75e09",
+   "u": "edward1chuckk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "417f86e894be165b",
+   "u": "edward1chuckk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "600eef44d4d7256a",
+   "u": "edward1chuckk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9ea62fe8ed87b683",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a1f68b9571bf9b88",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3eeeeef9371602c9",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a2fdfcee4ad30eb8",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "720a6b0716908aa0",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "429e880f40c20d81",
+   "u": "four_a_reason",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "2e094aa0fc21fcaf",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "0c18c80022b77011",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "29254dcc9710841e",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "df143f518ed95f98",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d1c9e85697d7823f",
+   "u": "four_a_reason",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "580048e52f5024f3",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "1577d4ad61072642",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "39df4af5181b1e99",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "1612ed20fcb45121",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "2bef9a9623a8bb22",
+   "u": "four_a_reason",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "854e2feeb2d916c0",
+   "u": "grouch392",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3a89c1f5e3547f4c",
+   "u": "grouch392",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "c91c7e3c397ec055",
+   "u": "grouch392",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "ea683841e16c9549",
+   "u": "grouch392",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "62093884251feb5e",
+   "u": "grouch392",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "dcdaec508cd4ee8e",
+   "u": "grundysmash",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "04018b5886b2f26e",
+   "u": "imkxddy",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "6b697a10e76cf367",
+   "u": "imkxddy",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "e76daed6cefd0bdf",
+   "u": "imkxddy",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a59fa5e23913e6dc",
+   "u": "jmoney_oo",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d59a55a09bed53f7",
+   "u": "jmoney_oo",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "cc4658e69bcbc737",
+   "u": "mad_man_sells",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9919e51a62c7c829",
+   "u": "mad_man_sells",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "06a16b594c53aed4",
+   "u": "mrbadguy52",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "01031a9eaadbf16d",
+   "u": "mrbadguy52",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "1e487cd0a2c48aea",
+   "u": "mrbadguy52",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "00e2be693266dc16",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "aeab023bc5376a1f",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "8ae5b6fb818fded2",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f90cf8f1c0b75037",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a066bd477d41c34d",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "205296a6a421e15d",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "fbc28eb4e6ab769e",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "30b1153c3d9f05ce",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4e4d73a25946c6ec",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "630f53e0f5cad1bf",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "bf45e08362c76e80",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "0857ce5060052221",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "e67d027c61f12d23",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "2781833012d69a14",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f0b41a04b6dc44e2",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "96438578a57530e6",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "078fffd4df2131a4",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9ff892747dc4c9f8",
+   "u": "phoenixpnyc",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "bd8343e22dee78a2",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "2e62627d0b3df41e",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "198e70fbed27f5e3",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4448d6acb0bac064",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "dcb0cbc6a80408e2",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "95bd02e8b65d4b56",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "dac0d412882fe9a3",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "e921c2b7152b0455",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "fe8778a7473a8ac5",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "67093f2fb417bd16",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "bb378c819730bd9b",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d0eb8ce4632879d9",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7f53de78eb9c40cb",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3a40e835662a51a5",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "102d4882d587bce6",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "ca4a6c77e751389c",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "df145a2b38d2ae3a",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "32a8854962119bc5",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "754b2c9f010a849e",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7b10e3cfbfc3d57c",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9a1dd984fb793ae2",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "14c249f39fe0ec15",
+   "u": "phoenixpnyc",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3079f00f9e2e1e94",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "aa07f95689e19138",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "758fc0778e5013ba",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "cd1b76d02208a814",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "04035ee8107878cf",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d5596005d23cb6ec",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "0a894ad64562c102",
+   "u": "planetcuhz",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "1a408bfbb966371f",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "ee5f81066bc7568d",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f037d824ac13b0b3",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7bd8a289d1b21ac3",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "214c70888ea9573a",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9d9a6dc6466e89ed",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "89022200bf5e7a15",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "cdf8d579362f598c",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f9cb9bbd5a41bac6",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "51c6df46ebdb7858",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "29b856ee02c98e08",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "269fbfe3c775ecde",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a9a0a0934ffc4266",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "481c5d92482e7fc7",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "923700615f3b0954",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9cfafae3fe4b1733",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "572764216c1e9987",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "959ba60f9b1005b4",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "ae1ffb5cd4880223",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "cae99179949b889c",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3c7e502ad2c38baf",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4dc917ce37cb56c9",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a38ec303eba3f4ba",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f60e6a9e3095c3a1",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "e29f014c9dfb7406",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "bcc6892c6f804b46",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "56ed9a91b7d30b90",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "125a9c5ea6d7c6cf",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "be6a2779ff574dea",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7a6743a99f32c9be",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9e049d97cbdd320b",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "35b171b33ee9cbc1",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "761b448835c200ae",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "083e0cd29a478fb1",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "54b05498a18a1bb4",
+   "u": "planetcuhz",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4e8112ec8933d32d",
+   "u": "realfvmousk",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "374ac2651d1aeae4",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "dcc0ea10890b36b7",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "615585ecfa854c51",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "6e79bb561fbd3685",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "540b588f22201b8a",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "6846d8636e3ecda9",
+   "u": "snowy_wolfies_ttv",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "70bef2b8952a1154",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "730a3e62b7f14924",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f6616f749674aade",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3882c36490dda1e5",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "fe9a3e7e5c9a1e0e",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "319f77d8a623468a",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "97c1b7f0ad554680",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "6e27673e72db9e25",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d41ff53fc160a7e1",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "dffea470b096e6a3",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "1e8caf99678e1cd6",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "56437c79b97eaeb9",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "79d75714b9645820",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "e0209bc7c93c37f9",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "748d807cfbd54c27",
+   "u": "snowy_wolfies_ttv",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "9654d84812ce64f2",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "cb580935d59a3b96",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "9b8fb071bbe1ac02",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d93cdf3e35d46e19",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "e89d09d59f48371e",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "6dcfa7a4b6a56661",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "adb2083a87fc1118",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "b2af2b407ae3ebf3",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "69f8820936fee54e",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f7c6845b56524ef7",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "bcf5fefa9be716eb",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7b3e9ccc44890c65",
+   "u": "snowy_wolfies_ttv",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "b3b7b565c891d20a",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "8444fb854175e153",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "425a0b45eb3b53b0",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "65e4dd1801d9bf57",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "3e99c75af266e73e",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "dc53260689bfd5f1",
+   "u": "snowy_wolfies_ttv",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "e5f315f079ffee70",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a02197dd03fc8237",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "5fc181a2bcbd055a",
+   "u": "snowy_wolfies_ttv",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4c0aa3e86a90ffcc",
+   "u": "thejuanandonly210",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4ae7307df1fb09e4",
+   "u": "unclemeaux1906",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "d6bbad5d99510b71",
+   "u": "unclemeaux1906",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "edff414fce743890",
+   "u": "unclemeaux1906",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "62eb7fe1030e9d79",
+   "u": "unclemeaux1906",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "c205a58dd9df4873",
+   "u": "unclemeaux1906",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "1fde635b1008c172",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "7bc70360e32a60fd",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "fd8f33960bab27e4",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "afb7f6fe1129bda1",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "576921017e9842fe",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "bf312ed28cae4b70",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "f1c6c85ab3988992",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a358436eb2e2a7f9",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "a600815cd29066b1",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "80c3bb5a30dbb35f",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "8441f8251c58b818",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "54fff4fa93b6039d",
+   "u": "westsiderelly",
+   "a": 10,
+   "r": "passive_paycheck"
+  },
+  {
+   "h": "d39c0088f9cf27c3",
+   "u": "westsiderelly",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "95d2898f56532140",
+   "u": "young_jr2424",
+   "a": 1,
+   "r": "chat_message"
+  },
+  {
+   "h": "4393cfa9d835aec1",
+   "u": "young_jr2424",
+   "a": 1,
+   "r": "chat_message"
+  }
+ ]
+}

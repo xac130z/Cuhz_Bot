@@ -173,8 +173,8 @@ function run() {
     // 8c. The voice line points at the exact voice-only Discord the site uses,
     // and that URL is on the safety allowlist (discord.gg host approved).
     const voiceLine = commerce.COMMERCE_COMMANDS['!discord'];
-    assert.ok(voiceLine.includes('https://discord.gg/eNxDKkxQdN'), 'voice line must use the site voice Discord invite');
-    assert.strictEqual(policy.isApprovedUrl('https://discord.gg/eNxDKkxQdN'), true);
+    assert.ok(voiceLine.includes('https://discord.gg/uDPEtrcsg4'), 'voice line must use the site voice Discord invite');
+    assert.strictEqual(policy.isApprovedUrl('https://discord.gg/uDPEtrcsg4'), true);
     for (const url of policy.extractUrls(voiceLine)) {
         assert.strictEqual(policy.isApprovedUrl(url), true, `unapproved URL in voice line: ${url}`);
     }

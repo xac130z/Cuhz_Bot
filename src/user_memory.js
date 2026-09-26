@@ -56,6 +56,28 @@ async function recordMessage(channel, username, message, isCommand = false) {
 }
 
 /**
+ * Credit watch minutes to a user's profile (aggregate across all channels).
+ * Piggybacks on the presence-point ("passive paycheck") awards in bot.js —
+ * each award represents one ~10-minute active-viewing window.
+ * @param {string} username
+ * @param {number} minutes
+ */
+async function addWatchMinutes(username, minutes) {
+    try {
+        if (!minutes || minutes <= 0) return;
+        const usernameL = username.toLowerCase();
+        await db.prepare(`
+            INSERT INTO user_profiles (username, display_name, total_watch_minutes)
+            VALUES (?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET
+                total_watch_minutes = user_profiles.total_watch_minutes + ?
+        `).run(usernameL, username, minutes, minutes);
+    } catch (error) {
+        logger.error(`❌ Failed to add watch minutes for ${username}: ${error.message}`);
+    }
+}
+
+/**
  * Get user profile with computed fields
  * @param {string} username
  * @returns {Promise<Object|null>}
@@ -206,7 +228,8 @@ Recent messages: ${recentMsgs}
 
 Write a single friendly sentence about who this person seems to be. Be specific, mention their interests if apparent. Use casual/fun tone.`;
 
-        const result = await aiService.generateContextAwareResponse(prompt, [], 'neutral', {});
+        // Signature is (channel, userMessage, recentMessages, mood, commands)
+        const result = await aiService.generateContextAwareResponse('whois', prompt, [], 'neutral', {});
         if (result) {
             // Save the summary
             await db.prepare(`
@@ -267,6 +290,7 @@ setTimeout(pruneOldLogs, 30 * 1000).unref();
 
 module.exports = {
     recordMessage,
+    addWatchMinutes,
     getProfile,
     updateRelationshipScore,
     getTopChatters,

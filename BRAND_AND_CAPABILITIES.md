@@ -42,7 +42,9 @@ Planet CUHZ provides a range of tools and community features categorized across 
 
 ---
 
-## 📈 Tiers & Offerings
+## 📈 Community Membership Tiers (Planet CUHZ platform)
+
+> **Scope:** These are **Planet CUHZ community/platform membership** tiers — gaming tools (2K Protocol), Squad Finder, coaching, and Discord/PSN community access. This is a **separate product** from the **CUHZ Bot subscription tiers** (Community Free · Silver $4.99/mo · Gold $14.99/mo · Affiliate $49.99/mo · Architect Custom — documented in `PRICING_PAGE.md`); the membership prices below do **not** apply to, or contradict, those bot tiers.
 
 | Feature | Free | Pro ($9.99) | Premium ($24.99) |
 | --- | :---: | :---: | :---: |

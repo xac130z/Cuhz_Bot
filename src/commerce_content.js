@@ -34,7 +34,7 @@ const COMMERCE_COMMANDS = Object.freeze({
     '!site': '🌌 Planet CUHZ HQ → https://planetcuhz.com · Plans !plans · Store !store · Chain Studio (10 finishes, free, no login) → https://planetcuhz.com/chain',
     // Voice-only Discord — the same invite the site footer links (SOCIAL_LINKS).
     // A community invite, not a sale: no price, no urgency. Aliases: !voice, !family.
-    '!discord': '🎙️ Pull up to the CUHZ voice fam — our voice-only Discord is where the cuhzins actually link up, cousin to cuhz → https://discord.gg/eNxDKkxQdN',
+    '!discord': '🎙️ Pull up to the CUHZ voice fam — our voice-only Discord is where the cuhzins actually link up, cousin to cuhz → https://discord.gg/uDPEtrcsg4',
     // Planet CUHZ Podcast — a content plug, not a sale: no price, no urgency.
     // Aliases: !podcast, !pcp. Points at the real planetcuhz.com/podcast surface.
     '!pod': '🎙️ PCP — the Planet CUHZ Podcast (not that PCP, cuhz). Episode 001 is live → https://planetcuhz.com/podcast',
@@ -60,7 +60,7 @@ const PROMO_LINES = Object.freeze([
     '🛒 Founders is $99 one-time and Coaching Sprint is $25/session. Details → https://planetcuhz.com/pricing',
     // Community lines — no price, no urgency. Still one-per-cycle (same pool, one pick).
     '🎙️ The CUHZ voice fam runs off-stream too — hop in the voice-only Discord and link with the cuhzins → type !discord',
-    '💬 Real convos, cousin to cuhz — the CUHZ family lives in the voice Discord. Pull up, it\'s free → https://discord.gg/eNxDKkxQdN',
+    '💬 Real convos, cousin to cuhz — the CUHZ family lives in the voice Discord. Pull up, it\'s free → https://discord.gg/uDPEtrcsg4',
     '👥 Building together is the whole point. Join the CUHZ voice fam → !voice',
     // Content plug — no price, no urgency, no invented stats. One pick per cycle.
     '🎙️ The Planet CUHZ Podcast is up — PCP, and nah not that one cuhz. Tune in → type !pod'

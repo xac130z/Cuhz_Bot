@@ -1,5 +1,22 @@
 const { Pool } = require('pg');
-const Database = require('better-sqlite3');
+// better-sqlite3 is an OPTIONAL dependency (native module, local-dev only —
+// production uses Postgres via DATABASE_URL). Lazy-required so a skipped or
+// failed optional install can never crash a Postgres deployment.
+let Database = null;
+function loadSqlite() {
+    if (!Database) {
+        try {
+            Database = require('better-sqlite3');
+        } catch (err) {
+            throw new Error(
+                'better-sqlite3 is not installed (optional dep). Either set DATABASE_URL ' +
+                'to use Postgres, or run `npm install` locally to build sqlite. ' +
+                'Original error: ' + err.message
+            );
+        }
+    }
+    return Database;
+}
 const path = require('path');
 const fs = require('fs');
 
@@ -24,27 +41,32 @@ class DBAdapter {
         console.error('❌ PostgreSQL pool error:', err.message);
       });
 
-      this.initPostgres();
+      console.log('✅ Persistent storage: PostgreSQL — points survive restarts.');
+      // `ready` resolves once schema + migrations are done (see points_seed.js)
+      this.ready = this.initPostgres();
 
       // Periodic health check every 5 minutes
       setInterval(() => this._pgHealthCheck(), 5 * 60 * 1000).unref(); // unref: don't hold the event loop open
     } else {
+      // ⚠️ SQLite lives in the container filesystem. Railway containers are
+      // EPHEMERAL — every deploy/restart destroys it, taking all points,
+      // watch time and user profiles with it. This is a data-loss warning,
+      // not a style note.
+      console.warn('⚠️ ══════════════════════════════════════════════════════════');
+      console.warn('⚠️  DATABASE_URL is NOT set — falling back to local SQLite.');
+      console.warn('⚠️  On a hosted container this storage is EPHEMERAL:');
+      console.warn('⚠️  ALL POINTS, WATCH TIME AND PROFILES RESET ON EVERY DEPLOY.');
+      console.warn('⚠️  Fix: add a Postgres service in Railway and set DATABASE_URL.');
+      console.warn('⚠️ ══════════════════════════════════════════════════════════');
       console.log('📁 Using local SQLite database...');
       const dataDir = path.resolve(__dirname, '../data');
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir);
       }
       const dbPath = path.resolve(dataDir, 'bot.db');
-      this.sqlite = new Database(dbPath);
+      this.sqlite = new (loadSqlite())(dbPath);
       this.sqlite.pragma('journal_mode = WAL');
-      this.initSqlite();
-
-      // Clean exit handler for Node 24 V8 environment hooks
-      process.on('exit', () => {
-        if (this.sqlite && this.sqlite.open) {
-          try { this.sqlite.close(); } catch (_) {}
-        }
-      });
+      this.ready = Promise.resolve(this.initSqlite());
     }
   }
 
@@ -143,6 +165,76 @@ class DBAdapter {
       return this.sqlite.exec(sql);
     } else {
       return this.pgPool.query(sql);
+    }
+  }
+
+  /**
+   * Commit one signed points change and its ledger entry together. Positive
+   * amounts credit; negative amounts debit only when the balance covers them.
+   * This deliberately bypasses prepare(), whose compatibility behavior swallows
+   * unique violations: a failed ledger insert must roll the balance back.
+   */
+  async mutatePoints({ username, amount, reason }) {
+    if (!Number.isSafeInteger(amount)) return false;
+    if (amount === 0) return true;
+
+    const credit = amount > 0;
+    const balanceSql = credit
+      ? `INSERT INTO users (username, points, messages_sent, last_seen)
+         VALUES (?, ?, 0, CURRENT_TIMESTAMP)
+         ON CONFLICT(username) DO UPDATE SET points = users.points + ?`
+      : 'UPDATE users SET points = points - ? WHERE username = ? AND points >= ?';
+    const balanceArgs = credit
+      ? [username, amount, amount]
+      : [-amount, username, -amount];
+    const ledgerSql = 'INSERT INTO points_ledger (username, amount, reason) VALUES (?, ?, ?)';
+    const ledgerArgs = [username, amount, reason];
+
+    if (this.type === 'sqlite') {
+      // No await inside this callback: every statement runs before JavaScript
+      // yields, so unrelated users of this SQLite connection cannot interleave.
+      return this.sqlite.transaction(() => {
+        const result = this.sqlite.prepare(balanceSql).run(...balanceArgs);
+        if (result.changes === 0) return false;
+        if (result.changes !== 1) throw new Error('Points mutation did not affect exactly one user');
+        const user = this.sqlite.prepare('SELECT points FROM users WHERE username = ?').get(username);
+        if (!Number.isSafeInteger(user?.points)) throw new Error('Resulting points balance is not a safe integer');
+        const ledger = this.sqlite.prepare(ledgerSql).run(...ledgerArgs);
+        if (ledger.changes !== 1) throw new Error('Points ledger insert did not create a row');
+        return true;
+      })();
+    }
+
+    const pgSql = sql => {
+      let index = 0;
+      return sql.replace(/\?/g, () => `$${++index}`);
+    };
+    const client = await this.pgPool.connect();
+    let failure;
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(pgSql(balanceSql), balanceArgs);
+      if (result.rowCount !== 0 && result.rowCount !== 1) {
+        throw new Error('Points mutation did not affect exactly one user');
+      }
+      const changed = result.rowCount === 1;
+      if (changed) {
+        const ledger = await client.query(pgSql(ledgerSql), ledgerArgs);
+        if (ledger.rowCount !== 1) throw new Error('Points ledger insert did not create a row');
+      }
+      // If COMMIT reached the server but its acknowledgement is lost, rollback
+      // cannot prove the change was undone. Never automatically retry here.
+      await client.query('COMMIT');
+      return changed;
+    } catch (err) {
+      failure = err;
+      try { await client.query('ROLLBACK'); } catch (_) {
+        // Keep the original failure. release(error) discards the connection,
+        // including when rollback failed or commit's outcome is uncertain.
+      }
+      throw err;
+    } finally {
+      client.release(failure);
     }
   }
 
@@ -321,6 +413,18 @@ class DBAdapter {
         timecode TEXT,
         status TEXT DEFAULT 'pending',
         created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // ===== Moderation audit trail (who did what, to whom, and did Twitch accept it) =====
+      `CREATE TABLE IF NOT EXISTS mod_actions (
+        id ${SERIAL} ${PK},
+        channel TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT,
+        detail TEXT,
+        result TEXT NOT NULL,
+        created_at ${TIMESTAMP} DEFAULT CURRENT_TIMESTAMP
       )`
     ];
   }
@@ -338,7 +442,8 @@ class DBAdapter {
       // lookup; (created_at) serves the weekly leaderboard rollup. The ledger
       // gets a row per chat message, so these matter.
       'CREATE INDEX IF NOT EXISTS idx_points_ledger_user_reason ON points_ledger(username, reason)',
-      'CREATE INDEX IF NOT EXISTS idx_points_ledger_created ON points_ledger(created_at)'
+      'CREATE INDEX IF NOT EXISTS idx_points_ledger_created ON points_ledger(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_mod_actions_channel ON mod_actions(channel, created_at)'
     ];
   }
 
@@ -363,6 +468,40 @@ class DBAdapter {
     }
   }
 
+  /**
+   * Idempotent ALTER TABLE ... ADD COLUMN. CREATE TABLE IF NOT EXISTS never
+   * retrofits columns on existing deployments, so columns added to the schema
+   * after a table first shipped must also be listed here. Safe to run on every
+   * boot — "duplicate column" errors (sqlite + postgres) are swallowed.
+   */
+  async _ensureColumn(table, columnDef) {
+    const sql = `ALTER TABLE ${table} ADD COLUMN ${columnDef}`;
+    try {
+      if (this.type === 'sqlite') {
+        this.sqlite.exec(sql);
+      } else {
+        await this.pgPool.query(sql);
+      }
+      console.log(`🧱 Migrated: added column to ${table} (${columnDef})`);
+    } catch (err) {
+      const msg = (err.message || '').toLowerCase();
+      // sqlite: "duplicate column name: x" | postgres: 42701 / "already exists"
+      if (msg.includes('duplicate column') || msg.includes('already exists') || err.code === '42701') {
+        return; // Column already there — nothing to do
+      }
+      console.error(`❌ Failed to ensure column ${table}.${columnDef}:`, err.message);
+    }
+  }
+
+  /** Columns added after tables first shipped (see _ensureColumn). */
+  async _runMigrations() {
+    // !watchtime — watch-minute tracking (schema declares it, old tables lack it)
+    await this._ensureColumn('user_profiles', 'total_watch_minutes INTEGER DEFAULT 0');
+    // Paycheck clock — separates 'when did we last pay them' from 'last_seen',
+    // so steady chatters accrue correctly (see bot.js passive paycheck).
+    await this._ensureColumn('users', 'last_paycheck TIMESTAMP');
+  }
+
   initSqlite() {
     const schema = this._getSchema('sqlite');
     const indexes = this._getIndexes();
@@ -375,6 +514,7 @@ class DBAdapter {
     this.sqlite.pragma('foreign_keys = ON');
 
     this._ensurePointsLedgerChannel()
+      .then(() => this._runMigrations())
       .then(() => this.seedData())
       .then(() => this.normalizeLegacyLinks());
   }
@@ -388,6 +528,8 @@ class DBAdapter {
       for (const stmt of [...schema, ...indexes]) {
         await this.pgPool.query(stmt);
       }
+
+      await this._runMigrations();
 
       console.log('✅ PostgreSQL Schema Initialized');
       await this._ensurePointsLedgerChannel();
@@ -415,7 +557,7 @@ class DBAdapter {
           const insertCmd = this.prepare('INSERT INTO commands (channel_id, trigger, response) VALUES (?, ?, ?)');
           await insertCmd.run(channelId, '!cuhz', '🚀 https://planetcuhz.com');
           await insertCmd.run(channelId, '!links', '🔗 https://linktr.ee/PlanetCUHZ');
-          await insertCmd.run(channelId, '!discord', '💬 https://discord.gg/eNxDKkxQdN');
+          await insertCmd.run(channelId, '!discord', '💬 https://discord.gg/uDPEtrcsg4');
 
           // Default timers
           const insertTimer = this.prepare('INSERT INTO timers (channel_id, message, interval_minutes) VALUES (?, ?, ?)');
@@ -429,31 +571,41 @@ class DBAdapter {
   }
 
   /**
-   * Idempotent startup normalization (CEO Call 2, 2026-07-25): the site's
-   * canonical Discord invite is https://discord.gg/eNxDKkxQdN. The old
-   * discord.com invite code is retired. Channels seeded before this cutover
-   * already have the old invite baked into their `commands` / `timers` rows;
-   * this rewrites them in place on every boot so pre-existing installs
-   * self-heal without a manual migration. Safe to run repeatedly — a channel
-   * with no legacy rows is a no-op.
+   * Idempotent startup normalization: rewrites retired/expired Discord invites
+   * baked into pre-existing `commands` / `timers` rows to the canonical one,
+   * on every boot, so old installs self-heal without a manual migration.
+   * Safe to run repeatedly — a channel with no legacy rows is a no-op.
    *
-   * The retired invite code is reassembled from fragments rather than written
-   * as one literal below — WO-6's gate requires zero hits for the retired
-   * invite string anywhere under src/, and this normalizer is the one place
-   * that legitimately needs the old value (to find and rewrite it), not just
-   * emit it.
+   * Canonical verified against Discord's public invite API on 2026-09-26:
+   *   uDPEtrcsg4 -> VALID, permanent (the front door)
+   *   the WO-6-retired code (fragments below) -> still valid but retired
+   *   the invite this normalizer previously called canonical had EXPIRED —
+   *   rewriting to it would have pointed the community at a dead door.
+   *
+   * Retired codes are reassembled from fragments rather than written as one
+   * literal — WO-6's gate requires zero hits for a retired invite string
+   * anywhere under src/, and this normalizer is the one place that
+   * legitimately needs the old values (to find and rewrite them).
    */
   async normalizeLegacyLinks() {
     const RETIRED_INVITE_CODE = ['wt6Zc7S', 'gjx'].join('');
-    const RETIRED_DISCORD_INVITE = `https://discord.com/invite/${RETIRED_INVITE_CODE}`;
-    const CANONICAL_DISCORD_INVITE = 'https://discord.gg/eNxDKkxQdN';
+    const EXPIRED_INVITE_CODE = ['eNxDKkx', 'QdN'].join('');
+    const RETIRED_INVITES = [
+      `https://discord.com/invite/${RETIRED_INVITE_CODE}`,
+      `https://discord.gg/${RETIRED_INVITE_CODE}`,
+      `https://discord.com/invite/${EXPIRED_INVITE_CODE}`,
+      `https://discord.gg/${EXPIRED_INVITE_CODE}`
+    ];
+    const CANONICAL_DISCORD_INVITE = 'https://discord.gg/uDPEtrcsg4';
     try {
-      await this.prepare(
-        'UPDATE commands SET response = REPLACE(response, ?, ?) WHERE response LIKE ?'
-      ).run(RETIRED_DISCORD_INVITE, CANONICAL_DISCORD_INVITE, `%${RETIRED_DISCORD_INVITE}%`);
-      await this.prepare(
-        'UPDATE timers SET message = REPLACE(message, ?, ?) WHERE message LIKE ?'
-      ).run(RETIRED_DISCORD_INVITE, CANONICAL_DISCORD_INVITE, `%${RETIRED_DISCORD_INVITE}%`);
+      for (const retired of RETIRED_INVITES) {
+        await this.prepare(
+          'UPDATE commands SET response = REPLACE(response, ?, ?) WHERE response LIKE ?'
+        ).run(retired, CANONICAL_DISCORD_INVITE, `%${retired}%`);
+        await this.prepare(
+          'UPDATE timers SET message = REPLACE(message, ?, ?) WHERE message LIKE ?'
+        ).run(retired, CANONICAL_DISCORD_INVITE, `%${retired}%`);
+      }
     } catch (err) {
       console.error('Error normalizing legacy Discord links:', err);
     }

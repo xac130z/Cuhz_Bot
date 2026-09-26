@@ -63,7 +63,11 @@ module.exports = {
     enableChatPayments: process.env.ENABLE_CHAT_PAYMENTS === 'true',
     enableGambling: process.env.ENABLE_GAMBLING === 'true',
     moodAnalysisInterval: parseInt(process.env.MOOD_ANALYSIS_INTERVAL) || 120, // seconds
-    aiResponseTimeout: parseInt(process.env.AI_RESPONSE_TIMEOUT) || 3000, // ms
+    // 10000ms default: gemini-3.6-flash is a thinking model and regularly needs
+    // >3s (3000ms caused a continuous timeout storm in production). NOTE: the
+    // AI_RESPONSE_TIMEOUT env var still overrides this — Railway may have 3000
+    // set; clear/raise it there or this default won't take effect.
+    aiResponseTimeout: parseInt(process.env.AI_RESPONSE_TIMEOUT) || 10000, // ms
     contextBufferSize: parseInt(process.env.CONTEXT_BUFFER_SIZE) || 20, // messages
     storeChatContent: process.env.STORE_CHAT_CONTENT === 'true',
     chatRetentionDays: Math.max(1, Math.min(30, parseInt(process.env.CHAT_RETENTION_DAYS, 10) || 7)),

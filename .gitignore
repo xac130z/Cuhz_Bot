@@ -6,3 +6,4 @@ dist/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+src/stream_states.json

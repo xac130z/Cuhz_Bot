@@ -9,7 +9,17 @@ const CONTEXT_BUFFER_SIZE = 20;
 
 // Response cooldown: prevents bot from spamming same user
 const userResponseCooldowns = new Map(); // username -> last response timestamp
-const RESPONSE_COOLDOWN_MS = 45000; // 45 seconds between responses to same user
+const RESPONSE_COOLDOWN_MS = 60000; // 60 seconds between responses to same user
+const responsesInFlight = new Set(); // reserve before any cache/model await
+
+function addressedResponse(username, response) {
+    // Models/cache may already address this user. Remove only repeated leading
+    // mentions of that exact account, never mentions of someone else or in prose.
+    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const leading = new RegExp(`^(?:@${escaped}(?=$|[\\s,:])(?:[,:])?\\s*)+`, 'i');
+    const body = String(response).trim().replace(leading, '').trim();
+    return `@${username}${body ? ` ${body}` : ''}`;
+}
 
 // Bot identity for mention detection
 const BOT_USERNAME = (process.env.BOT_USERNAME || 'cuhz_bot').toLowerCase();
@@ -77,9 +87,9 @@ function recordResponse(username, channel = '') {
  */
 function isCuhzRelated(message) {
     const lowerMsg = message.toLowerCase();
+    // 'chain' keyword removed with the retired Chain Generator
     return lowerMsg.includes('cuhz') ||
-        lowerMsg.includes('planet') ||
-        lowerMsg.includes('chain');
+        lowerMsg.includes('planet');
 }
 
 /**
@@ -90,6 +100,13 @@ function isCuhzRelated(message) {
  */
 function isQuestionOrRequest(message) {
     const lowerMsg = message.toLowerCase().trim();
+
+    // Never treat links/promos as questions — URL query strings contain '?'
+    // and previously tripped the question detector (bot scolded the streamer
+    // for posting his own YouTube link). Links are never the bot's business.
+    if (/(https?:\/\/|www\.|\.com\/|\.gg\/|youtu\.be)/i.test(lowerMsg)) {
+        return false;
+    }
 
     // CUHZ keyword boost — lower threshold for CUHZ-related messages
     const hasCuhzKeyword = isCuhzRelated(message);
@@ -124,8 +141,11 @@ function isQuestionOrRequest(message) {
     // Direct bot mention is always worth responding to
     const mentionsBot = lowerMsg.includes(`@${BOT_USERNAME}`) || lowerMsg.includes('cuhz bot') || lowerMsg.includes('cuhzbot');
 
-    // Must have at least one strong signal
-    return mentionsBot || hasRequestPattern || (startsWithQuestion && hasQuestionMark) || (hasQuestionMark && lowerMsg.length > 20);
+    // Must have at least one strong signal. The old catch-all
+    // (hasQuestionMark && length > 20) made the bot butt into viewer-to-viewer
+    // conversations ("AIN'T NOBODY TALKING TO YOU CUHZBOT") — removed. A bare
+    // question mark now only qualifies when the question is about CUHZ itself.
+    return mentionsBot || hasRequestPattern || (startsWithQuestion && hasQuestionMark) || (hasQuestionMark && hasCuhzKeyword);
 }
 
 /**
@@ -173,37 +193,40 @@ function matchExistingCommand(message, availableCommands) {
  * @param {Object} userProfile - User profile data for personalization (optional)
  * @returns {Promise<string|null>}
  */
-async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands, personalityConfig = null, userProfile = null) {
+async function handleContextAwareResponse(channel, username, message, currentMood, availableCommands, personalityConfig = null, userProfile = null, streamState = null) {
     // First check if it's even a question/request
     if (!isQuestionOrRequest(message)) {
         return null;
     }
 
     // Check cooldown to prevent spam
-    if (!canRespondToUser(username, channel)) {
+    const responseKey = username.toLowerCase();
+    if (responsesInFlight.has(responseKey) || !canRespondToUser(username, channel)) {
         logger.debug(`⏱️ Cooldown active for ${username}, skipping response`);
         return null;
     }
 
-    // Try to match with existing commands first (faster, no API call)
-    const commandMatch = matchExistingCommand(message, availableCommands);
-    if (commandMatch) {
-        recordResponse(username, channel);
-        return `@${username} ${commandMatch}`;
-    }
-
-    // Check cache for similar queries
-    const cachedResponse = await getCachedResponse(message);
-    if (cachedResponse) {
-        logger.info('💾 Using cached context response');
-        return `@${username} ${cachedResponse}`;
-    }
-
-    // Use AI for complex context understanding
-    initChannel(channel);
-    const context = contextBuffers.get(channel) || [];
-
+    responsesInFlight.add(responseKey);
     try {
+        // Try to match with existing commands first (faster, no API call)
+        const commandMatch = matchExistingCommand(message, availableCommands);
+        if (commandMatch) {
+            recordResponse(username, channel); // every reply path must arm the cooldown
+            return addressedResponse(username, commandMatch);
+        }
+
+        // Check cache for similar queries (per channel — communities don't share replies)
+        const cachedResponse = await getCachedResponse(channel, message);
+        if (cachedResponse) {
+            logger.info('💾 Using cached context response');
+            recordResponse(username, channel); // every reply path must arm the cooldown
+            return addressedResponse(username, cachedResponse);
+        }
+
+        // Use AI for complex context understanding
+        initChannel(channel);
+        const context = contextBuffers.get(channel) || [];
+
         const aiResponse = await aiService.generateContextAwareResponse(
             channel,
             message,
@@ -211,21 +234,24 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
             currentMood,
             availableCommands,
             personalityConfig,
-            userProfile  // Pass user profile for personalization
+            userProfile,  // Pass user profile for personalization
+            streamState   // Pass live stream info (game/title) for grounding
         );
 
         if (aiResponse) {
             // Save to cache
-            await cacheResponse(message, aiResponse);
+            await cacheResponse(channel, message, aiResponse);
             // Record response for cooldown tracking
             recordResponse(username, channel);
-            return `@${username} ${aiResponse}`;
+            return addressedResponse(username, aiResponse);
         }
 
         return null;
     } catch (error) {
         logger.error(`❌ Context-aware response failed: ${error.message}`);
         return null;
+    } finally {
+        responsesInFlight.delete(responseKey);
     }
 }
 
@@ -234,7 +260,7 @@ async function handleContextAwareResponse(channel, username, message, currentMoo
  * @param {string} query
  * @returns {Promise<string|null>}
  */
-async function getCachedResponse(query) {
+async function getCachedResponse(channel, query) {
     try {
         const normalizedQuery = query.toLowerCase().trim();
         const now = new Date().toISOString();
@@ -242,10 +268,10 @@ async function getCachedResponse(query) {
         const result = await db.prepare(`
             SELECT response 
             FROM context_cache 
-            WHERE LOWER(query) = ? 
+            WHERE channel = ? AND LOWER(query) = ? 
             AND (expires_at IS NULL OR expires_at > ?)
             LIMIT 1
-        `).get(normalizedQuery, now);
+        `).get(channel, normalizedQuery, now);
 
         return result ? result.response : null;
     } catch (error) {
@@ -260,20 +286,20 @@ async function getCachedResponse(query) {
  * @param {string} response
  * @param {number} ttlHours - Time to live in hours
  */
-async function cacheResponse(query, response, ttlHours = 4) {
+async function cacheResponse(channel, query, response, ttlHours = 1) {
     try {
         const normalizedQuery = query.toLowerCase().trim();
         const expiresAt = new Date(Date.now() + ttlHours * 3600000).toISOString();
 
-        // Delete existing cache entry for this query first to avoid duplicates
+        // Delete existing cache entry for this channel+query first to avoid duplicates
         await db.prepare(`
-            DELETE FROM context_cache WHERE LOWER(query) = ?
-        `).run(normalizedQuery);
+            DELETE FROM context_cache WHERE channel = ? AND LOWER(query) = ?
+        `).run(channel, normalizedQuery);
 
         await db.prepare(`
             INSERT INTO context_cache (channel, query, response, expires_at)
-            VALUES ('*', ?, ?, ?)
-        `).run(normalizedQuery, response, expiresAt);
+            VALUES (?, ?, ?, ?)
+        `).run(channel, normalizedQuery, response, expiresAt);
 
         logger.info(`💾 Cached context response for: "${query}"`);
     } catch (error) {

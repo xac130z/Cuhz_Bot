@@ -2,7 +2,11 @@ const tmi = require('tmi.js');
 const express = require('express');
 const axios = require('axios');
 const config = require('./config');
+const { sanitizeChannel, normalizeChannels } = require('./channel_identity');
+const { createSharedChatGuard } = require('./shared_chat_guard');
+const sharedChatGuard = createSharedChatGuard();
 const logger = require('./logger');
+const { calendarDiff, formatDuration, formatMinutes } = require('./duration');
 const db = require('./database');
 const aiService = require('./ai_service');
 const moodTracker = require('./mood_tracker');
@@ -11,6 +15,7 @@ const userMemory = require('./user_memory');
 const pointsService = require('./points_service');
 const loyaltySystem = require('./loyalty');
 const modIntel = require('./mod_intel');
+const moderation = require('./moderation_service');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -38,24 +43,273 @@ const keywordReplies = keywordListener.createListener({
     botNames: [config.username, 'cuhz bot', 'cuhzbot']
 });
 
+// ============================================================================
+// THE CUHZ LAB — chat-controlled lounge (Lane K). Subscribers steer the lounge
+// on stream through CUHZ Bot; operators get a menu. The state machine is
+// src/lounge_control.js and the menu is src/lounge_menu.js — both PURE modules
+// with zero requires, which is what makes "this never touches points" provable.
+// This block in bot.js only: reads tags, forwards text, prints replies, serves
+// a read-only JSON route. Nothing here imports the database or points service.
+//
+// Numeric IDs only, hardcoded on purpose: the isolated boot harness freezes
+// process.env to {}, so an env-read operator list would silently become
+// "nobody" under test. A Twitch user id is public, not a secret.
+//
+// Verified against Twitch's public GQL on 2026-09-17:
+//   four_a_reason 952381011 · planetcuhz 1293717308 · cuhz_bot room 175727753
+//
+// PHOENIX IS DELIBERATELY ABSENT until the owner confirms which account is hers.
+// Two accounts exist:  phoenixnyc = 757210754 (created 2021-12, default avatar)
+//                      phoenixpnyc = 823707557 (created 2022-09) — what earlier docs assumed.
+// A wrong guess hands the remote to a stranger or locks out the real person, and
+// an id gate that fails open is worse than one that fails closed. One line to add.
+// ============================================================================
+const { createLoungeControl, HOUSE: LOUNGE_HOUSE, PALETTES: LOUNGE_PALETTES } = require('./lounge_control');
+const { parseLab: parseLabCommand, renderMenu: renderLabMenu } = require('./lounge_menu');
+
+// Base list is hardcoded for the reason the K1 spec gives: the isolated boot
+// harness freezes process.env to {}, so an env-ONLY gate silently becomes
+// "nobody" in every test run. Env is therefore ADDITIVE, never the whole list —
+// tests stay deterministic on the base while production can add an operator
+// without a code change or a redeploy of code.
+//
+// To give Phoenix control: have her type `!lounge whoami` in chat, read her
+// numeric id out of the bot's reply, then set on Railway:
+//     LOUNGE_OPERATOR_EXTRA_IDS=<her id>
+// (comma-separated for several). Non-numeric entries are dropped silently.
+// Owner decision 2026-09-18: ONLY planetcuhz and Phoenix. four_a_reason removed
+// from the base (he can be re-added through LOUNGE_OPERATOR_EXTRA_IDS in seconds).
+const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['1293717308']);
+const LOUNGE_OPERATOR_IDS = Object.freeze([
+    ...LOUNGE_OPERATOR_BASE_IDS,
+    ...String(process.env.LOUNGE_OPERATOR_EXTRA_IDS || '')
+        .split(',').map(x => x.trim()).filter(x => /^\d{1,12}$/.test(x)),
+]);
+// login -> room-id for the channels where the lounge is on. Identity is the
+// room-id from tags; the login is only the public URL surface of the endpoint.
+const LOUNGE_ROOMS = Object.freeze({ cuhz_bot: '175727753' });
+const LOUNGE_ROOM_IDS = new Set(Object.values(LOUNGE_ROOMS));
+const LOUNGE_CARD_COUNT = 5;                 // lab.js loads five artworks; the 15 names are those five re-tilted
+const LOUNGE_REPLY_BUDGET = 4;               // lounge lines per channel per minute, then silent drops
+const LOUNGE_INTENT_RE = /^!(lounge|lab)(\s|$)|^!(vibe|color|zoom|card|glow)\s/;
+
+// Who may steer (declared BEFORE the constructor that reads it — TDZ). Default 'operators' = only the operator list. Set
+// LOUNGE_ACCESS=subscribers on Railway to open the safe subset to subs later.
+const LOUNGE_ACCESS = process.env.LOUNGE_ACCESS === 'subscribers' ? 'subscribers' : 'operators';
+const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT, access: LOUNGE_ACCESS });
+const loungeEnabled = () => process.env.LOUNGE_ENABLED !== 'false';   // kill switch; default on
+
+const _loungeReplies = new Map();   // channel -> [sentAt] within the last minute
+const _loungeLogins  = new Map();   // login -> user-id, learned from tags this session (for !lab mute <login>)
+const _loungeState   = new Map();   // roomId -> { seq, bootId, json } — serialized once per change, not per poll
+let _loungeHouseJson = null;
+
+function loungeActor(tags) {
+    const badges = (tags && tags.badges) || {};
+    return {
+        userId: tags && tags['user-id'],
+        login: tags && tags.username,
+        broadcaster: Object.hasOwn(badges, 'broadcaster'),
+        moderator: !!(tags && tags.mod) || Object.hasOwn(badges, 'moderator'),
+        // Read live from tags every time; founders are subscribers too.
+        subscriber: !!(tags && tags.subscriber) || Object.hasOwn(badges, 'subscriber') || Object.hasOwn(badges, 'founder'),
+    };
+}
+
+function loungeSay(channel, text) {
+    const t = Date.now();
+    const recent = (_loungeReplies.get(channel) || []).filter(ms => t - ms < 60000);
+    if (recent.length >= LOUNGE_REPLY_BUDGET) return false;
+    recent.push(t);
+    _loungeReplies.set(channel, recent);
+    sendMessage(channel, text);
+    return true;
+}
+
+function loungeStateChanged(roomId) { _loungeState.delete(String(roomId)); }
+
+function loungeStateJson(roomId) {
+    const s = loungeControl.readState(roomId);
+    let c = _loungeState.get(String(roomId));
+    if (!c || c.seq !== s.seq || c.bootId !== s.bootId) {
+        c = { seq: s.seq, bootId: s.bootId, json: JSON.stringify(s) };
+        _loungeState.set(String(roomId), c);
+    }
+    return c.json;
+}
+
+// Unknown, disabled and non-allowlisted channels all get THIS payload, so the
+// route cannot be used to enumerate which channels have the lounge on.
+function loungeHouseJson() {
+    if (!_loungeHouseJson) {
+        const s = loungeControl.readState(LOUNGE_ROOMS.cuhz_bot);
+        _loungeHouseJson = JSON.stringify({ ...s, seq: 0, updatedAtMs: 0, ...LOUNGE_HOUSE, locked: true, setByLogin: null });
+    }
+    return _loungeHouseJson;
+}
+
+function loungeReason(r, actor) {
+    const at = actor.login ? `@${actor.login} ` : '';
+    switch (r.reason) {
+        case 'operators_only':      return `${at}the lounge is operator-controlled right now — !lounge shows what's on.`;
+        case 'subscribers_only':    return `${at}the lounge remote is a sub perk 💎 — !lounge shows what's on.`;
+        case 'locked':              return `${at}the lounge is locked right now.`;
+        case 'your_turn_soon':      return `${at}one change per 10s — you're up in ${Math.ceil((r.retryInMs || 0) / 1000)}s.`;
+        case 'channel_floor':
+        case 'glow_floor':          return `${at}give it a second — the screen just changed.`;
+        case 'cooling':             return `${at}chat's been busy, the lounge is cooling for a minute.`;
+        case 'vibe_operator_only':  return `${at}turbo is operator-only. Try chill or hype.`;
+        case 'intent_operator_only': return `${at}${r.intent} is an operator control. Subs get: vibe color zoom card glow depth thickness.`;
+        case 'out_of_range':        return `${at}${r.intent} is out of range — !lounge art for the limits.`;
+        case 'bad_number':          return `${at}${r.intent} takes a number, or "auto" to follow the vibe.`;
+        case 'bad_switch':          return `${at}on or off.`;
+        case 'color_operator_only': return `${at}that color is operator-only — !lounge colors`;
+        case 'muted':               return `${at}you can't change the lounge right now.`;
+        case 'bad_vibe':            return `${at}vibes: chill, hype.`;
+        case 'bad_color':           return `${at}!lounge colors for the list.`;
+        case 'bad_zoom':            return `${at}zoom in, out or reset.`;
+        case 'bad_glow':            return `${at}glow on or off.`;
+        case 'bad_card':            return `${at}card 1–${LOUNGE_CARD_COUNT}.`;
+        default:                    return `${at}!lounge vibe|color|zoom|card|glow|reset`;
+    }
+}
+
+function describeLoungeState(s) {
+    // Only mention a fine control when it is actually overriding the vibe preset,
+    // so the common line stays short and a custom look is visibly custom.
+    const fine = ['depth', 'thickness', 'rotation', 'position', 'speed', 'tilt']
+        .filter(k => s[k] !== null && s[k] !== undefined).map(k => `${k} ${s[k]}`);
+    return `${s.vibe} · ${s.palette} · card ${s.card} · zoom ${s.zoom} · glow ${s.glow ? 'on' : 'off'}`
+        + (s.shadow ? ' · shadow' : '') + (s.frozen ? ' · FROZEN' : '')
+        + (fine.length ? ` · ${fine.join(' · ')}` : '')
+        + (s.locked ? ' · locked' : '') + (s.setByLogin ? ` · set by @${s.setByLogin}` : '');
+}
+
+// Returns true when the message was a lounge message (handled or deliberately
+// silenced), false when it is not ours and must fall through untouched.
+function handleLoungeIntent(channel, roomId, actor, message) {
+    const r = loungeControl.applyIntent(roomId, actor, message);
+    if (r === null) return false;
+    switch (r.status) {
+        case 'status':
+            loungeSay(channel, `🛋️ Lounge: ${describeLoungeState(r.state)}`
+                + (r.role === 'viewer' && LOUNGE_ACCESS === 'subscribers' ? ' — subs steer it: !lounge vibe hype' : ''));
+            return true;
+        case 'colors':
+            loungeSay(channel, `🎨 Colors: ${r.palettes.join(' ')} — !lounge color <name>`);
+            return true;
+        case 'whoami':
+            // Public data (it is in every message tag), and only ever the asker's own.
+            // This is how the owner confirms an operator's real id without guessing
+            // between similar logins.
+            loungeSay(channel, `🪪 @${actor.login} — Twitch id ${r.userId} · role ${r.role}`);
+            return true;
+        case 'applied':
+            loungeStateChanged(roomId);
+            // Visual changes are answered by the screen itself (the badge names the
+            // setter). Only the lock, which changes nothing visible, gets a line.
+            if (r.intent === 'lock')   loungeSay(channel, '🔒 Lounge locked — chat control paused.');
+            if (r.intent === 'unlock') loungeSay(channel, '🔓 Lounge unlocked — subs can steer again.');
+            return true;
+        case 'rejected':
+            if (!r.quiet) loungeSay(channel, loungeReason(r, actor));
+            return true;
+        default:                       // cosigned / silent / ignored — quiet by design
+            return true;
+    }
+}
+
+function handleLabMenu(channel, roomId, actor, lab) {
+    // Non-operators get silence and one audit line: a refusal confirms a gated
+    // surface exists and invites probing. !lab is never advertised.
+    if (loungeControl.roleOf(actor) !== 'operator') {
+        logger.info(`🧪 !lab ignored from ${actor.login || actor.userId} in ${channel}`);
+        return true;
+    }
+    if (lab.kind === 'menu')    { loungeSay(channel, renderLabMenu(lab.page)); return true; }
+    if (lab.kind === 'unknown') { loungeSay(channel, '🧪 Not a lab entry — !lab for the menu.'); return true; }
+    if (lab.kind === 'command') return handleLoungeIntent(channel, roomId, actor, lab.cmd);
+    switch (lab.action) {
+        case 'badge_on':
+        case 'badge_off': {
+            const on = lab.action === 'badge_on';
+            loungeControl.setBadge(roomId, on);
+            loungeStateChanged(roomId);
+            loungeSay(channel, `🧪 Badge ${on ? 'on' : 'off'}.`);
+            return true;
+        }
+        case 'house_set':
+            // The one action with a mandatory confirm: it is the only change to
+            // persistent-within-session state. Everything else is one !lounge reset away.
+            if (lab.arg !== 'confirm') {
+                loungeSay(channel, '🧪 This makes the current look the house default. Say: !lab house set confirm');
+                return true;
+            }
+            loungeControl.setHouse(roomId, actor);
+            loungeSay(channel, '🧪 House look saved — !lounge reset brings it back.');
+            return true;
+        case 'ops':
+            loungeSay(channel, `🧪 Access: ${LOUNGE_ACCESS} · Operators: ${LOUNGE_OPERATOR_IDS.join(' ')}`
+                + (LOUNGE_OPERATOR_IDS.length > LOUNGE_OPERATOR_BASE_IDS.length ? ' (incl. LOUNGE_OPERATOR_EXTRA_IDS)' : ''));
+            return true;
+        case 'house_show':
+            loungeSay(channel, `🧪 On screen now: ${describeLoungeState(loungeControl.readState(roomId))}`);
+            return true;
+        case 'queue': {
+            const rows = loungeControl.auditOf(roomId).slice(-6)
+                .map(e => `${e.login || e.actor}: ${e.intent}${e.value != null ? ' ' + e.value : ''} → ${e.decision}`);
+            loungeSay(channel, rows.length ? `🧪 Last: ${rows.join(' · ')}` : '🧪 Nothing yet this session.');
+            return true;
+        }
+        case 'mute':
+        case 'unmute': {
+            const login = String(lab.arg || '').replace(/^@/, '').toLowerCase();
+            const id = _loungeLogins.get(login);
+            if (!id) { loungeSay(channel, `🧪 Haven't seen @${login} talk this session — need a message from them first.`); return true; }
+            loungeControl.mute(roomId, actor, id, lab.action === 'mute');
+            loungeSay(channel, `🧪 @${login} ${lab.action === 'mute' ? 'can no longer' : 'can'} change the lounge.`);
+            return true;
+        }
+        default:
+            return true;
+    }
+}
+
 // --- Tier System Definition ---
 // Canonical access list. Keys MUST be lowercase — lookups do `.toLowerCase()`
 // on the channel name before indexing this map. Any channel not listed falls
 // through to TIERS.BASIC by default (see the `|| TIERS.BASIC` guard in
 // handleMessage), but listing explicitly here makes intent clear.
+//
+// SOLD PLAN → INTERNAL TIER MAPPING (ladder v2, owner-locked 2026-08-06).
+// These tier keys are INTERNAL ONLY and must never appear in customer-facing
+// chat copy — the public ladder uses different names on purpose ("Pro" collides
+// with the planetcuhz.com site membership, so bot chat never sells a "Pro"):
+//
+//   Free     $0        → TIERS.BASIC    (bot, moderation, points, shoutouts)
+//   Silver   $4.99/mo  → TIERS.PRO      (socials rotation, isPP command set)
+//   Gold     $14.99/mo → TIERS.PREMIUM  (unlimited chat AI + site Pro included)
+//   Partner  $49.99/mo → its OWN managed bot instance, not a row in this map
+//                        (own brand/name/avatar, hosted + run for them)
+//   Architect custom   → built-to-own custom bot, quoted per build
+//
+// Provisioning is MANUAL today: on a sale the owner tells an agent
+// "add <channel> silver/gold" and the channel gets added/edited here, then the
+// bot redeploys. There is no self-serve entitlement engine yet — do not write
+// copy anywhere that implies instant automated upgrade.
 const TIERS = { BASIC: 'basic', PRO: 'pro', PREMIUM: 'premium' };
 const CHANNEL_TIERS = {
     'four_a_reason':         TIERS.PREMIUM,
     'rico2ez':               TIERS.PREMIUM,
     'planetcuhz':            TIERS.PREMIUM,
+    'cuhz_bot':              TIERS.PREMIUM, // the bot's own stream
     'thatgirlmahni_':        TIERS.BASIC,
-    'qweenstormygirlnz89':   TIERS.BASIC,
     'stormygirlnz89':        TIERS.BASIC,
     'razredg1':              TIERS.BASIC,
     'snowy_wolfies_ttv':     TIERS.BASIC,
     'ohthatztayy':           TIERS.BASIC,
-    'westsiderelly':         TIERS.BASIC,
-    'grouch392':             TIERS.BASIC
+    'grouch392':             TIERS.BASIC,
+    'westsiderelly':         TIERS.BASIC  // added live 2026-08-06 — joined from four_a_reason's stream
 };
 
 // --- Global Error Handlers (Prevention) ---
@@ -75,11 +329,51 @@ let connectedChannels = new Set();
 
 // State
 let timerIndices = new Map(); // channel -> index
-let streamStates = new Map(); // channel -> { isLive: boolean, startedAt: Date, title: string }
+let streamStates = new Map(); // channel (streamKey format) -> { isLive: boolean, startedAt: Date, title: string }
+
+// Canonical streamStates key: strip the IRC '#' prefix and lowercase.
+// Writers historically keyed by the raw tmi name ('#chan') while some readers
+// used the stripped name ('chan') — every access MUST go through this helper.
+function streamKey(channel) {
+    return String(channel || '').replace('#', '').toLowerCase();
+}
 let channelConfigs = new Map(); // channel -> { timers: [], commands: {}, hype: [] }
 let dailyMessages = new Map(); // channel -> string (set via !settoday)
 let twitchClientId = null; // Fetched dynamically
 let botUserId = null; // Captured during validation
+
+// Webhook forwarding health (see "4. Webhook Forwarding" in handleMessage):
+// throttled error logging + circuit breaker so a dead endpoint can't spam logs.
+let _webhookConsecutiveFailures = 0;
+let _webhookPausedUntil = 0;      // epoch ms; webhooks skipped until this time
+let _webhookLastErrorLogAt = 0;   // epoch ms of last logged webhook error
+const WEBHOOK_FAILURE_THRESHOLD = 5;
+const WEBHOOK_PAUSE_MS = 30 * 60 * 1000;           // 30 minutes
+const WEBHOOK_ERROR_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+// Known bot accounts from OTHER channels' toolchains (plus self as belt-and-
+// suspenders — our own messages are already dropped by the `self` check in
+// handleMessage). These must never earn points, accrue watch minutes, or get
+// auto-welcomed: in production they earned 13/85 points in #thatgirlmahni_.
+const KNOWN_BOTS = new Set([
+    'nightbot', 'wizebot', 'streamelements', 'moobot',
+    'fossabot', 'soundalerts', 'sery_bot', 'cuhz_bot'
+]);
+
+// Join verification state: the target list is captured at init and compared
+// against client.getChannels() ~60s after connect (the old per-channel
+// dashboard POST /api/bot/verify 4xx'd in production and never detected
+// missing joins anyway). Missing channels are retried with backoff.
+let targetChannels = [];
+const JOIN_RETRY_DELAYS_MS = [30000, 60000, 120000];
+
+// Persona-fetch log hygiene: each channel's failure is logged once at startup,
+// then identical repeats are suppressed to at most once/hour per channel.
+// _personaSource feeds the one-line startup summary.
+const _personaSource = new Map();   // channel -> 'dashboard' | 'defaults'
+const _personaErrorLog = new Map(); // channel -> { msg: string, at: epoch ms }
+const PERSONA_ERROR_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+let _personaSummaryLogged = false;
 
 // Per-channel welcome tracking (First Contact is scoped to CHANNEL, not global).
 // Keyed by `${channel}:${username}` -> { firstContactAt: number, lastWelcomedAt: number }
@@ -174,11 +468,198 @@ function drainQueue(key) {
     }, wait);
 }
 
+// ============================================================================
+// WEBSITE → BOT CHANNEL SYNC (the missing pipe, 2026-09-19).
+//
+// planetcuhz.com's "Get CUHZ Bot" flow writes public.bot_requests through the
+// `bot-request` edge function (auto-approved), and `bot-worker-sync` serves the
+// desired-state list of approved/active channels to a worker holding
+// BOT_API_SECRET. Nothing in this process ever READ that list: channels came
+// only from the legacy dashboard (API_BASE) + the hardcoded CHANNEL_TIERS, so a
+// website request could never reach the running bot. This closes the loop.
+//
+// Set BOT_SYNC_URL on Railway to the function's URL
+//   https://<project>.supabase.co/functions/v1/bot-worker-sync
+// Unset = feature off; nothing changes. Same BOT_API_SECRET the bot already has.
+// ============================================================================
+const BOT_SYNC_URL = (process.env.BOT_SYNC_URL || '').trim();
+// Use the dedicated website-roster credential when it is configured. Keep the
+// legacy BOT_API_SECRET fallback so existing installations continue to work,
+// but do not force Railway's dashboard/API secret to be reused by Supabase.
+const BOT_SYNC_SECRET = (
+    process.env.CUHZ_ROSTER_SYNC_SECRET || config.botApiSecret || ''
+).trim();
+const BOT_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const LOGIN_SHAPE = /^[a-z0-9_]{2,25}$/;
+
+/** Approved/active channel logins from bot_requests, as '#login'. [] on any failure. */
+async function fetchSyncedChannels() {
+    if (!BOT_SYNC_URL || !BOT_SYNC_SECRET) return [];
+    try {
+        const res = await axios.get(BOT_SYNC_URL, {
+            headers: { 'Authorization': `Bearer ${BOT_SYNC_SECRET}` },
+            timeout: 10000,
+        });
+        const rows = Array.isArray(res.data && res.data.channels) ? res.data.channels : [];
+        // Only the login field, only Twitch-shaped logins, only approved/active.
+        const logins = rows
+            .filter(r => r && typeof r.twitch_login === 'string' && ['approved', 'active'].includes(r.status))
+            .map(r => r.twitch_login.toLowerCase())
+            .filter(l => LOGIN_SHAPE.test(l));
+        return normalizeChannels(logins);
+    } catch (err) {
+        logger.error('bot-worker-sync fetch failed (website requests will not join until it recovers):', err.message);
+        return [];
+    }
+}
+
+// ============================================================================
+// WATCH TIME — two different questions, answered honestly.
+//
+//   "How long have I been in THIS stream?"  -> time since your FIRST MESSAGE in
+//   this channel after the stream went live. Read from chat_log, so it survives
+//   bot restarts. The bot cannot know when you opened the player: Twitch sends
+//   no join event for anonymous viewers, and the 'join' handler here only
+//   handles the bot's own join. So the copy says "since your first message",
+//   never "since you got here" -- that would be a claim the bot can't back.
+//
+//   "How long have I watched ALL-TIME?"     -> user_profiles.total_watch_minutes,
+//   the number !watchtime already printed. It is chat-presence time, credited in
+//   10-30 minute chunks by the passive paycheck (see PRESENCE_GAP_MS below): you
+//   must keep typing for it to grow. A silent lurker earns none of it.
+// ============================================================================
+
+/** SQL-comparable UTC timestamp: 'YYYY-MM-DD HH:MM:SS'. Matches how both
+ *  dialects render CURRENT_TIMESTAMP, so a lexical compare on SQLite and a
+ *  parsed compare on Postgres both do the right thing (ISO 'T' would not). */
+function sqlTimestamp(d) {
+    return new Date(d).toISOString().replace('T', ' ').slice(0, 19);
+}
+
+/** First message this user sent in this channel since the stream started, or null. */
+async function sessionFirstSeen(channel, usernameL, startedAt) {
+    if (!startedAt) return null;
+    const row = await db.prepare(
+        'SELECT MIN(created_at) AS first_at FROM chat_log WHERE channel = ? AND username = ? AND created_at >= ?'
+    ).get(channel, usernameL, sqlTimestamp(startedAt));
+    const t = row && row.first_at ? new Date(row.first_at).getTime() : NaN;
+    return Number.isFinite(t) ? t : null;
+}
+
+/** Pure. Builds the !watchtime / !session reply from already-fetched facts. */
+function formatWatchLine(login, { live, firstSeenMs, totalMinutes, nowMs = Date.now() }) {
+    const parts = [];
+    if (live && firstSeenMs) {
+        const mins = Math.max(0, Math.round((nowMs - firstSeenMs) / 60000));
+        parts.push(mins < 1 ? 'in this stream: just got here' : `in this stream: ${formatMinutes(mins)}`);
+    } else if (live) {
+        parts.push('in this stream: just got here');
+    } else {
+        parts.push('stream is offline right now');
+    }
+    const total = Number.isSafeInteger(totalMinutes) && totalMinutes > 0 ? totalMinutes : 0;
+    parts.push(total > 0 ? `all-time across the fam: ${formatMinutes(total)}` : 'all-time: just started tracking — keep chatting and it stacks');
+    return `⏱️ @${login} — ${parts.join(' · ')} 💎`;
+}
+
+// Passive paycheck tuning: a viewer is "still here" if their previous message
+// was within PRESENCE_GAP_MS; they get paid at most once per PAYCHECK_INTERVAL_MS.
+const PRESENCE_GAP_MS = 15 * 60 * 1000;
+const PAYCHECK_INTERVAL_MS = 10 * 60 * 1000;
+
+// Per-user !gamble cooldown timestamps
+const _gambleCooldowns = new Map();
+
+/**
+ * The command list handed to the AI. persona.commands alone covers only
+ * PUBLIC_COMMANDS + dashboard commands — it never included the shoutout pools,
+ * so when chat asked "what's @someone's command?" the AI had no data and
+ * invented one (it once told chat @imkxddy's command was !kuddy, which did not
+ * exist). This merges in every registered pool command so the AI can only name
+ * real ones.
+ */
+function buildAiCommandList(personaCommands) {
+    const merged = { ...(personaCommands || {}) };
+    for (const cmd of Object.keys(USER_VARIANT_POOLS)) {
+        if (!merged[cmd]) merged[cmd] = 'personal shoutout command';
+    }
+    return merged;
+}
+
 // --- Content Data (Non-Crypto) ---
+
+// CUHZ Points reward tiers — SINGLE SOURCE OF TRUTH (same pattern as PG_COMMANDS).
+// Edit a tier here and it updates !rewards in chat AND GET /api/rewards, which is
+// what planetcuhz.com renders.
+// `note` is detail for the website; `name` is the short label chat prints.
+// Declared ABOVE PUBLIC_COMMANDS so no module-level literal can hit it in the TDZ.
+//
+// FIRST-PARTY ONLY (CUHZ_POINTS_ECONOMY.md Rev 2, §2–§3 — non-negotiable):
+// CUHZ Bot is a GUEST in 8 channels it does not own, so no tier may depend on a
+// host streamer's labor or channel privileges. The retired ladder (Shoutout /
+// Pick next game / VIP for a week) all promised somebody else's airtime or badge
+// — that was never ours to give. Every tier below is fulfillable by us alone:
+// the bot, planetcuhz.com (Chain Studio + store), our own stream, or our Discord.
+// Do NOT re-add a host-dependent tier. Not "usually", not "we'll ask them".
+//
+// NEVER-RAISE RULE (§2c): 500/1000/2500/5000 are public and viewers are banking
+// against them right now. These costs may be confirmed or LOWERED, never raised.
+// The reward AT a price point may only be swapped for equal-or-greater value.
+//
+// FIXED VALUE ONLY (owner decision 2026-09-15). Every tier is a bounded good. The
+// 1000 tier used to be "25% off the store": an uncapped percentage on an unbounded
+// order, the only tier whose cost to us scaled with the buyer's cart. The ladder
+// itself prices a point (2500 = the $7 emote pack, ~0.28¢/point, so 1000 ≈ $2.80);
+// 25% paid that on an $11 order and $15 on a $60 one. The swap to a flat $5 credit
+// is equal-or-greater value at every order under $20 and above the implied point
+// rate, so §2c holds — and it can never again pay out more than $5. Do NOT
+// reintroduce a percentage tier; if you must, cap it in dollars in the name.
+//
+// No 7500 "grail" tier here on purpose — it is net-new and awaits owner approval.
+const POINT_REWARDS = [
+    { cost: 500,  name: 'Custom Chain PFP',     note: 'Made-to-order Chain Studio profile art — any finish, your nameplate, delivered in Discord' },
+    // Store-credit tier: copy says "issued via Discord" and never "instant"/"auto-applied".
+    // Spec §4 E1 (store platform's single-use discount codes) is UNVERIFIED, and the
+    // fallback is a manual $5 refund — so nothing here may imply automatic delivery.
+    { cost: 1000, name: '$5 off the store',     note: 'Single-use $5 discount code for anything at planetcuhz.com, one per order — issued via Discord' },
+    { cost: 2500, name: 'Emote Pack Vol.1',     note: 'The full $7 emote pack, free — 8 emotes, Twitch + Discord sizes, via Discord DM' },
+    // Scoped to the Planet Cuhz channel on purpose: the bot's speech is ours, but a
+    // greeting firing in a HOST's chat is our promo in their house. Never advertise
+    // this as bot-wide. The "on the Planet Cuhz channel" clause is load-bearing.
+    { cost: 5000, name: 'Custom bot greeting (Planet Cuhz)', note: 'Cuhz_Bot greets you by name with your line on the Planet Cuhz channel for a month' }
+];
+
+// Twitch hard-caps a message at 500 chars; we budget 450. If POINT_REWARDS ever
+// grows past that, drop whole tiers off the end (with an ellipsis) rather than
+// slicing a reward name in half or blowing the cap.
+const REWARDS_LINE_MAX = 450;
+function buildRewardsLine() {
+    const prefix = '💎 CUHZ POINTS REWARDS: ';
+    // NOTE: no site pointer here on purpose — planetcuhz.com has no /points page
+    // yet, and pointing viewers at a dead end teaches them the economy isn't real.
+    // Re-add '· more at planetcuhz.com/points' ONLY once that page ships (spec §6).
+    // "no host needed" is the Rev 2 promise in four words; "usually same stream" is
+    // gone because custom art and discount codes take a day and "same stream"
+    // implied on-stream fulfillment — the exact frame Rev 2 retires.
+    const suffix = ' → Ask a mod to redeem — delivered by the fam via Discord, no host needed 💎';
+    const tiers = POINT_REWARDS.map(r => `${r.cost} = ${r.name}`);
+    const shown = tiers.slice();
+    let line = prefix + shown.join(' | ') + suffix;
+    while (shown.length > 1 && line.length > REWARDS_LINE_MAX) {
+        shown.pop();
+        line = prefix + shown.join(' | ') + ' | …' + suffix;
+    }
+    // Single tier still too long (pathological name) — hard trim as a last resort.
+    return line.length > REWARDS_LINE_MAX ? line.slice(0, REWARDS_LINE_MAX - 1) + '…' : line;
+}
+
 const PUBLIC_COMMANDS = {
+    // NOTE: direct !cuhz dispatch is intercepted by USER_VARIANT_POOLS (hype pool);
+    // this entry stays because the context handler's Q&A matcher uses it to answer
+    // "what is planet cuhz?" with the website link. Intentional dual-registration.
     '!cuhz': '🚀 https://planetcuhz.com',
     '!links': '🔗 https://linktr.ee/PlanetCUHZ',
-    '!discord': '💬 Join the CUHZ fam → https://discord.gg/eNxDKkxQdN',
+    '!discord': '💬 Join the CUHZ fam → https://discord.gg/uDPEtrcsg4',
     '!whatiscuhz': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!faq': '🌌 Planet CUHZ is the creator ecosystem. Start here → https://planetcuhz.com',
     '!whitepaper': '📄 https://planetcuhz.com/whitepaper',
@@ -192,21 +673,27 @@ const PUBLIC_COMMANDS = {
     '!giveaway': '🎁 Giveaway status: Check Discord for active giveaways!',
     '!enter': 'Use the link in !giveaway or Discord to enter active giveaways.',
     '!dashboard': '🎛️ Add CUHZ Bot to your channel → https://cuhz-bot-dashboard-846.created.app',
-    // Built from the service's EARN/COSTS constants so the advertised rates can
-    // never drift from the code again (the old hand-typed line said "!ask 10-20").
-    '!pointsinfo': pointsService.buildPointsInfoLine()
+    // "hanging out IN CHAT" is load-bearing: the passive paycheck is message-triggered
+    // (see PRESENCE_GAP_MS / PAYCHECK_INTERVAL_MS above) — a viewer who never types
+    // earns nothing, so the copy must not promise points for silent lurking.
+    // The '+ planetcuhz.com' pointer is gone: the site has no leaderboard and no
+    // points page (verified live — /leaderboard and /rewards both 404). Restore it
+    // as 'planetcuhz.com/points' ONLY after that page ships (spec §5a/§6).
+    '!pointsinfo': '💎 EARN CUHZ Points: +1 every chat message, +10 just for hanging out in chat while we\'re live, +300 one-time follow bonus with !claim. Check your bag with !points, leaderboard with !top — spend it with !rewards 💎'
 };
 
 const USER_COMMANDS = {
     '!uni': 'Universal vibes loaded! Welcome to the galaxy! 🌌',
     // !balen — rotated handler; aliases to BALEN_QUOTES via USER_VARIANT_POOLS.
     '!chi': 'Windy City energy! Chi2K is in the building. 🏀',
-    '!bot': 'Just a bot doing bot things. 🤖',
+    // !bot — was a throwaway joke; now the onboarding CTA. Handled in dispatch
+    // next to !getcuhzbot so it can't be shadowed by this canned map.
     '!drizzy': 'Drizzy in the cut! No drizzle, just reign! ☔👑',
     // !ec — rotated handler; see EC_QUOTES + dispatch block.
     // !four — rotated handler; shares FOUR_QUOTES pool with !4 (see dispatch block).
     '!jay': 'HBN Jay bringing the heat! 300 level energy! 🔥',
-    '!rell': 'Rell is here, the vibes are up! 🔥',
+    // !rell moved to USER_VARIANT_POOLS (Hell Rell rotation, all tiers);
+    // WestSideRelly has his own !west there — two different Rells.
     '!jxy': 'Speak up! JxyTalk is in the room. 🎙️',
     '!keem': 'KeemKillem with the plays! Welcome fam! 🎮',
     '!jaylo': 'Jaylo sliding through! Smooth operator! ⛸️',
@@ -215,7 +702,8 @@ const USER_COMMANDS = {
     '!neb': 'Nebulous vibes... mysterious and cool. 🌫️',
     '!night': 'The OG bot is here. Respect the elders. 🤖',
     '!papi': 'Papi Cartier has arrived. Luxury vibes only. 💎',
-    '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
+    // !raz moved to BASIC_USER_COMMANDS — razredg1 is a basic-tier member and
+    // this map only fires in Pro/Premium, so his own channel couldn't use it.
     '!famous': 'Real Famous K stepping in. Flash the cameras! 📸',
     '!rebound': 'Rebound Mindset. Bounce back stronger every time. 🏀',
     // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
@@ -226,9 +714,11 @@ const USER_COMMANDS = {
     '!shock': 'Warning: High Voltage in the chat! ⚡',
     '!kay': 'Big Mula in the building! 💰',
     // !limit — rotated handler; aliases to LIMIT_QUOTES via USER_VARIANT_POOLS.
-    '!reacts': 'Reactions are LIVE! 👀',
-    '!yoo': 'Yoo! Welcome to the stream. 👋',
-    '!shoutouts': 'Community Commands: !uni !balen !chi !bot !drizzy !ec !four !jay !rell !jxy !keem !jaylo !tank !badguy !neb !night !papi !raz !famous !rebound !snow !thorn !mahni !zuri !planet !shock !kay !limit !reacts !rock !yoo !bern !ac !storm !juan !rico !pnx !dame | Want your own? Email SUPPORT@PLANETCUHZ.COM'
+    '!reacts': 'Reactions are LIVE! 👀'
+    // '!yoo' removed — duplicate of BASIC_USER_COMMANDS['!yoo'], which is checked
+    // first for all tiers, so this entry never fired.
+    // '!shoutouts' removed — dead code; the dedicated !shoutouts handlers further
+    // down in dispatch always intercept first, and this string had gone stale.
 };
 
 const HYPE_MESSAGES = [
@@ -449,14 +939,14 @@ const KASHA_QUOTES = [
     "🔥 Welcome in @dangbabykasha! Real ones know 🦁"
 ];
 
-// !qween for qweenstormygirlnz89 — Sims + basketball loyal regular.
+// !qween for stormygirlnz89 — Sims + basketball loyal regular.
 // Palette 👑 🏀 ✨ 💖 📡.
 const QWEEN_QUOTES = [
     "👑 QWEEN STORMY in the chat! Sims slayer, vibe curator 🏀",
-    "👑 @qweenstormygirlnz89 we see you cuhz — the frequency is up 📡",
+    "👑 @stormygirlnz89 we see you cuhz — the frequency is up 📡",
     "✨ Qween Stormy pulled up. Chat officially upgraded 👑",
     "👑 Ayy it's Qween! Good to see you cuhz 💖",
-    "💖 @qweenstormygirlnz89 slid through — royalty in the building 👑",
+    "💖 @stormygirlnz89 slid through — royalty in the building 👑",
     "👑 Qween energy only. Stormy here to run it 📡",
     "✨ Qween Stormy in the chat means we WINNING today 🏀",
     "💖 Welcome back Qween — the throne was empty without you 👑"
@@ -499,16 +989,16 @@ const TIMER_POOLS = {
         "🌌 CUHZ fam, first time here? → https://planetcuhz.com"
     ],
     discord: [
-        "💬 Join the Discord → https://discord.gg/eNxDKkxQdN",
-        "💬 CUHZ fam on Discord → https://discord.gg/eNxDKkxQdN",
-        "💬 Real convos happening in Discord → https://discord.gg/eNxDKkxQdN",
-        "💬 Don't lurk, join the Discord → https://discord.gg/eNxDKkxQdN",
-        "💬 Link up with the fam → https://discord.gg/eNxDKkxQdN",
-        "💬 Where the CUHZ planning happens → https://discord.gg/eNxDKkxQdN",
-        "💬 Free to join, hard to leave → https://discord.gg/eNxDKkxQdN",
-        "💬 Slide in the Discord → https://discord.gg/eNxDKkxQdN",
-        "💬 CUHZ Discord — come say what's up → https://discord.gg/eNxDKkxQdN",
-        "💬 Planet CUHZ Discord is active 24/7 → https://discord.gg/eNxDKkxQdN"
+        "💬 Join the Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 CUHZ fam on Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 Real convos happening in Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 Don't lurk, join the Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 Link up with the fam → https://discord.gg/uDPEtrcsg4",
+        "💬 Where the CUHZ planning happens → https://discord.gg/uDPEtrcsg4",
+        "💬 Free to join, hard to leave → https://discord.gg/uDPEtrcsg4",
+        "💬 Slide in the Discord → https://discord.gg/uDPEtrcsg4",
+        "💬 CUHZ Discord — come say what's up → https://discord.gg/uDPEtrcsg4",
+        "💬 Planet CUHZ Discord is active 24/7 → https://discord.gg/uDPEtrcsg4"
     ],
     socials: [
         "🔗 All links → https://linktr.ee/PlanetCUHZ",
@@ -572,7 +1062,8 @@ const WELCOME_BACK_QUOTES = [
     "🌌 Welcome back! Chat level immediately went up ⚡"
 ];
 
-// !gg for geniiknight — Slytherin energy. Palette 🐍 💚 ⚡ 🌌.
+// !geni for geniiknight — Slytherin energy. Palette 🐍 💚 ⚡ 🌌.
+// (!gg was reassigned to end-of-game GG; !geni is their command now.)
 const GG_QUOTES = [
     "🐍 Slytherin stand UP! @geniiknight just slid in 💚",
     "🐍 GeniiKnight in the chat — the cunning ones always pull through ⚡",
@@ -671,6 +1162,23 @@ const LYRICAL_QUOTES = [
     "🔥 @lyricalmindsetttv here — day-one CUHZ poet, we appreciate you 📝"
 ];
 
+// !grouch for grouch392 — "Mr. Get To It", NBA 2K hooper energy. Palette 🏀 🔴 💪 🔥 🎮 💎.
+// 12 variants, no-repeat-last-2. Tone: hype + hoops + hustle + CUHZ family love.
+const GROUCH_QUOTES = [
+    "🏀 GROUCH in the building! @grouch392 — Mr. Get To It himself 🔴",
+    "🔴 @grouch392 pulled up! Buckets on buckets, hustle on repeat 🏀",
+    "💪 Mr. Get To It touched down — @grouch392 stays ready, cuhz 🔥",
+    "🎮 @grouch392 in the chat! Court vision on the hardwood and the sticks 🏀",
+    "🔥 Grouch is here! @grouch392 is a real hooper, a real one — welcome home, cuhz 💎",
+    "🏀 Ayy, Grouch pulled up! @grouch392 gets to it every single day 💪",
+    "💎 @grouch392 slid in — 2K pressure, CUHZ family certified 🔴",
+    "🔴 Mr. Get To It is in the frequency — @grouch392, we see the work 🏀",
+    "🎮 Controller locked, jumper green — @grouch392 came to compete 🔥",
+    "🏀 @grouch392 checked in — all hustle, no wasted possessions 💪",
+    "💎 Grouch brings that day-one energy — good to see you, @grouch392 🔴",
+    "🔥 Clear the lane! @grouch392 is here, and the whole CUHZ family knows the name 🏀"
+];
+
 // !brady / !blitz for BradyBlitz — four_a_reason channel regular.
 // Palette 🏈 🐐 ⚡ 🔥 💎. 8 variants, no-repeat-last-2. Tone: hype + LOVE.
 const BRADY_QUOTES = [
@@ -697,6 +1205,158 @@ const CUHZ_QUOTES = [
     "🌌 Planet CUHZ for life. Family over everything, every single time 💎"
 ];
 
+// !anti — 6 variants. Viewers were typing '!anti' with no handler. The full
+// username behind the 'antisoci...' log prefix couldn't be confirmed anywhere
+// in the repo/DB, so this pool is generic hype with NO @-mention on purpose.
+// !anti for antisocialtv_ — anti-hero energy. Palette ⚡ 🌌 😤 👀 💎.
+// 6 variants, no-repeat-last-2. Username confirmed from production logs.
+const ANTI_QUOTES = [
+    "⚡ ANTI in the chat! @antisocialtv_ — different breed, same CUHZ fam 💎",
+    "🌌 @antisocialtv_ movin' anti but the vibes stay pro cuhz 🔥",
+    "😤 @antisocialtv_ — anti everything except the grind. Locked in 💎",
+    "⚡ The quiet ones watch everything — @antisocialtv_ in full presence 👀",
+    "🌌 Anti the noise, pro the frequency — @antisocialtv_ that's the CUHZ way 📡",
+    "🔥 @antisocialtv_ tapped in — outside the wave but forever in the fam 💎"
+];
+
+// !blessed / !dj for blesseddj_ — blessed + DJ energy. Palette 🎧 🎶 🙏 ✨ 💿 🔥.
+// 8 variants, no-repeat-last-2.
+const BLESSED_QUOTES = [
+    "🎧 BLESSED DJ in the mix! @blesseddj_ just pulled up — vibes secured 🙏",
+    "🎶 @blesseddj_ touched down! Track list blessed, chat blessed ✨",
+    "🙏 Blessed energy only — @blesseddj_ in the building cuhz 💿",
+    "🔥 DJ on deck! @blesseddj_ keep the frequency SPINNING 🎧",
+    "✨ @blesseddj_ slid in — every drop blessed, every vibe right 🎶",
+    "💿 The mix just got holy — @blesseddj_ we love you cuhz 🙏",
+    "🎧 Ayy it's Blessed! @blesseddj_ pull up and bless the airwaves 🔥",
+    "🎶 @blesseddj_ in the frequency — blessed hands, blessed sounds ✨"
+];
+
+// !phoenix for phoenixpnyc — rise-from-the-ashes + NYC energy. Palette 🔥 🦅 🗽 ✨ 💎.
+// 8 variants, no-repeat-last-2. Most active community chatter in the logs —
+// also the one who requested !watchtime.
+const PHOENIX_QUOTES = [
+    "🔥 PHOENIX RISING! @phoenixpnyc in the chat — NYC stand UP 🗽",
+    "🦅 @phoenixpnyc touched down from the ashes — can't keep a real one down 🔥",
+    "🗽 Empire state of CUHZ — @phoenixpnyc in the building ✨",
+    "🔥 @phoenixpnyc here! Day-one energy, watch-time LEGENDARY 💎",
+    "✨ The bird is BACK — @phoenixpnyc we see you cuhz 🦅",
+    "💎 @phoenixpnyc pulled up — rises every stream, never misses 🔥",
+    "🗽 NYC's finest in the frequency — @phoenixpnyc salute 🦅",
+    "🔥 Ayy Phoenix! @phoenixpnyc the chat just heated UP cuhz ✨"
+];
+
+// !uncle / !meaux for unclemeaux1906 — OG uncle energy. Palette 🎩 💯 😂 🔥 💎.
+const UNCLE_QUOTES = [
+    "🎩 UNCLE MEAUX in the building! @unclemeaux1906 — OG status 💯",
+    "💯 @unclemeaux1906 pulled up! Uncle wisdom activated cuhz 🎩",
+    "🔥 The family elder is HERE — @unclemeaux1906 respect the OG 💎",
+    "😂 @unclemeaux1906 slid in — jokes and gems only 🎩",
+    "🎩 Ayy it's Unc! @unclemeaux1906 the fam just got realer 💯",
+    "💎 @unclemeaux1906 in the frequency — 1906 vintage, timeless energy 🔥"
+];
+
+// !breezy for breezyxd23 — cool breeze energy. Palette 🌬️ 😎 🌊 ❄️ 💎.
+const BREEZY_QUOTES = [
+    "🌬️ BREEZY in the chat! @breezyxd23 just cooled the whole room 😎",
+    "😎 @breezyxd23 pulled up — smooth moves only cuhz 🌊",
+    "❄️ Chat temperature dropped — @breezyxd23 too cool for gravity 🌬️",
+    "🌊 @breezyxd23 slid in like a wave — effortless cuhz 💎",
+    "😎 Ayy Breezy! @breezyxd23 keep it smooth, keep it CUHZ 🌬️",
+    "💎 @breezyxd23 in the frequency — light work, heavy presence ❄️"
+];
+
+// !rell for Hell Rell — heat/fire energy, day-one supporter. 8 variants.
+const HELLRELL_QUOTES = [
+    "🔥 HELL RELL in the building! @hellrell the heat just walked in 😤",
+    "😤 @hellrell pulled up — certified real one, no debate 🔥",
+    "💯 Rell in the chat! @hellrell been holding us down since day one 🔥",
+    "🔥 Ayy it's Rell! @hellrell the energy ALWAYS up when he pull up ⚡",
+    "⚡ @hellrell slid in — loyalty like his don't come standard 💎",
+    "💎 Hell Rell here! @hellrell supports the fam every single time 🔥",
+    "😤 @hellrell touched down — turn the heat UP cuhz 🔥",
+    "🔥 Rell in the frequency! @hellrell real recognize real 💯"
+];
+
+// !west for WestSideRelly — West Side energy, day-one supporter. 8 variants.
+const WESTSIDE_QUOTES = [
+    "🌴 WEST SIDE in the building! @westsiderelly pulled up 🤙",
+    "🤙 @westsiderelly touched down — West Side stand UP 🌴",
+    "🌇 Westside Relly in the chat! @westsiderelly always shows love 💎",
+    "💎 @westsiderelly slid in — supports the fam without fail 🌴",
+    "🌴 Ayy it's Relly! @westsiderelly the West keeps us WARM 🤙",
+    "🔥 @westsiderelly here! West Side loyalty, CUHZ family 🌇",
+    "🤙 West Side Relly in the frequency — @westsiderelly we appreciate you 💎",
+    "🌇 @westsiderelly pulled up! Coast to coast, same fam 🌴"
+];
+
+// NOTE: every *_QUOTES constant referenced by USER_VARIANT_POOLS below must be
+// defined ABOVE it. The map is a module-level object literal, so it is evaluated
+// at import time — referencing a `const` declared later throws a ReferenceError
+// (temporal dead zone) and the bot never boots. Add new quote pools here.
+
+// !shoota / !dashoota for Rico_DaShoota — sharpshooter + put-in-the-work
+// energy (💪💪📚📚 is his calling card). NOT the same person as rico2ez (!rico).
+// Palette 🎯 🏀 💪 📚 🔥 💎. 8 variants, no-repeat-last-2.
+const SHOOTA_QUOTES = [
+    "🎯 SHOOTA in the building! @Rico_DaShoota — green light every time 🏀",
+    "🏀 @Rico_DaShoota pulled up! Catch and shoot, nothing but net 🎯",
+    "💪 Da Shoota touched down — @Rico_DaShoota puts in that WORK 📚",
+    "🔥 @Rico_DaShoota slid in! Range don't stop at the arc 🎯",
+    "📚 Class in session — @Rico_DaShoota out here schooling folks 💪",
+    "🎯 Ayy it's Shoota! @Rico_DaShoota built different cuhz 💎",
+    "💎 @Rico_DaShoota in the frequency — shooters shoot, always 🏀",
+    "🏀 Shoota pulled UP! @Rico_DaShoota that jumper stay pure 🔥"
+];
+
+// !kuddy for imkxddy — day-one supporter (2y+ follower). Palette 🎯 💯 🔥 👑 💎.
+// 8 variants, no-repeat-last-2.
+const KUDDY_QUOTES = [
+    "🎯 KUDDY in the building! @imkxddy pulled up — day one, every time 💯",
+    "💯 @imkxddy touched down! Been here YEARS, still shows up 🔥",
+    "🔥 Ayy it's Kuddy! @imkxddy loyalty like that is rare cuhz 👑",
+    "👑 @imkxddy slid in — real supporter, zero days off 💎",
+    "💎 Kuddy in the frequency! @imkxddy we appreciate you fam 🎯",
+    "🎯 @imkxddy here! Longtime CUHZ, longtime love 💯",
+    "🔥 Kuddy pulled UP — @imkxddy the day-ones always come back 👑",
+    "💯 @imkxddy in the chat! Certified real one since way back 🔥"
+];
+
+// !smutty / !pippen for smuttyp1ppen — Pippen namesake + tunes in from the
+// fire watch at work. Palette 🏀 🔥 💪 👑 💎. 8 variants, no-repeat-last-2.
+const SMUTTY_QUOTES = [
+    "🏀 SMUTTY PIPPEN in the building! @smuttyp1ppen — two-way killer energy 🔥",
+    "🔥 @smuttyp1ppen tuned in from the FIRE WATCH — that's real dedication cuhz 💪",
+    "👑 Pippen pulled up! @smuttyp1ppen — every dynasty needs a real one 🏀",
+    "💎 @smuttyp1ppen in the chat! On the clock AND locked in with the fam 🔥",
+    "🏀 @smuttyp1ppen touched down — smooth game, smoother name 👑",
+    "🔥 Fire watch can't stop the CUHZ watch — @smuttyp1ppen ALWAYS pulls up 💪",
+    "💪 @smuttyp1ppen here! Shows up for the fam even mid-shift 😤🏀",
+    "👑 @smuttyp1ppen slid in — Pippen never missed a big moment, neither does he 💎"
+];
+
+// !relax / !lik / !aye for ayelikrelaxx — chill-master energy. Palette 🌊 😌 😌 💨 🛋️ 💎.
+// 6 variants, no-repeat-last-2. Requested live in Four's chat.
+const AYELIK_QUOTES = [
+    "😌 AYE LIK RELAXX in the chat — instant chill mode activated 🌊",
+    "🌊 @ayelikrelaxx pulled up! Stress leaves when he arrives, no cap 😌",
+    "💨 Aye... lik... relaxx cuhz. @ayelikrelaxx said breathe easy 🛋️",
+    "😌 @ayelikrelaxx slid in — smoothest energy in the frequency 💎",
+    "🛋️ The chill-master @ayelikrelaxx touched down — vibes officially maxed 🌊",
+    "💎 @ayelikrelaxx here! Chat calm, vibes right, that's the relaxx effect 😌"
+];
+
+// !jr / !young for young_jr2424 — young hooper energy. Palette 🏀 ⚡ 🌟 🔥 💎.
+// 6 variants, no-repeat-last-2. Requested live in Four's chat.
+const YOUNGJR_QUOTES = [
+    "🌟 YOUNG JR in the building! @young_jr2424 — the future pulled UP 🏀",
+    "⚡ @young_jr2424 touched down! Young legs, old-soul game 🔥",
+    "🏀 JR here! @young_jr2424 — 2424 on the jersey, buckets on the mind 💎",
+    "🔥 @young_jr2424 slid in — next-gen CUHZ energy locked in 🌟",
+    "💎 Young Jr in the frequency — @young_jr2424 the fam raised him right ⚡",
+    "🌟 @young_jr2424 pulled up! Youth in the name, vet in the game 🏀"
+];
+
 // User shoutout rotation pools — all tiers, no repeats within last 2 fires.
 // Hoisted to module scope so the map isn't rebuilt on every chat message.
 const USER_VARIANT_POOLS = {
@@ -712,14 +1372,16 @@ const USER_VARIANT_POOLS = {
     // !storm handler (with session-tracked first-use vs. repeat) lives downstream
     // and would be hijacked. Use !qween for the new pool.
     '!fvmous':  FVMOUS_QUOTES,
-    '!fam':     FVMOUS_QUOTES,
-    '!gg':      GG_QUOTES,
+    // NOTE: '!fam' alias removed — the static vibe handler for !fam runs earlier
+    // in dispatch and always wins, so the pool entry was dead code.
     '!geni':    GG_QUOTES,
+    '!grouch':      GROUCH_QUOTES,
     '!brady':       BRADY_QUOTES,
     '!blitz':       BRADY_QUOTES,
     '!limit':       LIMIT_QUOTES,
     '!balen':       BALEN_QUOTES,
     '!joee':        JOEE_QUOTES,
+    '!joe':         JOEE_QUOTES,
     '!fresh':       JOEE_QUOTES,
     '!joeefresh':   JOEE_QUOTES,
     '!lyrical':     LYRICAL_QUOTES,
@@ -727,6 +1389,29 @@ const USER_VARIANT_POOLS = {
     '!p&b':         PB_QUOTES,
     '!pb':          PB_QUOTES,
     '!peace':       PB_QUOTES,
+    '!anti':    ANTI_QUOTES,
+    '!blessed':     BLESSED_QUOTES,
+    '!dj':          BLESSED_QUOTES,
+    '!phoenix':     PHOENIX_QUOTES,
+    '!uncle':       UNCLE_QUOTES,
+    '!meaux':       UNCLE_QUOTES,
+    '!breezy':      BREEZY_QUOTES,
+    '!rell':        HELLRELL_QUOTES,
+    '!hellrell':    HELLRELL_QUOTES,
+    '!west':        WESTSIDE_QUOTES,
+    '!westside':    WESTSIDE_QUOTES,
+    '!relly':       WESTSIDE_QUOTES,
+    '!shoota':      SHOOTA_QUOTES,
+    '!dashoota':    SHOOTA_QUOTES,
+    '!kuddy':       KUDDY_QUOTES,
+    '!imkxddy':     KUDDY_QUOTES,
+    '!smutty':      SMUTTY_QUOTES,
+    '!pippen':      SMUTTY_QUOTES,
+    '!relax':       AYELIK_QUOTES,
+    '!lik':         AYELIK_QUOTES,
+    '!aye':         AYELIK_QUOTES,
+    '!jr':          YOUNGJR_QUOTES,
+    '!young':       YOUNGJR_QUOTES,
     '!cuhz':    CUHZ_QUOTES,
     '!planet':  CUHZ_QUOTES,
 };
@@ -736,7 +1421,7 @@ const USER_VARIANT_POOLS = {
 const SOCIAL_LINKS = {
     website:  'https://planetcuhz.com',
     linktree: 'https://linktr.ee/PlanetCUHZ',
-    discord:  'https://discord.gg/eNxDKkxQdN',
+    discord:  'https://discord.gg/uDPEtrcsg4',
     // Drop IG/TikTok/YT URLs in here when ready.
     instagram: null,
     tiktok:    null,
@@ -812,14 +1497,86 @@ const SUBGIFT_HYPE = [
     "🎁 @{gifter} put @{recipient} on. CUHZ fam takin' care of CUHZ fam 🔥"
 ];
 
-// Manual !raid (chat command, no args) — celebrate raid energy generically.
+
+
+
+// !gg — end-of-game good game, all channels. (Reassigned from geniiknight,
+// who now uses !geni.) 10 variants, no-repeat-last-3.
+const GOODGAME_QUOTES = [
+    "🤝 GG! Good game cuhz — respect to everybody who laced up 🏀",
+    "🏀 GG GG GG! That's a wrap — run it back? 🔥",
+    "🤝 Good game fam. Win or lose we shake hands and hoop again 💎",
+    "🔥 GG! Buckets were had, respect was earned 🏀",
+    "💎 GG cuhz! Good game to both squads — that's how we do it 🤝",
+    "🏀 GAME. GG to everybody — see you next possession 🔥",
+    "🤝 GG! No hard feelings, just hoops. Run it back cuhz 💯",
+    "💯 Good game! Sportsmanship over everything — that's the CUHZ way 🤝",
+    "🔥 GG! Whistle blew, respect stays. Good hoops fam 🏀",
+    "🏀 GG cuhz! Take the W or take the lesson — either way we back tomorrow 💎"
+];
+
+// !mute — the community's "MUTE GAME ON LEGEND" chant. NOT a moderation
+// command; nobody gets muted. 10 variants, no-repeat-last-3.
+const MUTE_LEGEND_QUOTES = [
+    "🔇 MUTE GAME ON LEGEND 🏆",
+    "🔇 Mute game... ON LEGEND. That's the only setting cuhz 🏀",
+    "🏆 MUTE GAME ON LEGEND — say it with your chest 🔇",
+    "🔇 You already know — MUTE GAME ON LEGEND 💯",
+    "🏀 Mute game on legend. No sound, just buckets 🔇",
+    "🔥 MUTE GAME ON LEGEND! The CUHZ anthem 🏆",
+    "🔇 Volume off, difficulty MAXED — mute game on legend cuhz 🏀",
+    "💯 Mute game on legend. Period. 🔇",
+    "🏆 If you know, you know — MUTE GAME ON LEGEND 🔥",
+    "🔇 MUTE GAME ON LEGEND — the standard, not the exception 💎"
+];
+
+// Proving Grounds command directory — SINGLE SOURCE OF TRUTH.
+// Add a new PG command here and it shows up in !pg automatically.
+const PG_COMMANDS = [
+    { cmd: '!top100points',  desc: 'Top 100 in points' },
+    { cmd: '!top100ovrrank', desc: 'Top 100 by OVR rank' }
+];
+
+// !top100ovrrank — four_a_reason ONLY. Four ranked the Top 100 by OVR in
+// Proving Grounds. 5 variants, no-repeat-last-2.
+const TOP100OVR_QUOTES = [
+    "🏆 Four ranked the TOP 100 by OVR in Proving Grounds — every name, on camera 👑 https://youtu.be/X3srv7B_ErU",
+    "📊 TOP 100 OVR in Proving Grounds, ranked by @four_a_reason. The list is THE list 🏀 https://youtu.be/X3srv7B_ErU",
+    "👑 @four_a_reason put the whole TOP 100 OVR ranking together — respect the work 💎 https://youtu.be/X3srv7B_ErU",
+    "🔥 Who's really HIM? @four_a_reason ranked the TOP 100 by OVR — go find out 🏀 https://youtu.be/X3srv7B_ErU",
+    "💎 @four_a_reason did the homework so we ain't gotta — TOP 100 OVR rank 📊 https://youtu.be/X3srv7B_ErU"
+];
+
+// !top100points — four_a_reason ONLY. Four put the Top 100 Proving Grounds
+// scorers on camera and named every grinder. 5 variants, no-repeat-last-2.
+const TOP100_QUOTES = [
+    "🏆 Four put the TOP 100 in Proving Grounds points ON CAMERA — real ones get named. Salute @four_a_reason 👑 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "👑 100 hoopers, one man with the receipts. @four_a_reason showing love to every Proving Grounds grinder 🏀 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "🌹 Top 100 in Proving Grounds points — @four_a_reason gave every grinder their flowers on camera 🏀 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "🔥 Most chase the spotlight. @four_a_reason SHARES it — TOP 100 Proving Grounds scorers, all named 👑 https://www.youtube.com/watch?v=RnjofXgGo6k",
+    "💎 @four_a_reason counted the TOP 100 in Proving Grounds points so the grind don't go unseen. Legend behavior 🏆 https://www.youtube.com/watch?v=RnjofXgGo6k"
+];
+
+// Manual !raid (chat command, no args) — raid welcome + follow pitch.
+// Cleaned up from phoenixpnyc's raid call: "Hit follow, here at least twice
+// daily, catch highlights on IG, TikTok and YouTube." 15 variants, no-repeat-3.
 // Different from RAID_INCOMING (auto on 'raided' event) which interpolates {viewers}.
 const RAID_HYPE_MANUAL = [
-    "🚨 RAID ALERT! CUHZ fam show INCOMING love 💎",
-    "🚨 We got raiders cuhz! Welcome WELCOME 🔥",
-    "🚨 The frequency just got LOUDER — CUHZ fam say hey 🌌",
-    "🚨 Pull up new cuhz! You're home now 💎",
-    "🚨 Raid energy detected — CUHZ fam locked in ⚡"
+    "🚨 RAID SQUAD! Hit that follow — we're live at least twice a day, and the highlights hit IG, TikTok & YouTube 💎",
+    "🔥 Welcome raiders! Smash the follow cuhz — live here twice daily, highlights on IG, TikTok & YouTube 🌌",
+    "🚨 New faces in the frequency! Follow up — we run it back at least twice a day + clips on IG, TikTok & YouTube ⚡",
+    "💎 Raid energy! Tap that follow so you never miss us — live twice daily, highlights posted on IG, TikTok & YouTube 🔥",
+    "🌌 Pull up and stay cuhz! Follow the channel — we're here at least twice a day, catch the recap on IG, TikTok & YouTube 🚨",
+    "⚡ RAID ALERT! One follow keeps you locked in — twice-daily streams + all the best moments on IG, TikTok & YouTube 💎",
+    "🔥 Welcome to the planet, raiders! Hit follow — live at least 2x a day, highlights land on IG, TikTok & YouTube 🌍",
+    "🚨 Y'all made it! Drop a follow cuhz — we go live twice daily and the clips live on IG, TikTok & YouTube ✨",
+    "💎 Raiders = family now. Follow up! At least two streams a day, highlights on IG, TikTok & YouTube 🚀",
+    "🌌 The frequency just grew! Hit follow so you're here for the next one — live 2x daily, clips on IG, TikTok & YouTube 🔥",
+    "⚡ Welcome welcome! Follow the channel cuhz — we stream at least twice a day and post the heat to IG, TikTok & YouTube 💎",
+    "🚨 Raid gang! That follow button is free — twice-daily lives + highlight reels on IG, TikTok & YouTube 🌌",
+    "🔥 Ayy the raid pulled UP! Follow to lock in — live at least twice a day, catch replays on IG, TikTok & YouTube ⚡",
+    "💫 New cuhz alert! Hit follow before you dip — we're live 2x daily and the highlights stay posted on IG, TikTok & YouTube 💎",
+    "🚀 RAID TOUCHDOWN! Follow the movement — at least two streams a day, best moments on IG, TikTok & YouTube 🌌"
 ];
 
 // New follower — manual chat command !nf (tmi.js doesn't emit follower events;
@@ -952,6 +1709,134 @@ const MAHNI_QUOTES = [
     "Mahni — the music speaks, the hustle screams, the heart inspires 🏆🌌"
 ];
 
+// Placement is load-bearing: this registry holds direct references to the quote
+// pools, so it MUST come after every one of them. Declared earlier it throws
+// 'Cannot access RICO_QUOTES before initialization' at boot — the same temporal
+// dead-zone class as the September P0. tests/test_boot_isolated.js catches it.
+// ============================================================================
+// THE CUHZNS — arrival recognition.
+//
+// The bot already had ~30 hand-written personality pools, but the ONLY way to
+// reach one was for somebody to type that person's command. So a cuhzn walked
+// in and got the same generic "Welcome to the Planet, cuhz!" as a stranger,
+// while a line written specifically for them sat unused two screens away.
+// This connects the two: your own line fires when YOU arrive.
+//
+// KEYED ON THE IMMUTABLE NUMERIC TWITCH ID, never a login. handleAutoShoutout()
+// keys on `streamer_username` and that is exactly the bug that silently broke
+// recognition when qweenstormygirlnz89 became stormygirlnz89. Twitch also
+// recycles abandoned logins after ~6 months, so a login key eventually greets
+// an impostor with a friend's line. Every id below was resolved from Twitch's
+// public GQL on 2026-09-17 and each pool was read to confirm it names that
+// person (e.g. QWEEN_QUOTES says "QWEEN STORMY", WESTSIDE says "@westsiderelly").
+//
+// ECONOMY NOTE: POINT_REWARDS sells a 5,000-point "Custom bot greeting" — a
+// line YOU choose, on planetcuhz, for a month. This registry is a different
+// thing: house-written lines for the known crew, content that is already free
+// to trigger via !four, !rico, !snowy and so on. It automates existing free
+// content; it does not give away the paid product. Keep it that way — if a
+// viewer wants THEIR OWN words on arrival, that stays the 5,000-point reward.
+// ============================================================================
+// `receipt` is ONE sentence of character, grounded in what the production logs
+// actually show this person doing (Railway runtime logs 2026-09-02..09 and the
+// 2026-09-09 reconciliation evidence; per-line citations in
+// verification/CUHZN_RECOGNITION_EVIDENCE_2026-09-17.md). It describes durable
+// BEHAVIOUR, never a number — numbers go stale in a week and are printed live by
+// cuhznReceipt() instead. Where the evidence is too thin to characterise someone
+// honestly, receipt is null and the live stats speak alone.
+const CUHZNS = {
+    // 607 command rows; !grouch x20 !pnx x16 !famous x12 !mahni x12 !ac x11 — he
+    // runs more shoutouts for OTHER people than anyone in the fam. Six channels.
+    '952381011':  { login: 'four_a_reason',     pool: FOUR_QUOTES,
+                    receipt: 'The one who puts everybody else on \u2014 nobody runs more shoutouts in this fam.' },
+    // 127 retained messages spread over five channels.
+    '1354688041': { login: 'rico2ez',           pool: RICO_QUOTES,
+                    receipt: 'In the building across the whole planet.' },
+    // Runs the bot on #thatgirlmahni_ (CHANNEL_TIERS) and still chats in
+    // #four_a_reason and #grouch392.
+    '732620163':  { login: 'thatgirlmahni_',    pool: MAHNI_QUOTES,
+                    receipt: 'Runs CUHZ Bot on her own stream and still pulls up to everybody else\u2019s.' },
+    // Every retained message is in #four_a_reason; 17 log mentions as
+    // qweenstormygirlnz89 + 130 as stormygirlnz89 — the rename that broke the
+    // old login-keyed recognition, and exactly why this registry keys on id.
+    '824566475':  { login: 'stormygirlnz89',    pool: QWEEN_QUOTES,
+                    receipt: 'Reason\u2019s-chat regular \u2014 same energy under every name.' },
+    // !W x7 !quote x4 !AC x3; 1,269 messages across five channels; the highest
+    // earned balance in the reconciliation (the number is printed live, not here).
+    '1388723253': { login: 'snowy_wolfies_ttv', pool: SNOWY_QUOTES,
+                    receipt: 'Calls the Ws, pulls up to everybody\u2019s chat, and it shows.' },
+    // 1,230 messages across six channels; 5,053 log mentions — more than anyone
+    // but Reason. If the bot is in a room, Grouch has been in it.
+    '557152408':  { login: 'grouch392',         pool: GROUCH_QUOTES,
+                    receipt: 'In every room on the planet \u2014 if the bot is there, Grouch is there.' },
+    // Four channels; the most recent ledger activity in the 2026-09-12 snapshots
+    // (ten consecutive rows) — earning and spending, not lurking.
+    '128186931':  { login: 'westsiderelly',     pool: WESTSIDE_QUOTES,
+                    receipt: 'Pulls up across the planet and always cashing in.' },
+    // 166 messages but present in FIVE channels — low volume, high presence.
+    '199116767':  { login: 'razredg1',    pool: ['Raz Red G in the building! Keeping it 100 since day one \u{1F534}'],
+                    receipt: 'Doesn\u2019t say much \u2014 never misses.' },
+    // 17 retained messages in two channels: not enough to characterise honestly.
+    // The live receipt (messages / watch time / points) says what there is to say.
+    '731191493':  { login: 'ohthatztayy', pool: ['It\u2019s giving 2K legend energy \u2014 ohthatztayy locked in! \u{1F3AE}\u{1F3C0}'],
+                    receipt: null },
+    // Phoenix is deliberately absent: phoenixnyc (757210754) vs phoenixpnyc
+    // (823707557) is still unconfirmed, and greeting the wrong account with
+    // someone's personal line is worse than a generic welcome. Same rule as
+    // LOUNGE_OPERATOR_IDS. One line to add once the owner confirms.
+};
+
+/** The arriving user's own line, or null for everyone else. Id only. */
+function cuhznGreeting(userId, channelLogin) {
+    const c = CUHZNS[String(userId || '').trim()];
+    if (!c) return null;
+    // Don't greet someone in their own house — they're the broadcaster there.
+    if (c.login === String(channelLogin || '').replace('#', '').toLowerCase()) return null;
+    const line = pickNoRepeat(`cuhzn:${c.login}`, c.pool, Math.min(3, c.pool.length));
+    return c.receipt ? `${line} ${c.receipt}` : line;
+}
+
+/**
+ * Pure. Live stats -> one honest receipt line, or null when there is not enough
+ * to say. Every number is the same one the person would get from !points,
+ * !watchtime and their profile — same helpers, same rows — so the greeting can
+ * never contradict the commands. Pure so it is testable without a database.
+ */
+function formatCuhznReceipt(login, profile, balance, nowMs = Date.now()) {
+    const parts = [];
+    const msgs = profile && Number.isSafeInteger(profile.total_messages) ? profile.total_messages : 0;
+    const mins = profile && Number.isSafeInteger(profile.total_watch_minutes) ? profile.total_watch_minutes : 0;
+    const pts  = Number.isSafeInteger(balance) ? balance : 0;
+    if (msgs > 0) parts.push(`${msgs.toLocaleString('en-US')} messages`);
+    if (mins > 0) parts.push(`${formatMinutes(mins)} watched`);
+    if (pts > 0)  parts.push(`${pts.toLocaleString('en-US')} CUHZ Points`);
+    if (profile && profile.first_seen) {
+        const t = new Date(profile.first_seen).getTime();
+        // Only cite tenure that is real. A profile created in the last day is
+        // "new", and "here since today" would read as a bug.
+        if (Number.isFinite(t) && nowMs - t >= 24 * 60 * 60 * 1000) {
+            parts.push(`here since ${new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`);
+        }
+    }
+    // Two real facts minimum, or say nothing: a one-item receipt reads as padding.
+    if (parts.length < 2) return null;
+    return `\u{1F9FE} @${login} \u2014 ${parts.join(' \u00b7 ')}`;
+}
+
+/** Live lookup. A stats failure must never suppress the greeting itself. */
+async function cuhznReceipt(login) {
+    try {
+        const [profile, balance] = await Promise.all([
+            userMemory.getProfile(login),
+            pointsService.getBalance(login),
+        ]);
+        return formatCuhznReceipt(login, profile, balance);
+    } catch (err) {
+        logger.error('cuhzn receipt failed (greeting still sent):', err.message);
+        return null;
+    }
+}
+
 // --- CUHZ Vibe Commands (All Tiers) ---
 const VIBE_MESSAGES = [
     'We on a different frequency cuhz 🌌',
@@ -1038,8 +1923,21 @@ const L_MESSAGES = [
 // --- Basic Tier Custom Shoutouts (accessible in ALL tiers) ---
 const BASIC_USER_COMMANDS = {
     // !snow — rotated handler; aliases to SNOWY_QUOTES via USER_VARIANT_POOLS.
+    '!raz': 'Raz Red G! Keeping it 💯 from the start. 🔴',
     '!tay': 'It\'s giving 2K legend energy — ohthatztayy locked in! 🕹️🏀',
-    '!yoo': 'Yoo! Welcome to the stream. 👋'
+    '!yoo': 'Yoo! Welcome to the stream. 👋',
+    // Added 2026-09-19 from four_a_reason's live viewer list (owner request):
+    // every regular gets a door. Lines name the person and the fam only --
+    // no invented facts about them; the owner can sharpen these any time.
+    // Display names verified against Twitch public GQL the same day.
+    '!huie':     '🔥 lilhuie5 in the building! Pull up and show love 💎',
+    '!lilhuie':  '🔥 lilhuie5 in the building! Pull up and show love 💎',
+    '!lovlee':   '💜 Lovlee_ttv on deck! Good vibes only, that\'s the standard 💎',
+    '!neno':     '🧠 NenosMindset in the chat — locked in, different focus 💎',
+    '!nenos':    '🧠 NenosMindset in the chat — locked in, different focus 💎',
+    '!smokey':   '💨 smokeyyhg pulled up! CUHZ fam all day 💎',
+    '!smokeyy':  '💨 smokeyyhg pulled up! CUHZ fam all day 💎',
+    '!imreacts': '👀 ImReactsTV in the building — reactions on deck 💎',
 };
 
 // --- Commands blocked for Basic tier (info/link dumps) ---
@@ -1055,17 +1953,34 @@ const BASIC_BLOCKED_COMMANDS = new Set([
 ]);
 
 const TIMER_MESSAGES = [
+    // ORIENTATION FIRST. A viewer who lands on an unattended stream sees artwork
+    // and silence; they do not know this channel has a bot, points, or an AI.
+    // These three lines answer "what am I looking at / what can I do / why stay"
+    // before any link drop, because a link means nothing to someone with no context.
+    "👋 New here? This is CUHZ Bot's own channel — the bot running this chat is the product. Type !tools to see the whole rig, or !help for every command 🤖",
+    "🛋️ That artwork on screen is the CUHZ Bot Infinity Lounge — our mascot rendered inside itself, forever. Built live on this channel 🌌",
+    "💬 Talk to the bot: !ask <anything> for AI · !hype !vibe !w for the vibes · !points for your bag. It answers, try it 💎",
     "🌌 Planet CUHZ → https://planetcuhz.com",
     "🔗 All links → https://linktr.ee/PlanetCUHZ",
-    "💬 Join the Discord → https://discord.gg/eNxDKkxQdN",
-    "⛓️ CUHZ Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain"
+    "💬 Join the Discord → https://discord.gg/uDPEtrcsg4",
+    "⛓️ CUHZ Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain",
+    // Points line: the timer loop is the bot's only proactive surface, so it's how
+    // the earn loop gets discovered. Claims mirror verified code (chat_message +1,
+    // passive_paycheck +10, claimBonus 300) — and "in chat" because the paycheck is
+    // message-triggered, so pure lurking pays nothing. The instant spends named here
+    // (!ask 10 · !code 25 · !ask -brain 50) are Pro/Premium-only, which is why this
+    // line lives in THIS pool and BASIC_TIMER_MESSAGES must never copy it.
+    "💎 You're stacking CUHZ Points right now — +1 every message, +10 for hanging out in chat while we're live, +300 one-time with !claim. Spend instantly: !ask (10) · !code (25) · !ask -brain (50) — or save up: !rewards 💎"
 ];
 
 const BASIC_TIMER_MESSAGES = [
-    '🤖 Want CUHZ Bot in your channel? Pull up to @four_a_reason\'s stream! → twitch.tv/four_a_reason 🚀',
+    // Routes to the !bot handler (one source of truth for onboarding) instead of the
+    // retired "pull up to @four_a_reason's stream" pointer superseded by PR #4.
+    '🤖 Want CUHZ Bot in your channel — mod tools, hype, points & AI? Type !bot to pull up 🚀',
     '🌌 Planet CUHZ — the creator ecosystem where we all level up together 💎',
-    '💬 Join the CUHZ fam on Discord → https://discord.gg/eNxDKkxQdN',
-    '🔥 Type !hype, !vibe, or !w to show love in the chat!'
+    '💬 Join the CUHZ fam on Discord → https://discord.gg/uDPEtrcsg4',
+    '🔥 Type !hype, !vibe, or !w to show love in the chat!',
+    '💎 Every message stacks CUHZ Points: +1 per chat, +10 for hanging out in chat, +300 one-time with !claim. !points for your bag, !rewards for the goods 💎'
 ];
 
 // AI Warriors removed per user request
@@ -1089,6 +2004,7 @@ async function fetchChannelPersona(channel) {
             persona.timers.push("📱 Follow Planet CUHZ on YouTube and TikTok! 🚀");
         }
         channelConfigs.set(channel.toLowerCase(), persona);
+        _personaSource.set(channel.toLowerCase(), 'defaults');
         return;
     }
 
@@ -1128,9 +2044,20 @@ async function fetchChannelPersona(channel) {
         }
 
         channelConfigs.set(channel.toLowerCase(), persona);
+        _personaSource.set(channel.toLowerCase(), 'dashboard');
         logger.info(`Loaded ${Object.keys(persona.commands).length} commands, ${persona.timers.length} timers at ${persona.interval}min intervals for ${channel}`);
     } catch (error) {
-        logger.error(`Error fetching persona for ${channel}:`, error.message);
+        // Log each channel's failure once, then suppress identical repeats to
+        // once/hour per channel (was 141 identical 404 lines in 23h — the
+        // defaults fallback below makes the failure non-fatal).
+        const errKey = channel.toLowerCase();
+        const prev = _personaErrorLog.get(errKey);
+        const nowMs = Date.now();
+        if (!prev || prev.msg !== error.message || nowMs - prev.at >= PERSONA_ERROR_LOG_INTERVAL_MS) {
+            logger.error(`Error fetching persona for ${channel}: ${error.message} (defaults in use; repeats muted for 1h)`);
+            _personaErrorLog.set(errKey, { msg: error.message, at: nowMs });
+        }
+        _personaSource.set(errKey, 'defaults');
 
         const fallbackPersona = { ...DEFAULT_CONFIG, timers: [...defaultTimers] };
         if (cleanChannel === 'planetcuhz') {
@@ -1146,13 +2073,6 @@ function getChannelConfig(channel) {
 }
 
 // --- Twitch API Helpers ---
-
-function sanitizeChannel(name) {
-    if (!name) return null;
-    const clean = String(name).trim().toLowerCase().replace(/^#/, '');
-    if (!/^[a-z0-9_]{1,25}$/.test(clean)) return null;
-    return `#${clean}`;
-}
 
 async function fetchClientId() {
     if (twitchClientId && botUserId) return twitchClientId;
@@ -1209,7 +2129,11 @@ async function checkStreamStatus(channelName) {
                 isLive: true,
                 startedAt: new Date(stream.started_at),
                 title: stream.title,
-                game: stream.game_name
+                game: stream.game_name,
+                // Helix Get Streams returns viewer_count; it was dropped here, so
+                // status.viewers was undefined everywhere downstream (!viewers,
+                // stream_intel's INSERT/UPDATE). This is the only live source.
+                viewers: Number.isFinite(Number(stream.viewer_count)) ? Number(stream.viewer_count) : 0
             };
         } else {
             return { isLive: false };
@@ -1263,8 +2187,8 @@ async function getFollowData(broadcasterId, userId) {
         const response = await axios.get(`${apiBase}/channels/followers`, {
             params: {
                 broadcaster_id: broadcasterId,
-                user_id: userId,
-                moderator_id: botUserId // Required for this endpoint
+                user_id: userId
+                // no moderator_id param — Twitch infers the moderator from the token
             },
             headers: {
                 'Client-ID': twitchClientId,
@@ -1283,8 +2207,11 @@ async function getFollowData(broadcasterId, userId) {
         // Log the actual error for debugging
         if (error.response) {
             logger.error(`❌ Follow API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
-            if (error.response.status === 401) {
-                logger.error('⚠️ OAuth token missing "moderator:read:followers" scope. Regenerate token with this scope.');
+            if (error.response.status === 401 || error.response.status === 403) {
+                logger.error('⚠️ OAuth token missing "moderator:read:followers" scope (or bot not modded in this channel). Regenerate token with this scope.');
+                // Distinguish auth failure from "not following" so the chat reply
+                // doesn't falsely claim the viewer isn't a follower.
+                return { authError: true };
             }
         } else {
             logger.error(`❌ Follow API error: ${error.message}`);
@@ -1374,6 +2301,16 @@ async function initializeTwitchClient() {
     // 1. Fetch Client ID early for API calls
     await fetchClientId();
 
+    // Real Helix moderation (IRC /commands are dead since 2023-02) — see moderation_service.js
+    moderation.init({
+        db,
+        getTwitchUser,
+        getIds: async () => {
+            if (!twitchClientId || !botUserId) await fetchClientId();
+            return { clientId: twitchClientId, botUserId };
+        }
+    });
+
     // 2. Poll the dashboard for channels to join
     let channelsToJoin = [];
 
@@ -1386,7 +2323,7 @@ async function initializeTwitchClient() {
             });
 
             if (response.data && response.data.channels && response.data.channels.length > 0) {
-                channelsToJoin = response.data.channels.map(ch => sanitizeChannel(ch.name)).filter(n => !!n);
+                channelsToJoin = normalizeChannels(response.data.channels.map(ch => ch.name));
                 logger.info(`Found ${channelsToJoin.length} channels to join from dashboard:`, channelsToJoin);
             } else {
                 logger.info('No channels returned from dashboard, checking config.');
@@ -1396,9 +2333,15 @@ async function initializeTwitchClient() {
         }
     }
 
+    // Website requests: approved/active rows from bot_requests via bot-worker-sync.
+    // Merged (not replacing) so the dashboard and config paths keep working.
+    const synced = await fetchSyncedChannels();
+    for (const ch of synced) if (!channelsToJoin.includes(ch)) channelsToJoin.push(ch);
+    if (synced.length) logger.info(`Found ${synced.length} channel(s) from website requests (bot-worker-sync):`, synced);
+
     // Fallback to config if no dashboard channels
     if (channelsToJoin.length === 0 && config.channels && config.channels.length > 0) {
-        channelsToJoin = config.channels.map(ch => sanitizeChannel(ch)).filter(n => !!n);
+        channelsToJoin = normalizeChannels(config.channels);
         logger.info(`Using channels from config:`, channelsToJoin);
     }
 
@@ -1434,6 +2377,8 @@ async function initializeTwitchClient() {
         channels: channelsToJoin
     });
 
+    targetChannels = [...channelsToJoin];
+
     const rawSay = client.say.bind(client);
     client.say = (targetChannel, outboundText) => {
         const isModeratorAction = /^\/(?:announce\s+.{1,400}|raid\s+[a-z0-9_]{1,25}|ban\s+[a-z0-9_]{1,25}|timeout\s+[a-z0-9_]{1,25}\s+\d{1,6}|clear|slow\s+\d{1,4}|slowoff|unban\s+[a-z0-9_]{1,25}|untimeout\s+[a-z0-9_]{1,25})$/i.test(String(outboundText || '').trim());
@@ -1454,6 +2399,9 @@ async function initializeTwitchClient() {
 
     client.connect().then(() => {
         logger.info('Successfully initiated connection to Twitch IRC.');
+        // Verify actual IRC membership ~60s after connect (joins are async and
+        // can silently fail — qweenstormygirlnz89 never joined in production).
+        setTimeout(() => verifyChannelJoins(0), 60000);
     }).catch(err => {
         logger.error('Twitch connection FAILED:', err);
     });
@@ -1496,10 +2444,40 @@ function setupEventHandlers() {
         logger.error(`🔌 Twitch IRC DISCONNECTED: ${reason}`);
     });
 
-    // Periodic IRC connection health check
-    setInterval(() => {
+    // Twitch tells us (via NOTICE) when our messages get dropped — e.g.
+    // followers-only mode in a channel where the bot doesn't follow/isn't
+    // modded. Without this the bot is silently mute and nobody knows why.
+    client.on('notice', (channel, msgid, message) => {
+        const muted = ['msg_followersonly', 'msg_followersonly_zero', 'msg_followersonly_followed',
+            'msg_subsonly', 'msg_emoteonly', 'msg_slowmode', 'msg_timedout', 'msg_banned',
+            'msg_rejected', 'msg_rejected_mandatory', 'msg_verified_email', 'msg_requires_verified_phone_number'];
+        if (muted.includes(msgid)) {
+            logger.error(`🔇 MESSAGE BLOCKED in ${channel} [${msgid}]: ${message} — mod the bot (/mod ${config.username}) or adjust chat mode`);
+        } else {
+            logger.warn(`📢 Twitch NOTICE in ${channel} [${msgid}]: ${message}`);
+        }
+    });
+
+    // Periodic IRC connection health check — actively reconnects after 3
+    // consecutive bad checks (tmi's built-in reconnect can give up for good;
+    // without this the bot becomes a zombie that still passes /health).
+    let badHealthChecks = 0;
+    setInterval(async () => {
         if (client && client.readyState() !== 'OPEN') {
-            logger.warn(`🔌 Twitch IRC connection state: ${client.readyState()} — may need reconnect`);
+            badHealthChecks++;
+            logger.warn(`🔌 Twitch IRC connection state: ${client.readyState()} (${badHealthChecks}/3 before forced reconnect)`);
+            if (badHealthChecks >= 3) {
+                badHealthChecks = 0;
+                logger.warn('🔌 Forcing tmi reconnect...');
+                try {
+                    await client.connect();
+                    logger.info('🔌 Forced reconnect succeeded');
+                } catch (err) {
+                    logger.error(`🔌 Forced reconnect failed: ${err.message ?? err}`);
+                }
+            }
+        } else {
+            badHealthChecks = 0;
         }
     }, 60000);
 
@@ -1523,8 +2501,6 @@ function setupEventHandlers() {
             startRotationalTimer(channel);
             startStreamPoller(channel);
             startMoodAnalyzer(channel);
-
-            verifyJoin(channel);
         }
     });
 
@@ -1597,20 +2573,60 @@ function setupEventHandlers() {
     logger.info('🚨 Raid / sub / resub / subgift / watch-streak event handlers registered');
 }
 
-async function verifyJoin(channel) {
-    if (config.apiBase && config.botApiSecret) {
-        try {
-            await axios.post(`${config.apiBase}/api/bot/verify`, {
-                channel: channel.replace('#', ''),
-                status: 'active'
-            }, {
-                headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
-                timeout: 10000
-            });
-        } catch (error) {
-            logger.error('Error verifying channel join:', error.message);
+// Join verification v2: the old implementation POSTed to the dashboard's
+// /api/bot/verify, which doesn't exist in production (only in
+// mock_dashboard.js) — every call 4xx'd AND it only ran on successful 'join'
+// events, so a channel that never joined was never checked. This version
+// compares actual IRC membership (client.getChannels()) against the target
+// list and retries missing joins with backoff (3 attempts: 30s/60s/120s).
+function verifyChannelJoins(attempt) {
+    try {
+        if (!client || targetChannels.length === 0) return;
+        const joined = new Set((client.getChannels() || []).map(c => c.toLowerCase()));
+        const missing = targetChannels.filter(ch => !joined.has(ch.toLowerCase()));
+
+        if (attempt === 0) {
+            logger.info(`🚪 Channels: joined ${targetChannels.length - missing.length}/${targetChannels.length}`);
+            logPersonaSummary();
         }
+
+        if (missing.length === 0) {
+            if (attempt > 0) {
+                logger.info(`🚪 Channels: joined ${targetChannels.length}/${targetChannels.length} (recovered after ${attempt} retr${attempt === 1 ? 'y' : 'ies'})`);
+            }
+            return;
+        }
+
+        if (attempt >= JOIN_RETRY_DELAYS_MS.length) {
+            logger.warn(`🚪 Channels STILL MISSING after ${attempt} retries: ${missing.join(', ')}`);
+            return;
+        }
+
+        const delayMs = JOIN_RETRY_DELAYS_MS[attempt];
+        logger.warn(`🚪 Channels missing: ${missing.join(', ')} — retry ${attempt + 1}/${JOIN_RETRY_DELAYS_MS.length} in ${delayMs / 1000}s`);
+        setTimeout(async () => {
+            for (const ch of missing) {
+                try {
+                    await client.join(ch);
+                    logger.info(`🚪 Rejoined ${ch}`);
+                } catch (err) {
+                    logger.warn(`🚪 Retry join failed for ${ch}: ${err && err.message ? err.message : err}`);
+                }
+            }
+            verifyChannelJoins(attempt + 1);
+        }, delayMs);
+    } catch (err) {
+        logger.error('Error verifying channel joins:', err && err.message ? err.message : err);
     }
+}
+
+// One-line startup summary of persona sources (fires with the join check).
+function logPersonaSummary() {
+    if (_personaSummaryLogged || _personaSource.size === 0) return;
+    _personaSummaryLogged = true;
+    const total = _personaSource.size;
+    const loaded = [..._personaSource.values()].filter(v => v === 'dashboard').length;
+    logger.info(`🎭 Personas: ${loaded}/${total} loaded from dashboard (defaults in use for the rest)`);
 }
 
 function startStreamPoller(channel) {
@@ -1640,7 +2656,8 @@ function loadStreamStates() {
             for (const [key, val] of Object.entries(parsed)) {
                 if (val.startedAt) val.startedAt = new Date(val.startedAt);
                 if (val.lastAnnounced) val.lastAnnounced = new Date(val.lastAnnounced);
-                streamStates.set(key, val);
+                // Older deploys saved '#chan' keys — normalize on rehydration.
+                streamStates.set(streamKey(key), val);
             }
             logger.info('Loaded stream states from disk.');
         }
@@ -1661,9 +2678,26 @@ function saveStreamStates() {
 // Load on startup
 loadStreamStates();
 
+// P3: automatic historical grants are retired. Existing balances/provenance
+// remain untouched; a restart must not run a multiplier or backfill again.
+
+// --- Graceful shutdown (Railway sends SIGTERM on every deploy) ---
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`👋 ${signal} received — saving state and disconnecting...`);
+    try { saveStreamStates(); } catch (e) { logger.error(`Shutdown state save failed: ${e.message}`); }
+    try { if (client) await client.disconnect(); } catch (e) { /* already down */ }
+    try { if (db.pgPool) await db.pgPool.end(); } catch (e) { /* pool already closed */ }
+    process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 async function updateStreamState(channel) {
     const status = await checkStreamStatus(channel);
-    const current = streamStates.get(channel);
+    const current = streamStates.get(streamKey(channel));
     const wasLive = current && current.isLive;
 
     // Default game name if undefined
@@ -1686,7 +2720,7 @@ async function updateStreamState(channel) {
             lastAnnounced: shouldAnnounce ? new Date() : (current ? current.lastAnnounced : null)
         };
 
-        streamStates.set(channel, newState);
+        streamStates.set(streamKey(channel), newState);
         saveStreamStates(); // Persist immediately
 
         await streamIntel.updateStreamStatus(channel, newState);
@@ -1695,13 +2729,13 @@ async function updateStreamState(channel) {
             logger.info(`🔴 STREAM LIVE: ${channel} playing ${gameName}`);
             const template = pickNoRepeat(`live:${channel}`, LIVE_ANNOUNCEMENTS, 2);
             sendMessage(channel, template.replace('{game}', gameName));
-        } else {
-            logger.info(`🔴 Stream live (already announced): ${channel}`);
         }
+        // No-op polls (live and already announced) are intentionally NOT
+        // logged — only state transitions are (was 101 useless lines/day).
     }
     // 2. Stream went OFFLINE
     else if (wasLive) {
-        streamStates.set(channel, { isLive: false, lastAnnounced: current.lastAnnounced });
+        streamStates.set(streamKey(channel), { isLive: false, lastAnnounced: current.lastAnnounced });
         saveStreamStates();
 
         await streamIntel.updateStreamStatus(channel, { isLive: false });
@@ -1715,6 +2749,14 @@ async function updateStreamState(channel) {
 function startMoodAnalyzer(channel) {
     if (!config.enableMoodDetection) return;
 
+    // AI guardrail: Gemini sentiment analysis runs ONLY in Premium channels
+    // (planetcuhz, four_a_reason, rico2ez). No AI calls for any other stream.
+    const analyzerTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
+    if (analyzerTier !== TIERS.PREMIUM) {
+        logger.info(`🛡️ Mood analyzer skipped for ${channel} (AI is Premium-only)`);
+        return;
+    }
+
     logger.info(`🤖 Mood analyzer initialized for ${channel}`);
 
     // Analyze mood every 2 minutes
@@ -1727,8 +2769,12 @@ function startMoodAnalyzer(channel) {
                     const sentiment = await aiService.analyzeSentiment(messageBuffer);
                     const newPersonality = moodTracker.updateMood(channel, sentiment);
 
-                    // Check if hype injection is needed (with cooldown)
-                    if (moodTracker.needsHypeInjection(channel) && client && client.readyState() === 'OPEN') {
+                    // Check if hype injection is needed (with cooldown).
+                    // Premium-only: injection is an advertised Premium AI feature and
+                    // was leaking into basic channels. Mood analysis itself keeps
+                    // running for all tiers (feeds mod commands like !mood).
+                    const hypeTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
+                    if (hypeTier === TIERS.PREMIUM && moodTracker.needsHypeInjection(channel) && client && client.readyState() === 'OPEN') {
                         // Try AI-generated proactive message first, fall back to static hype
                         const recentContext = contextHandler.getContext(channel);
                         let hypeMsg = await aiService.generateProactiveMessage(channel, recentContext, sentiment.mood);
@@ -1773,7 +2819,7 @@ function startRotationalTimer(channel) {
             }
 
             // Smart Check: Only send if stream is LIVE
-            const state = streamStates.get(channel);
+            const state = streamStates.get(streamKey(channel));
             const isLive = state ? state.isLive : false; // Default to false if unknown to avoid spam
 
             // Allow sending if Mock API is enabled (for testing) OR actually live
@@ -1784,8 +2830,15 @@ function startRotationalTimer(channel) {
                 const index = timerIndices.get(channel) || 0;
 
                 // If daily message is set, alternate it every other cycle
+                const timerTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
                 if (dailyMsg && index % 2 === 0) {
                     sendMessage(channel, dailyMsg);
+                } else if (timerTier === TIERS.BASIC && Array.isArray(persona.timers) && persona.timers.length > 0) {
+                    // Basic tier: rotate the channel's own timers (dashboard-set or
+                    // BASIC_TIMER_MESSAGES defaults) — these were loaded but never
+                    // sent before. Pro/Premium keep the TIMER_POOLS path unchanged.
+                    const line = pickNoRepeat(`timer:${channel}:persona`, persona.timers, Math.min(3, persona.timers.length - 1));
+                    if (line) sendMessage(channel, line);
                 } else {
                     // Pick a TIMER_POOLS category that isn't the one we fired last time.
                     const lastKey = `timerCat:${channel}`;
@@ -1870,7 +2923,14 @@ async function handleAutoShoutout(channel, usernameLower, displayName) {
 }
 
 async function handleMessage(channel, tags, message, self) {
-    if (self) return;
+    // Before context, memory, points, welcomes, commands, or any async work.
+    // tmi's local `self` flag alone does not cover mirrored shared-chat echoes.
+    if (!sharedChatGuard.accept(tags, self, config.username, botUserId)) return;
+
+    // Instrumentation: every command attempt is visible in the logs.
+    if (message.startsWith('!')) {
+        logger.info(`⌨️ CMD ${message.split(' ')[0]} by ${tags.username} in ${channel}`);
+    }
 
     if (config.enableVoice && !message.startsWith('!')) {
         const cleanText = message.replace(/[^a-zA-Z0-9\s\.,!\?]/g, '');
@@ -1903,31 +2963,71 @@ async function handleMessage(channel, tags, message, self) {
     const channelPlan = tierService.getChannelPlan(channelLogin);
 
     // --- Track User Activity ---
+    // Other channels' bots (nightbot, streamelements, ...) get NO points, NO
+    // watch-minute accrual, and NO welcomes — they earned 13/85 points in
+    // #thatgirlmahni_ in production.
+    const isKnownBot = KNOWN_BOTS.has(username.toLowerCase());
     try {
         const usernameL = username.toLowerCase();
         const now = new Date();
 
-        // 1. Snapshot last_seen BEFORE the earn path updates it — the
-        //    welcome-back gate below needs the pre-message value.
-        const user = await db.prepare('SELECT last_seen FROM users WHERE username = ?').get(usernameL);
+        // 1. Passive Paycheck (+10 points per 10 minutes of continuous presence)
+        //
+        // FIXED: the old rule only paid when the gap between two messages landed
+        // BETWEEN 10 and 30 minutes, so anyone chatting steadily (gap always < 10
+        // min) earned nothing. Production log proof: planetcuhz 34 messages -> 0
+        // paychecks, phoenixpnyc 17 -> 0, while a sporadic chatter got several.
+        // Now: still-present (last message within PRESENCE_GAP) + at least
+        // PAYCHECK_INTERVAL since their last paycheck -> pay. Steady chatters are
+        // rewarded, people who left are not.
+        const user = isKnownBot ? null : await db.prepare('SELECT last_seen, last_paycheck FROM users WHERE username = ?').get(usernameL);
 
-        // 2. CUHZ points earn path — one call owns the whole model (see the
-        //    points_service.js header): +1 per message, +10 activity bonus at
-        //    most once per 10 min while chatting, and the users upsert
-        //    (points / messages_sent / last_seen) in a single statement.
-        //    Replaces the old "passive paycheck", which parsed UTC DB
-        //    timestamps as local time and never actually fired.
-        await pointsService.recordChatActivity(usernameL, channel);
+        if (!isKnownBot) {
+            if (user) {
+                const sinceSeen = now.getTime() - new Date(user.last_seen).getTime();
+                const lastPay = user.last_paycheck ? new Date(user.last_paycheck).getTime() : null;
+                const sincePay = lastPay === null ? null : now.getTime() - lastPay;
 
-        // 3. Check Achievements (Async) — decoupled from points so a failure here
-        //    can't break point awarding, and routed through the send queue.
-        loyaltySystem.checkAchievements(usernameL).then(newAchievements => {
-            if (newAchievements && newAchievements.length > 0) {
-                newAchievements.forEach(ach => {
-                    sendMessage(channel, `🏆 ACHIEVEMENT UNLOCKED: @${tags.username} earned '${ach}'!`);
-                });
+                if (lastPay === null) {
+                    // First time we've seen them since this feature shipped — start
+                    // their clock now rather than paying for unknown history.
+                    await db.prepare('UPDATE users SET last_paycheck = CURRENT_TIMESTAMP WHERE username = ?').run(usernameL);
+                } else if (sinceSeen <= PRESENCE_GAP_MS && sincePay >= PAYCHECK_INTERVAL_MS) {
+                    const paid = await pointsService.addPoints(usernameL, 10, 'passive_paycheck');
+                    if (paid) {
+                        // Credit the real elapsed presence, capped so a long gap that
+                        // still passed the presence check can't over-credit.
+                        const earnedMinutes = Math.min(Math.round(sincePay / 60000), 30);
+                        await userMemory.addWatchMinutes(usernameL, earnedMinutes);
+                        await db.prepare('UPDATE users SET last_paycheck = CURRENT_TIMESTAMP WHERE username = ?').run(usernameL);
+                    }
+                }
             }
-        }).catch(err => logger.error('Achievement check failed:', err && err.message ? err.message : err));
+
+            // 2. Earn Active Point (+1 per message)
+            await pointsService.addPoints(usernameL, 1, 'chat_message');
+
+            // 3. Update User Stats (Last Seen, Msg Count). A failed award must
+            // never create an unledgered fallback point through this upsert.
+            const upsertUser = db.prepare(`
+                INSERT INTO users (username, points, messages_sent, last_seen)
+                VALUES (?, 0, 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(username) DO UPDATE SET
+                    messages_sent = users.messages_sent + 1,
+                    last_seen = CURRENT_TIMESTAMP
+            `);
+            await upsertUser.run(usernameL);
+
+            // 4. Check Achievements (Async) — decoupled from points so a failure here
+            //    can't break point awarding, and routed through the send queue.
+            loyaltySystem.checkAchievements(usernameL).then(newAchievements => {
+                if (newAchievements && newAchievements.length > 0) {
+                    newAchievements.forEach(ach => {
+                        sendMessage(channel, `🏆 ACHIEVEMENT UNLOCKED: @${tags.username} earned '${ach}'!`);
+                    });
+                }
+            }).catch(err => logger.error('Achievement check failed:', err && err.message ? err.message : err));
+        }
 
         // ... commands ...
 
@@ -1947,19 +3047,31 @@ async function handleMessage(channel, tags, message, self) {
         // Per-channel First Contact: each channel gets to welcome the user once.
         // Returning-user welcome: fire a lighter "welcome back" line if it's been ≥4h
         // since we last welcomed them in THIS channel (and they haven't spoken in 4h+).
-        const canWelcome = !persona.settings || persona.settings.auto_welcome;
+        // A direct request gets its answer, not a welcome/shoutout AND an answer.
+        const isDirectedRequest = isCommand || contextHandler.isQuestionOrRequest(message);
+        const canWelcome = !isKnownBot && !isDirectedRequest && (!persona.settings || persona.settings.auto_welcome);
+        let cuhznGreeted = false;   // a personal greeting replaces the generic auto-shoutout, never stacks on it
         if (canWelcome) {
             const welcomeKey = `${channel}:${usernameL}`;
             const welcomeState = _channelWelcomes.get(welcomeKey);
             const joinTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
             const nowMs = now.getTime();
 
+            const cuhznLine = cuhznGreeting(tags['user-id'], channel);
+
             if (!welcomeState) {
-                // First Contact for this channel — full hype welcome.
-                // Gold-plan channels get a dedicated arrival — but ONLY when the
-                // channel plan is already cache-warm. A cold first-ever message
-                // still gets the normal welcome — honest, never laggy.
-                if (channelPlan === 'gold') {
+                // A known cuhzn gets their OWN line on arrival, in any tier —
+                // recognition is the point, and it reads as generic otherwise.
+                // Then the receipt: what THEY have actually put in, live.
+                if (cuhznLine) {
+                    sendMessage(channel, `${cuhznLine}`);
+                    const receipt = await cuhznReceipt(usernameL);
+                    if (receipt) sendMessage(channel, receipt);
+                    cuhznGreeted = true;
+                } else if (channelPlan === 'gold') {
+                    // Gold-plan channels get a dedicated arrival — but ONLY when the
+                    // channel plan is already cache-warm. A cold first-ever message
+                    // still gets the normal welcome — honest, never laggy.
                     const goldLine = commerceContent.pickGoldArrival(channel);
                     sendMessage(channel, `${goldLine} @${tags.username} 💎`);
                 } else if (joinTier === TIERS.BASIC) {
@@ -1974,8 +3086,15 @@ async function handleMessage(channel, tags, message, self) {
                 // (prevents re-welcoming someone who just idled in the tab).
                 const lastSeenMs = user ? new Date(user.last_seen).getTime() : 0;
                 if (!user || (nowMs - lastSeenMs) >= WELCOME_BACK_COOLDOWN_MS) {
-                    const line = pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3);
-                    sendMessage(channel, `${line} @${tags.username}`);
+                    // Their own line here too: being recognised once and then
+                    // generically thereafter is worse than never being recognised.
+                    const line = cuhznLine || `${pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3)} @${tags.username}`;
+                    sendMessage(channel, line);
+                    if (cuhznLine) {
+                        const receipt = await cuhznReceipt(usernameL);
+                        if (receipt) sendMessage(channel, receipt);
+                        cuhznGreeted = true;
+                    }
                     welcomeState.lastWelcomedAt = nowMs;
                 }
             }
@@ -1983,7 +3102,7 @@ async function handleMessage(channel, tags, message, self) {
 
         // Auto-shoutout for fellow streamers (pro/premium only)
         const joinChannelTier = CHANNEL_TIERS[channel.replace('#', '').toLowerCase()] || TIERS.BASIC;
-        if (joinChannelTier !== TIERS.BASIC) {
+        if (!isKnownBot && !isDirectedRequest && !cuhznGreeted && joinChannelTier !== TIERS.BASIC) {
             await handleAutoShoutout(channel, usernameL, tags.username);
         }
 
@@ -2045,7 +3164,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.5. Context-Aware Response (AI) - Premium Only
-    if (isPremium && config.enableContextAware && !msg.startsWith('!')) {
+    if (!isKnownBot && isPremium && config.enableContextAware && !msg.startsWith('!')) {
         try {
             const currentPersonality = moodTracker.getCurrentPersonality(channel);
             const personalityConfig = moodTracker.getPersonalityConfig(currentPersonality);
@@ -2053,23 +3172,55 @@ async function handleMessage(channel, tags, message, self) {
             // Get user profile for personalization
             const userProfile = await userMemory.getProfile(tags.username);
 
+            // Stream context (game/title/live) makes AI replies concretely
+            // smarter with zero extra messages.
+            const streamState = streamStates.get(streamKey(channel)) || null;
+
             const aiResponse = await contextHandler.handleContextAwareResponse(
                 channel,
                 tags.username,
                 message,
                 currentPersonality,
-                persona.commands,
+                buildAiCommandList(persona.commands),
                 personalityConfig,
-                userProfile   // Pass user profile for AI personalization
+                userProfile,  // Pass user profile for AI personalization
+                streamState   // Pass live stream info (game/title) for grounding
             );
 
             if (aiResponse) {
-                client.say(channel, aiResponse);
+                sendMessage(channel, aiResponse);
                 return;
             }
         } catch (error) {
             logger.error('Context-aware response error:', error.message);
         }
+    }
+
+    // 0.65. !tools — the stream title has advertised "!tools" while no such command
+    // existed, so every viewer who tried it got silence. That is the worst possible
+    // first interaction: the channel's most visible copy making a promise the bot
+    // breaks. One source of truth for "what is this channel running".
+    if (msg === '!tools' || msg === '!rig' || msg === '!setup') {
+        sendMessage(channel, '🛠️ THE RIG — CUHZ Bot: points, AI chat, mod tools, hype & shoutouts (all live in this chat) · the Infinity Lounge overlay you\'re watching · planetcuhz.com. All of it built open, on stream.');
+        sendMessage(channel, '👉 Try it: !help (every command) · !ask <question> (AI) · !points (your bag) · !rewards (what points buy) · !bot (get CUHZ Bot in YOUR channel) 🚀');
+        return;
+    }
+
+    // 0.7. THE CUHZ LAB — chat-controlled lounge. Sits ABOVE the bare !vibe
+    // handler on purpose: `!vibe hype` belongs to the lounge, bare `!vibe` does
+    // not and keeps its existing reply. Only allowlisted room-ids ever reach the
+    // state machine; every other channel falls through this block untouched.
+    // No points, no database, no network in here.
+    if (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')) && LOUNGE_INTENT_RE.test(msg)) {
+        const roomId = String(tags['room-id']);
+        const actor = loungeActor(tags);
+        if (actor.login && /^\d{1,12}$/.test(String(actor.userId || ''))) {
+            _loungeLogins.set(String(actor.login).toLowerCase(), String(actor.userId));
+        }
+        const lab = parseLabCommand(message);
+        const handled = lab ? handleLabMenu(channel, roomId, actor, lab)
+                            : handleLoungeIntent(channel, roomId, actor, message);
+        if (handled) return;
     }
 
     // 0.8. CUHZ Vibe Commands (ALL tiers)
@@ -2105,22 +3256,116 @@ async function handleMessage(channel, tags, message, self) {
         client.say(channel, 'GOAT behavior detected 🐐 Keep going cuhz!');
         return;
     }
-    if (msg === '!getcuhzbot') {
-        client.say(channel, '🤖 Want CUHZ Bot in your channel? Compare Community, Silver, Gold, Partner, and Architect plans → https://planetcuhz.com/pricing');
+    // Onboarding CTA — every tier, every channel. Two lines: what you get, then
+    // the two concrete steps. Step 1 (/mod cuhz_bot) is the one that actually
+    // matters: Twitch checks mod status server-side on every moderation call, so
+    // without it the bot can read chat but cannot moderate. Deliberately no
+    // token/OAuth link here — onboarding never needs a streamer's credentials.
+    // !prices — the sales answer, ONE line so it never floods chat (same
+    // discipline as !help). Prices are CANON (BRAND_PRICE_GUARDRAILS §9 /
+    // site src/data/pricing.ts): bot plans Silver $4.99 / Gold $14.99 /
+    // Affiliate $49.99, site membership Pro $9.99 / Team $24.99 is a
+    // SEPARATE product and named here so the two never get conflated in chat.
+    // All tiers, all channels — a price question can come from anywhere.
+    // !pay — HOW to pay, with guest discipline: the Venmo handle appears ONLY
+    // in our own channels (planetcuhz, cuhz_bot). In host channels the bot is
+    // a guest, so payment routes through the Discord — never a raw handle in
+    // someone else's chat. Interim rail until Stripe checkout opens; the buyer
+    // notes their Twitch name so delivery can be granted on planetcuhz.com.
+    if (msg === '!pay' || msg === '!venmo' || msg === '!buy') {
+        const OWN_CHANNELS = ['planetcuhz', 'cuhz_bot'];
+        if (OWN_CHANNELS.includes(cleanChannel)) {
+            sendMessage(channel, '💸 Pay the Planet: venmo.com/u/WRodriguezx — put your TWITCH NAME + what you\'re grabbing in the note (e.g. "yourname — Chain Pack $9"). Delivery lands on your planetcuhz.com account + Discord. Menu: !prices 💎');
+        } else {
+            sendMessage(channel, '💸 Ready to grab something? Pull up to the Discord and the fam sorts payment direct: https://discord.gg/uDPEtrcsg4 · menu: !prices 💎');
+        }
         return;
     }
-    if (msg === '!streak' || msg === '!watchstreak') {
-        sendMessage(channel, streakTracker.commandReply(channel), { source: 'streak_command' });
+
+    if (msg === '!prices' || msg === '!price' || msg === '!plans' || msg === '!pricing'
+        || msg.startsWith('!prices ') || msg.startsWith('!price ') || msg.startsWith('!plans ')) {
+        // Drill-down: `!prices <plan>` = ONE line of what that plan actually
+        // gets you — feature copy mirrors the site's Pricing.tsx bullets
+        // verbatim-in-spirit so chat and site can't tell different stories.
+        // Ladder v2 (owner-locked 2026-08-06): every plan is a CHANNEL
+        // subscription that maps to a tier this code can actually grant today
+        // (see CHANNEL_TIERS). Silver/Gold copy names only shipped behaviour —
+        // no per-user badges/arrivals/bonus-point vapor until an entitlement
+        // engine exists. "Affiliate Pack" is retired: $49.99 self-serve has no
+        // living competitor, so that price is now Partner — a managed,
+        // own-branded deployment we build and run, which is what it's worth.
+        const PLAN_DETAILS = {
+            free:      '🆓 Community — FREE, live NOW: CUHZ Bot in your channel · CUHZ Points (+1/msg) · !ask AI (10 pts) · shoutouts · !points !top !rewards. Start: type !bot 🚀',
+            community: null, // alias of free — filled below
+            silver:    '🥈 Silver — $4.99/mo: your channel upgraded — socials on auto-rotation every stream · extra commands & engagement (!followage !streamstats !gamble +more) · everything Free has. → planetcuhz.com/pricing',
+            gold:      '🥇 Gold — $14.99/mo: UNLIMITED AI in your chat (Gemini + Claude) · priority · site Pro membership INCLUDED — one sub covers chat + planetcuhz.com. → planetcuhz.com/pricing',
+            partner:   '🛰️ Partner — $49.99/mo: your OWN branded bot — your name, avatar & personality, built + hosted + run for you, monthly service touch, powered by VQNC Labs. 5 founding slots. Ask in the Discord 🌌',
+            affiliate: null, // retired name — accepted as an arg alias of partner, filled below
+            architect: '🏗️ Architect — custom quote: a bot you OWN, custom-coded — your branding, avatar & backstory, private AI on your game & rules. Ask in the Discord → planetcuhz.com/pricing',
+            membership:'🪐 Site membership (separate from the bot): Pro $9.99/mo · Team $24.99/mo — planetcuhz.com tools & AI studio. → planetcuhz.com/pricing'
+        };
+        PLAN_DETAILS.community = PLAN_DETAILS.free;
+        // Anyone who learned the old vocabulary still lands on the right line.
+        PLAN_DETAILS.affiliate = PLAN_DETAILS.partner;
+        const arg = msg.split(/\s+/)[1];
+        if (arg && PLAN_DETAILS[arg]) {
+            sendMessage(channel, PLAN_DETAILS[arg]);
+            return;
+        }
+        sendMessage(channel, '💎 CUHZ Bot plans: Free · Silver $4.99/mo · Gold $14.99/mo (unlimited AI + site Pro included) · Partner $49.99/mo (your own branded bot, run for you — 5 founding slots) · Architect custom. Details: !prices silver (or free/gold/partner/architect) → planetcuhz.com/pricing 💎');
+        return;
+    }
+
+    if (msg === '!bot' || msg === '!getcuhzbot' || msg === '!addbot') {
+        sendMessage(channel, '🤖 CUHZ Bot — moderation, hype, points, shoutouts & AI for your stream. Free to try 🚀');
+        sendMessage(channel, '➡️ Get it in YOUR channel: 1️⃣ visit https://planetcuhz.com/bot 2️⃣ sign in as the channel owner 3️⃣ press Add CUHZ Bot 4️⃣ type /mod cuhz_bot once in your chat. Free 🌌');
+        return;
+    }
+
+    // A public, generic route only — no channel names, user IDs, tokens, or
+    // OAuth state ever go into chat. Twitch requires the broadcaster (not a
+    // mod) to approve ad-schedule access for their own channel.
+    if (msg === '!reauth' || msg === '!permissions' || msg === '!botpermissions') {
+        sendMessage(channel, '🔐 Update CUHZ Bot permissions: https://planetcuhz.com/bot?intent=permissions — sign in as the channel owner, then choose Connect ad permissions. Mods cannot approve this scope.');
         return;
     }
 
     // 0.84. Mahni Rotation (ALL tiers)
+    if (msg === '!streak' || msg === '!watchstreak') {
+        sendMessage(channel, streakTracker.commandReply(channel));
+        return;
+    }
+
     if (msg === '!mahni') {
         client.say(channel, MAHNI_QUOTES[Math.floor(Math.random() * MAHNI_QUOTES.length)]);
         return;
     }
 
     // 0.849. !rock — all tiers, 12 variants, no repeats within last 3 fires.
+    // !top100points — four_a_reason's channel only (his video, his shoutout)
+    // !pg — Proving Grounds command directory (four_a_reason only, since every
+    // PG command it lists is locked to his channel).
+    if (msg === '!pg' || msg === '!provinggrounds' || msg === '!pgcommands') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const list = PG_COMMANDS.map(c => `${c.cmd} — ${c.desc}`).join(' | ');
+        sendMessage(channel, `🏀 PROVING GROUNDS commands: ${list} 👑 All straight from @four_a_reason`);
+        return;
+    }
+
+    if (msg === '!top100ovrrank' || msg === '!top100ovr') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const line = pickNoRepeat(`top100ovr:${cleanChannel}`, TOP100OVR_QUOTES, 2);
+        sendMessage(channel, line);
+        return;
+    }
+
+    if (msg === '!top100points' || msg === '!top100') {
+        if (cleanChannel !== 'four_a_reason') return;
+        const line = pickNoRepeat(`top100:${cleanChannel}`, TOP100_QUOTES, 2);
+        sendMessage(channel, line);
+        return;
+    }
+
     if (msg === '!rock') {
         const line = pickNoRepeat(`rock:${cleanChannel}`, ROCK_QUOTES, 3);
         sendMessage(channel, line);
@@ -2128,6 +3373,20 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // 0.849b. User rotation commands — pools defined in USER_VARIANT_POOLS (module scope).
+    // !gg — end-of-game good game, every channel.
+    if (msg === '!gg' || msg === '!goodgame') {
+        const line = pickNoRepeat(`goodgame:${cleanChannel}`, GOODGAME_QUOTES, 3);
+        sendMessage(channel, line);
+        return;
+    }
+
+    // !mute — community chant, all channels. Not moderation.
+    if (msg === '!mute' || msg === '!mutegame') {
+        const line = pickNoRepeat(`mutelegend:${cleanChannel}`, MUTE_LEGEND_QUOTES, 3);
+        sendMessage(channel, line);
+        return;
+    }
+
     if (USER_VARIANT_POOLS[msg]) {
         const pool = USER_VARIANT_POOLS[msg];
         const line = pickNoRepeat(`user:${msg}:${cleanChannel}`, pool, 2);
@@ -2153,38 +3412,6 @@ async function handleMessage(channel, tags, message, self) {
     if (msg === '!cleartoday' && isMod) {
         dailyMessages.delete(channel.toLowerCase());
         client.say(channel, '✅ Today\'s update cleared.');
-        return;
-    }
-
-    // 0.9. !chain interactive AI handler — intercepts !chain <prompt> before static lookup
-    // Chain command is Pro/Premium only
-    if (msg.startsWith('!chain ') && !isProOrPremium) return;
-    if (msg.startsWith('!chain ')) {
-        const prompt = message.replace(/^!chain\s+/i, '').trim();
-        if (prompt) {
-            if (!config.apiBase || !config.botApiSecret) {
-                client.say(channel, `🔗 CUHZ Chain Studio — 10 finishes, free, no login → https://planetcuhz.com/chain`);
-            } else {
-                try {
-                    const res = await axios.post(`${config.apiBase}/api/bot/command`, {
-                        text: `!chain ${prompt}`,
-                        channel: cleanChannel,
-                        user: { id: tags['user-id'], name: tags.username }
-                    }, {
-                        headers: { 'Authorization': `Bearer ${config.botApiSecret}` },
-                        timeout: 10000
-                    });
-                    if (res.data && res.data.handled && res.data.reply) {
-                        client.say(channel, res.data.reply);
-                    } else {
-                        client.say(channel, `🔗 Chain Studio → https://planetcuhz.com/chain`);
-                    }
-                } catch (err) {
-                    logger.error('Error in !chain handler:', err.message);
-                    client.say(channel, `🔗 Try it free at: https://planetcuhz.com/chain`);
-                }
-            }
-        }
         return;
     }
 
@@ -2273,46 +3500,62 @@ async function handleMessage(channel, tags, message, self) {
         }
     }
 
-    // 1.5. Dynamic Help System based on Tiers. Grouped + each sendMessage stays
-    // under Twitch's 500-char per-line limit. Audited against actual dispatch
-    // (USER_VARIANT_POOLS, BASIC_USER_COMMANDS, master commands, etc.).
-    if (msg === '!help' || msg === '!commands') {
-        const utility   = streamContent.utilityHelp(config.enableGambling) + ' !streak !clip';
-        const vibes     = '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn';
-        const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
-        const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !storm !juan !rico !bern !dame';
-        const crew      = '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
-        const modsPro   = '🛡️ Mods: !so !raid !raider !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
-        const ai        = 'AI: !ask !code !whois !topchatters';
-
-        // Only advertised where the commands actually work (flag on + selling surface).
+    // 1.5. Menu-driven help. `!help` sends ONE line (the category menu);
+    // `!help <category>` sends ONE line for that category. Replaces the old
+    // 3-5 message wall of text that flooded chat for ~7 seconds.
+    if (msg === '!help' || msg === '!commands' || msg.startsWith('!help ')) {
+        const isPP = isProOrPremium;
+        // Kept as one quoted literal: test_commerce_content asserts its contents
+        // (current public plan names only, canonical pricing link).
         const commerceHelp = '💎 CUHZ Bot plans: !community !silver !gold !partner !architect | Membership: !membership | One-time: !store | Pricing: https://planetcuhz.com/pricing';
+        const sections = {
+            utility:   '🛠️ Utility: !lurk !unlurk !points !rewards !watchtime !session !top !weekly !uptime !game !socials !ping !nf !sub !raid !claim !streak !clip !topclip !vod !age !followers !emotes !tags !category !chatrules'
+                       + (isPP ? ' !discord !links !gamble !achievements !followage !viewers !streamstats !schedule' : ''),
+            vibes:     '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat !quote !gm !gn !mute !gg',
+            // !bot is ungated on purpose — it's the "get CUHZ Bot in YOUR channel"
+            // CTA, so the people who most need to see it are in Basic channels.
+            brand:     '🌌 Brand: !tools !bot !reauth !prices !pay !cuhz !planet'
+                       + (isPP ? ' !whatiscuhz !rules !pointsinfo !faq !roadmap !whitepaper !dashboard !getcuhzbot' : ''),
+            shoutouts: '🎤 Shoutouts: ' + (isPP
+                       ? '!ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !storm !juan !rico !bern !dame !anti'
+                       : '!4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !mahni !tay !yoo !anti'),
+            crew:      isPP ? '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts' : null,
+            ai:        isPremium ? '🤖 AI: !ask !code !whois !topchatters — or just ask me naturally 💎' : null,
+            // !mod leads: it's the self-documenting panel with live scope status.
+            mods:      '🛡️ Mods: !mod !so !raid !raider !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday'
+                       + (isPP ? ' !addstreamer !removestreamer' : ''),
+            pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null,
+            // Advertised only where it is live (honesty law: no doors that don't open).
+            lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
+                       ? (LOUNGE_ACCESS === 'subscribers'
+                           ? '🛋️ Lounge (subs): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
+                           : '🛋️ Lounge: !lounge shows what is on screen · !lounge colors · !lounge whoami — steering is operator-only right now')
+                       : null,
+            // Advertised only where the commerce registry actually answers.
+            plans:     commerceEnabled ? commerceHelp : null
+        };
 
-        if (isPremium) {
-            sendMessage(channel, utility + ' !discord !voice !pod !links !claim !achievements');
-            sendMessage(channel, vibes + ' | ' + brand + ' !getcuhzbot');
-            sendMessage(channel, shoutouts);
-            sendMessage(channel, crew + ' | ' + ai);
-            sendMessage(channel, modsPro + ' !addstreamer !removestreamer — Ask naturally for AI help 💎');
-            if (commerceEnabled) sendMessage(channel, commerceHelp);
-        } else if (tier === TIERS.PRO) {
-            sendMessage(channel, utility + ' !discord !voice !pod !links !claim !achievements');
-            sendMessage(channel, vibes + ' | ' + brand);
-            sendMessage(channel, shoutouts);
-            sendMessage(channel, crew + ' | ' + modsPro);
-            if (commerceEnabled) sendMessage(channel, commerceHelp);
-        } else {
-            // Basic — limited shoutouts, no AI, no info-link dump
-            sendMessage(channel, utility);
-            sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !tay !yoo | Mods: !so !raid !raider !settoday — Stay CUHZ 🚀');
+        // `!help <category>` — one targeted line
+        if (msg.startsWith('!help ')) {
+            const key = msg.slice(6).trim().replace(/^!/, '');
+            if (sections[key]) {
+                sendMessage(channel, sections[key]);
+            } else {
+                const valid = Object.keys(sections).filter(k => sections[k]).join(' ');
+                sendMessage(channel, `🤖 No '${key}' category cuhz. Try: ${valid}`);
+            }
+            return;
         }
+
+        // Bare `!help` — the menu, one message
+        const cats = Object.keys(sections).filter(k => sections[k]);
+        sendMessage(channel, `🤖 CUHZ BOT — say !help + a category: ${cats.join(' · ')} 💎`);
         return;
     }
 
     // 1.55. Basic Tier Shoutouts Directory
     if (!isProOrPremium && msg === '!shoutouts') {
-        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !cuhz !planet !mahni !tay !yoo');
+        sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !tay !yoo !anti');
         sendMessage(channel, '🔥 Vibes: !hype !vibe !w !bet !gz !nocap !l !fam !goat | Want CUHZ Bot? Pull up to @four_a_reason → twitch.tv/four_a_reason 🚀');
         return;
     }
@@ -2331,8 +3574,8 @@ async function handleMessage(channel, tags, message, self) {
 
         // 1.6. Directory Command (Pro/Premium full list)
         if (msg === '!shoutouts') {
-            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !cuhz !planet !mahni !storm !juan !rico !bern !dame');
-            sendMessage(channel, '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
+            sendMessage(channel, '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !geni !brady !limit !balen !joee !joe !lyrical !p&b !grouch !blessed !phoenix !uncle !breezy !smutty !kuddy !shoota !relax !jr !cuhz !planet !mahni !storm !juan !rico !bern !dame !anti');
+            sendMessage(channel, '🎤 Crew: !uni !chi !bot !drizzy !jay !rell !west !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts');
             sendMessage(channel, 'Want your own? Email SUPPORT@PLANETCUHZ.COM 💎');
             return;
         }
@@ -2347,24 +3590,55 @@ async function handleMessage(channel, tags, message, self) {
 
     // 2. Dynamic Commands
     if (msg.startsWith('!followage') || msg.startsWith('!following')) {
-        // '!followage' sits on BASIC_BLOCKED_COMMANDS: Basic channels are other
-        // streamers' chats — silent skip there, matching the static-command gate.
-        if (!isProOrPremium) return;
+        // 1. Determine target user (sender or specified user)
+        const args = message.split(' ');
+        const targetUsername = args[1] ? args[1].replace('@', '') : tags.username;
+
+        // Log every attempt so production logs show usage (was fully silent before).
+        logger.info(`📅 !followage attempt in ${channel} for ${targetUsername} (by ${tags.username}, tier: ${tier})`);
+
+        if (!isProOrPremium) {
+            // Basic tier: friendly upsell instead of silence (in BASIC_BLOCKED_COMMANDS)
+            // Internal tier names ("Pro"/"Premium") never ship to chat — they
+            // collide with the site membership and aren't what anyone bought.
+            sendMessage(channel, `Follow-age is an upgraded-channel perk cuhz 💎 — !prices`);
+            return;
+        }
+        // Twitch does not let a channel follow itself, so the broadcaster asking
+        // about themselves got "is not following #planetcuhz (yet)!" on stream.
+        // Literally true, terrible look. Say the true thing warmly instead.
+        if (targetUsername.toLowerCase() === cleanChannel) {
+            sendMessage(channel, `👑 @${targetUsername} that's your own planet cuhz — you don't follow it, you built it.`);
+            return;
+        }
         try {
-            // Target: the sender, or "!followage @somebody". The tmi tags already
-            // carry the sender's Twitch id, so the self-lookup needs no /users call.
-            const args = message.trim().split(/\s+/);
-            const requested = args[1] ? args[1].replace(/^@/, '') : null;
-            const result = await followageService.getFollowage({
-                channelLogin: channel.replace('#', ''),
-                targetLogin: (requested || tags.username || '').toLowerCase(),
-                targetUserId: requested ? null : (tags['user-id'] || null),
-                targetDisplay: requested || tags['display-name'] || tags.username,
-                auth: getHelixAuth
-            });
-            // buildReply is honest by design: no_permission and API errors get
-            // their own lines — a failed lookup is NEVER reported as "not following".
-            sendMessage(channel, followageService.buildReply(result));
+            // 2. Get IDs for Channel and Target User
+            const channelUser = await getTwitchUser(channel.replace('#', ''));
+            const targetUser = await getTwitchUser(targetUsername);
+
+            if (!channelUser || !targetUser) {
+                logger.warn(`Could not resolve IDs for followage check: Ch=${channel} User=${targetUsername}`);
+                client.say(channel, `⚠️ Can't look up follow data right now — the bot may need re-authorization. Try again later!`);
+                return;
+            }
+
+            // 3. Check follow status
+            const followData = await getFollowData(channelUser.id, targetUser.id);
+
+            if (followData && followData.authError) {
+                client.say(channel, `⚠️ Follow lookup needs the bot re-authorized (missing follower scope) — ping @planetcuhz to fix it!`);
+                return;
+            }
+
+            if (followData) {
+                // Calendar-accurate diff (src/duration.js). The old fixed 365/30
+                // decomposition was off by up to ±18 days in production —
+                // verified against Helix followed_at ground truth.
+                const timeStr = formatDuration(calendarDiff(new Date(followData.followed_at), new Date()));
+                client.say(channel, `@${targetUsername} has been following for ${timeStr}! 📅`);
+            } else {
+                client.say(channel, `@${targetUsername} is not following ${channel} (yet)!`);
+            }
         } catch (err) {
             // getFollowage never throws by contract; this is a last-resort belt.
             logger.error('Error in !followage:', err && err.message ? err.message : err);
@@ -2386,19 +3660,26 @@ async function handleMessage(channel, tags, message, self) {
 
             // 2. Verify Follow
             const followData = await getFollowData(channelUser.id, targetUser.id);
+            if (followData && followData.authError) {
+                // Can't verify follows until the bot token has the follower scope —
+                // fail closed, don't hand out bonuses unverified.
+                client.say(channel, `⚠️ Can't verify follows right now — claim is paused until the bot gets re-authorized. Hold tight cuhz!`);
+                return;
+            }
             if (!followData) {
-                client.say(channel, `🚫 You must be following the channel to claim your ${pointsService.EARN.FOLLOW_BONUS} point bonus!`);
+                client.say(channel, `🚫 You must be following the channel to claim your 300 point bonus!`);
                 return;
             }
 
             // 3. Attempt to Claim (Logic in pointsService handles "one time only" check)
-            const success = await pointsService.claimBonus(tags.username, 'follower_bonus', pointsService.EARN.FOLLOW_BONUS, channel);
+            const success = await pointsService.claimBonus(tags.username, 'follower_bonus', 300);
 
             if (success) {
                 const balance = await pointsService.getBalance(tags.username);
-                client.say(channel, `🎉 FOLLOW BONUS CLAIMED! @${tags.username} received ${pointsService.EARN.FOLLOW_BONUS} points! Balance: ${balance} 💎`);
+                const balanceText = balance === null ? 'Balance is unavailable right now.' : `Balance: ${balance} 💎`;
+                client.say(channel, `🎉 FOLLOW BONUS CLAIMED! @${tags.username} received 300 points! ${balanceText}`);
             } else {
-                client.say(channel, `🚫 Nice try cuhz! You already claimed your follower bonus.`);
+                client.say(channel, `⚠️ @${tags.username} the follower bonus could not be confirmed. It may already be claimed, or points may be unavailable. Check !points later.`);
             }
         } catch (err) {
             logger.error('Error in !claim:', err.message);
@@ -2408,13 +3689,22 @@ async function handleMessage(channel, tags, message, self) {
 
 
     if (msg === '!streamstats') {
+        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         const stats = await streamIntel.getStats(channel);
-        if (!stats) {
+        const live = streamStates.get(streamKey(channel));
+        const fmtTime = d => { const t = new Date(d); return Number.isFinite(t.getTime()) ? t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : 'unknown'; };
+        const fmtDate = d => { const t = new Date(d); return Number.isFinite(t.getTime()) ? t.toLocaleDateString('en-US', { timeZone: 'America/New_York' }) : 'unknown'; };
+        if (!stats || (!stats.started_at && !(live && live.isLive))) {
             client.say(channel, "📊 No stream data available yet.");
-        } else if (stats.isLive) {
-            client.say(channel, `🔴 LIVE | Viewers: ${stats.viewers} (Peak: ${stats.peak_viewers || stats.viewers}) | Started: ${new Date(stats.started_at).toLocaleTimeString()}`);
+        } else if (live && live.isLive) {
+            const now = Number.isFinite(Number(live.viewers)) ? Number(live.viewers) : 'n/a';
+            const peak = Math.max(Number(stats.peak_viewers) || 0, Number(live.viewers) || 0);
+            // Start time from the live poll (always present) rather than the DB
+            // row, which printed "Invalid Date" whenever the session INSERT failed.
+            client.say(channel, `🔴 LIVE | Viewers: ${now} (Peak: ${peak}) | Started: ${fmtTime(live.startedAt || stats.started_at)} ET`);
         } else {
-            client.say(channel, `⚫ OFFLINE | Last Stream: ${new Date(stats.started_at).toLocaleDateString()} | Duration: ${stats.ended_at ? Math.round((new Date(stats.ended_at) - new Date(stats.started_at)) / 60000) + 'm' : 'Unknown'}`);
+            const dur = stats.ended_at && stats.started_at ? Math.round((new Date(stats.ended_at) - new Date(stats.started_at)) / 60000) + 'm' : 'Unknown';
+            client.say(channel, `⚫ OFFLINE | Last Stream: ${fmtDate(stats.started_at)} | Duration: ${dur}`);
         }
         return;
     }
@@ -2453,7 +3743,7 @@ async function handleMessage(channel, tags, message, self) {
     // !raid — bare (no args) is a manual incoming-raid hype for everyone.
     // The mod-only !raid <target> farewell stays at its existing site below.
     if (msg === '!raid') {
-        const line = pickNoRepeat(`raidmanual:${cleanChannel}`, RAID_HYPE_MANUAL, 2);
+        const line = pickNoRepeat(`raidmanual:${cleanChannel}`, RAID_HYPE_MANUAL, 3);
         sendMessage(channel, line);
         return;
     }
@@ -2490,7 +3780,7 @@ async function handleMessage(channel, tags, message, self) {
 
     // Viewer version of !game (bare, no args). Mod version (!game <name>) stays below.
     if (msg === '!game') {
-        const state = streamStates.get(channel);
+        const state = streamStates.get(streamKey(channel));
         const gameName = state && state.game ? state.game : null;
         if (gameName) sendMessage(channel, `🎮 Currently playing ${gameName}`);
         else sendMessage(channel, `🎮 No game set right now cuhz — check back in a sec`);
@@ -2498,7 +3788,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!uptime') {
-        let state = streamStates.get(channel);
+        let state = streamStates.get(streamKey(channel));
         const channelName = channel.replace('#', '');
 
         // Resilient fallback to Twitch Edge GQL if state is missing or reports offline
@@ -2506,7 +3796,7 @@ async function handleMessage(channel, tags, message, self) {
             const edgeStream = await twitchEdge.getLiveStream(cleanChannel);
             if (edgeStream && edgeStream.isLive) {
                 state = edgeStream;
-                streamStates.set(channel, {
+                streamStates.set(streamKey(channel), {
                     ...edgeStream,
                     isLive: true,
                     startedAt: edgeStream.startedAt,
@@ -2516,7 +3806,9 @@ async function handleMessage(channel, tags, message, self) {
         }
 
         if (state && state.isLive && state.startedAt) {
-            const duration = twitchEdge.formatUptimeDuration(state.startedAt);
+            // startedAt may be a string if the state was rehydrated/serialized — coerce.
+            const startedAt = state.startedAt instanceof Date ? state.startedAt : new Date(state.startedAt);
+            const duration = twitchEdge.formatUptimeDuration(startedAt);
             sendMessage(channel, `🔴 ${channelName} has been live for ${duration} — grinding 💎`);
         } else {
             sendMessage(channel, `Stream's offline right now cuhz. Check the schedule 📅`);
@@ -2525,16 +3817,23 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!viewers') {
+        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
+        // "Current" comes from the last Helix poll (streamStates), which is the
+        // only place the live count exists. stream_sessions has no `viewers`
+        // column -- reading stats.viewers printed "undefined" in production.
+        const live = streamStates.get(streamKey(channel));
+        if (!live || !live.isLive) { client.say(channel, `📴 Stream is currently offline.`); return; }
+        const now = Number.isFinite(Number(live.viewers)) ? Number(live.viewers) : null;
         const stats = await streamIntel.getStats(channel);
-        if (stats && stats.isLive) {
-            client.say(channel, `👥 Current viewers: ${stats.viewers} (Peak: ${stats.peak_viewers || stats.viewers}) 🔴`);
-        } else {
-            client.say(channel, `📴 Stream is currently offline.`);
-        }
+        const peak = stats && Number.isFinite(Number(stats.peak_viewers)) ? Number(stats.peak_viewers) : null;
+        const peakShown = Math.max(peak ?? 0, now ?? 0);
+        if (now === null) { client.say(channel, `👥 Viewer count isn't in yet — next poll lands within a minute 🔴`); return; }
+        client.say(channel, `👥 Current viewers: ${now} (Peak this stream: ${peakShown}) 🔴`);
         return;
     }
 
     if (msg === '!schedule' || msg === '!stream') {
+        if (!isProOrPremium) return; // in BASIC_BLOCKED_COMMANDS — Pro/Premium perk
         client.say(channel, `@${tags.username} 🗓 Check the schedule tab & turn on notifications for updates!`);
         return;
     }
@@ -2689,6 +3988,7 @@ async function handleMessage(channel, tags, message, self) {
     // --- Mod Intelligence Commands ---
 
     if (msg === '!chatreport' && isMod) {
+        if (!isPremium) return; // AI guardrail — Premium channels only
         const health = await modIntel.getChatHealth(channel);
         if (health) {
             client.say(channel, `🛡️ Chat Report: Mood=${health.mood} (${health.energy}% Energy, ${health.toxicity}% Toxicity) | Activity=${health.messagesLastHour} msgs by ${health.activeChatters} users (Last Hour)`);
@@ -2699,6 +3999,7 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg.startsWith('!userreport ') && isMod) {
+        if (!isPremium) return; // AI guardrail — Premium channels only
         const target = message.split(' ')[1]?.replace('@', '');
         if (target) {
             client.say(channel, `🔍 Analyzing ${target}... specific report generating... standby...`);
@@ -2757,10 +4058,53 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     // --- Points & Economy Commands ---
-    // (Model lives in points_service.js: global balance, real EARN/COSTS rates.)
+
+    // !rewards — the "what are points actually FOR" answer. All tiers, every
+    // channel, ONE line built straight from POINT_REWARDS so chat and the
+    // website (GET /api/rewards) can never drift apart.
+    if (msg === '!rewards' || msg === '!shop' || msg === '!redeem') {
+        sendMessage(channel, buildRewardsLine());
+        return;
+    }
+
     if (msg === '!points' || msg === '!balance') {
         const balance = await pointsService.getBalance(tags.username);
-        sendMessage(channel, pointsService.buildPointsLine(tags.username, balance));
+        if (balance === null) {
+            sendMessage(channel, `⚠️ @${tags.username} your CUHZ Points balance is unavailable right now. Try !points again later.`);
+            return;
+        }
+        sendMessage(channel, `💰 @${tags.username} you got ${balance} CUHZ Points in the bank`);
+        return;
+    }
+
+    // !watchtime — all tiers. Aggregate watch minutes across every CUHZ channel,
+    // accrued alongside presence points (passive paycheck) in handleMessage.
+    if (msg === '!watchtime' || msg === '!session' || msg === '!here' || msg === '!howlong') {
+        try {
+            const state = streamStates.get(streamKey(channel));
+            const live = !!(state && state.isLive && state.startedAt);
+            const [profile, firstSeenMs] = await Promise.all([
+                userMemory.getProfile(tags.username),
+                live ? sessionFirstSeen(channel, usernameL, state.startedAt) : Promise.resolve(null),
+            ]);
+            sendMessage(channel, formatWatchLine(tags.username, {
+                live, firstSeenMs, totalMinutes: profile ? profile.total_watch_minutes : 0,
+            }));
+        } catch (err) {
+            logger.error('Error in !watchtime:', err.message);
+        }
+        return;
+    }
+
+    // !weekly — 7-day points leaderboard (service existed, was never wired to a command)
+    if (msg === '!weekly') {
+        const top = await pointsService.getWeeklyTop(5);
+        if (top.length === 0) {
+            sendMessage(channel, `📊 No points earned this week yet — get chatting cuhz!`);
+        } else {
+            const list = top.map((r, i) => `${i + 1}. ${r.username} (${r.points})`).join(' | ');
+            sendMessage(channel, `🏆 This week's grind: ${list} 💎`);
+        }
         return;
     }
 
@@ -2782,9 +4126,11 @@ async function handleMessage(channel, tags, message, self) {
 
         // Positive amounts only, and only announce a grant that actually landed.
         if (target && Number.isFinite(amount) && amount > 0) {
-            const granted = await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`, channel);
+            const granted = await pointsService.addPoints(target, amount, `admin_grant_by_${tags.username}`);
             if (granted) {
                 client.say(channel, `💸 @${tags.username} gave ${amount} points to @${target}!`);
+            } else {
+                client.say(channel, `⚠️ @${tags.username} the points grant to @${target} could not be confirmed. Check the balance before trying again.`);
             }
         } else {
             client.say(channel, `Usage: !give @user <positive amount>`);
@@ -2792,11 +4138,13 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
-    if (msg === '!gamble' || msg.startsWith('!gamble ')) {
-        if (!config.enableGambling) {
-            sendMessage(channel, streamContent.RESPONSES.gamblingDisabled);
-            return;
-        }
+    if (msg.startsWith('!gamble ')) {
+        if (!isProOrPremium) return; // advertised as Pro/Premium only
+        // 30s per-user cooldown — every gamble is 2 chat lines; no casino spam
+        const gKey = `gamble:${tags.username.toLowerCase()}`;
+        const gLast = _gambleCooldowns.get(gKey) || 0;
+        if (Date.now() - gLast < 30000) return;
+        _gambleCooldowns.set(gKey, Date.now());
         const args = message.split(' ');
         const amount = parseInt(args[1]);
 
@@ -2806,23 +4154,27 @@ async function handleMessage(channel, tags, message, self) {
         }
 
         const balance = await pointsService.getBalance(tags.username);
+        if (balance === null) {
+            client.say(channel, `⚠️ @${tags.username} your CUHZ Points balance is unavailable right now. Gamble is paused for this request.`);
+            return;
+        }
         if (balance < amount) {
             client.say(channel, `🚫 You're broke cuhz! You only have ${balance} points.`);
             return;
         }
 
         const win = Math.random() < 0.5;
+        const settled = win
+            ? await pointsService.addPoints(tags.username, amount, 'gamble_win')
+            : await pointsService.deductPoints(tags.username, amount, 'gamble_loss');
+        if (!settled) {
+            client.say(channel, `⚠️ @${tags.username} the gamble points result could not be confirmed. Check !points later before trying again.`);
+            return;
+        }
         if (win) {
-            await pointsService.addPoints(tags.username, amount, 'gamble_win', channel);
-            client.say(channel, `🎰 WINNER! @${tags.username} doubled up to ${balance + amount} points! 🟢`);
+            client.say(channel, `🎰 WINNER! @${tags.username} won ${amount} CUHZ Points! 🟢`);
         } else {
-            // Atomic deduct — if the balance moved since the check above, stay honest.
-            const lost = await pointsService.deductPoints(tags.username, amount, 'gamble_loss', channel);
-            if (lost) {
-                client.say(channel, `🎰 RIP @${tags.username}... you lost ${amount} points. 🔴`);
-            } else {
-                client.say(channel, `🚫 You're broke cuhz! That balance moved before the dice did.`);
-            }
+            client.say(channel, `🎰 RIP @${tags.username}... you lost ${amount} points. 🔴`);
         }
         return;
     }
@@ -2832,14 +4184,14 @@ async function handleMessage(channel, tags, message, self) {
     // !ask -brain -> Claude (50 pts)
     if (msg.startsWith('!ask ') && isVerifiedStream) {
         let question = message.substring(5).trim();
-        let cost = pointsService.COSTS.ASK_EYES;
+        let cost = 10;
         let brain = 'eyes'; // Default Gemini
         let brainName = 'The Eyes (Gemini)';
 
         if (question.startsWith('-brain')) {
             brain = 'brain'; // Claude
             brainName = 'The Brain (Claude)';
-            cost = pointsService.COSTS.ASK_BRAIN;
+            cost = 50;
             question = question.substring(6).trim();
         }
 
@@ -2850,7 +4202,10 @@ async function handleMessage(channel, tags, message, self) {
             const success = await pointsService.deductPoints(tags.username, cost, `ask_${brain}`, channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
-                client.say(channel, `🚫 Broke User Alert: You need ${cost} points for ${brainName} but only have ${balance}. Chat more to earn!`);
+                const balanceText = balance === null ? 'Balance is unavailable.' : `Current balance: ${balance}.`;
+                // A false mutation result may include a lost COMMIT reply. Even
+                // a low balance cannot prove this was an insufficient-funds refusal.
+                client.say(channel, `⚠️ @${tags.username} the points payment could not be confirmed for ${brainName}. ${balanceText} Check !points later before trying again.`);
                 return;
             }
 
@@ -2868,13 +4223,14 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg.startsWith('!code ') && isVerifiedStream) {
         const query = message.substring(6).trim();
-        const cost = pointsService.COSTS.CODE_HANDS;
+        const cost = 25;
 
         if (query) {
             const success = await pointsService.deductPoints(tags.username, cost, 'ask_hands', channel);
             if (!success) {
                 const balance = await pointsService.getBalance(tags.username);
-                client.say(channel, `🚫 You need ${cost} points for The Hands (Code) but only have ${balance}.`);
+                const balanceText = balance === null ? 'Balance is unavailable.' : `Current balance: ${balance}.`;
+                client.say(channel, `⚠️ @${tags.username} the points payment could not be confirmed. ${balanceText} Check !points later before trying again.`);
                 return;
             }
 
@@ -2891,7 +4247,8 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg.startsWith('!announce ') && isMod) {
         const announcement = message.substring(10);
-        client.say(channel, `/announce ${announcement}`);
+        const res = await moderation.announce(channel, tags.username, announcement);
+        if (!res.ok) client.say(channel, res.message);
         return;
     }
 
@@ -2901,11 +4258,12 @@ async function handleMessage(channel, tags, message, self) {
         const rawTarget = match && match.length >= 2 ? match[1] : null; // [0] is "raid"
         if (!rawTarget) return;
         const target = rawTarget.replace('@', '').toLowerCase();
-        // Fire farewell template first (goes through the send queue so the /raid
-        // command that follows is spaced ≥1.5s after — no Twitch rate-limit blowup).
         const farewell = pickNoRepeat(`raid:${cleanChannel}`, RAID_FAREWELLS, 2).replace('{target}', target);
         sendMessage(channel, farewell);
-        sendMessage(channel, `/raid ${target}`, { moderatorAction: true });
+        // Twitch only lets the broadcaster's own token start a raid — prompt honestly
+        // instead of sending a dead /raid chat command (removed by Twitch in 2023).
+        const res = await moderation.raid(channel, tags.username, target);
+        sendMessage(channel, res.message);
         return;
     }
 
@@ -2961,7 +4319,8 @@ async function handleMessage(channel, tags, message, self) {
         if (validation) {
             const hasFollowerScope = (validation.scopes || []).includes('moderator:read:followers');
             const hasBroadcastScope = (validation.scopes || []).includes('channel:manage:broadcast');
-            client.say(channel, `🤖 Status: LIVE | Scopes: ${validation.scopes.length} | Followage Fix: ${hasFollowerScope ? '✅' : '❌'} | Title/Game: ${hasBroadcastScope ? '✅' : '❌'}`);
+            const persistent = db.type === 'postgres';
+            client.say(channel, `🤖 Status: LIVE | Scopes: ${validation.scopes.length} | Followage: ${hasFollowerScope ? '✅' : '❌'} | Title/Game: ${hasBroadcastScope ? '✅' : '❌'} | Points storage: ${persistent ? '✅ Postgres (safe)' : '⚠️ SQLite (RESETS ON DEPLOY)'}`);
         } else {
             client.say(channel, `❌ Token invalid or expired.`);
         }
@@ -3035,72 +4394,116 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // --- Real Helix moderation (IRC /commands were removed by Twitch 2023-02;
+    // --- the old client.say('/ban …') pattern silently did nothing) ---
+
     if (msg.startsWith('!ban ') && isMod) {
-        const target = message.split(' ')[1];
-        if (target) client.say(channel, `/ban ${target}`);
+        const parts = message.split(' ');
+        const target = parts[1];
+        const reason = parts.slice(2).join(' ') || undefined;
+        if (!target) return;
+        const res = await moderation.banOrTimeout(channel, tags.username, target, null, reason);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg.startsWith('!timeout ') && isMod) {
         const parts = message.split(' ');
         const target = parts[1];
-        const duration = parts[2] || 600;
-        if (target) client.say(channel, `/timeout ${target} ${duration}`);
+        const duration = Math.max(1, Math.min(parseInt(parts[2], 10) || 600, 1209600)); // Twitch max 14d
+        const reason = parts.slice(3).join(' ') || undefined;
+        if (!target) return;
+        const res = await moderation.banOrTimeout(channel, tags.username, target, duration, reason);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg === '!clear' && isMod) {
-        client.say(channel, '/clear');
+        const res = await moderation.clearChat(channel, tags.username);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg.startsWith('!slow ') && isMod) {
-        const seconds = message.split(' ')[1] || 10;
-        client.say(channel, `/slow ${seconds}`);
+        const seconds = Math.max(1, Math.min(parseInt(message.split(' ')[1], 10) || 10, 120));
+        const res = await moderation.setSlowMode(channel, tags.username, seconds);
+        client.say(channel, res.message);
         return;
     }
 
     if (msg === '!slowoff' && isMod) {
-        client.say(channel, '/slowoff');
+        const res = await moderation.setSlowMode(channel, tags.username, 0);
+        client.say(channel, res.message);
         return;
     }
 
-    if (msg.startsWith('!unban ') && isMod) {
+    if ((msg.startsWith('!unban ') || msg.startsWith('!untimeout ')) && isMod) {
         const target = message.split(' ')[1];
-        if (target) client.say(channel, `/unban ${target}`);
+        if (!target) return;
+        const res = await moderation.unban(channel, tags.username, target);
+        client.say(channel, res.message);
         return;
     }
 
-    if (msg.startsWith('!untimeout ') && isMod) {
-        const target = message.split(' ')[1];
-        if (target) client.say(channel, `/untimeout ${target}`);
+    // Self-documenting mod panel: what can CUHZ Bot's mod kit do RIGHT NOW in
+    // this channel — including whether the token scopes actually back each one.
+    if ((msg === '!mod' || msg === '!modcommands') && isMod) {
+        const validation = await validateToken();
+        const cap = moderation.capabilityReport(validation && validation.scopes);
+        const mark = (ok) => ok ? '✅' : '⚠️';
+        sendMessage(channel, `🛡️ CUHZ Bot mod kit — enforcement: ${mark(cap.ban)} !ban [reason] !timeout [secs] [reason] !unban !untimeout · ${mark(cap.clear)} !clear · ${mark(cap.slow)} !slow [secs] !slowoff · ${mark(cap.announce)} !announce <text>`);
+        sendMessage(channel, `🛡️ Stream: !title !game !so !raid · Intel: !chatreport !userreport !mood !personality !botcheck · Points: !give · Setup: !settoday !cleartoday !refresh${(cap.ban && cap.clear && cap.slow && cap.announce) ? '' : ' — ⚠️ = bot token missing that scope (run !botcheck)'}`);
+        // Tier/owner-gated extras: only listed where they'd actually run.
+        if (isProOrPremium) sendMessage(channel, `🛡️ Auto-shoutouts (upgraded channels): !addstreamer <user> · !removestreamer <user> · !liststreamers`);
+        if (tags.username === 'planetcuhz') sendMessage(channel, `👑 Owner: !status · !aistats`);
         return;
     }
 
     // Warriors command removed per user request
 
     if (msg === '!status' && tags.username === 'planetcuhz') {
-        const state = streamStates.get(channel);
+        const state = streamStates.get(streamKey(channel));
         const liveStatus = state ? (state.isLive ? 'LIVE 🔴' : 'OFFLINE ⚫') : 'UNKNOWN ⚪';
         client.say(channel, `✅ Bot Online. Stream: ${liveStatus}. Ver: Non-Crypto v1.2 (Smart Mode)`);
         return;
     }
 
     // 4. Webhook Forwarding
-    if (config.webhookUrl) {
+    // Never attempt when unset/empty; circuit breaker stops the 400-spam
+    // (124 errors/6h in production) after 5 consecutive failures.
+    if (config.webhookUrl && String(config.webhookUrl).trim() !== '' && Date.now() >= _webhookPausedUntil) {
         try {
             await axios.post(config.webhookUrl, {
                 platform: 'twitch',
                 channel: channel.replace('#', ''),
                 user: tags.username,
                 message: message,
+                // Receiver requires a 'text' field — without it every attempt
+                // got 400 {"error":"Missing text"} in production.
+                text: `[twitch] #${channel.replace('#', '')} ${tags.username}: ${message}`,
                 timestamp: new Date().toISOString()
             }, {
                 headers: { 'Authorization': `Bearer ${config.webhookToken}` },
                 timeout: 5000
             });
+            _webhookConsecutiveFailures = 0; // healthy again
         } catch (error) {
-            logger.error('Webhook error:', error.message);
+            _webhookConsecutiveFailures++;
+
+            // Log the response body at most once per hour (not on every failure).
+            const now = Date.now();
+            if (now - _webhookLastErrorLogAt >= WEBHOOK_ERROR_LOG_INTERVAL_MS) {
+                _webhookLastErrorLogAt = now;
+                const body = error.response?.data !== undefined ? ` | response body: ${JSON.stringify(error.response.data)}` : '';
+                logger.error(`Webhook error: ${error.message}${body} (consecutive failures: ${_webhookConsecutiveFailures}; further webhook errors muted for 1h)`);
+            }
+
+            // Circuit breaker: 5 consecutive failures → pause for 30 minutes.
+            if (_webhookConsecutiveFailures >= WEBHOOK_FAILURE_THRESHOLD) {
+                _webhookPausedUntil = now + WEBHOOK_PAUSE_MS;
+                _webhookConsecutiveFailures = 0;
+                logger.warn(`🔌 Webhooks paused for 30 minutes after ${WEBHOOK_FAILURE_THRESHOLD} consecutive failures`);
+            }
         }
     }
 
@@ -3171,7 +4574,7 @@ app.post('/join-channel', verifyDashboardRequest, async (req, res) => {
 
     try {
         const target = sanitizeChannel(channel);
-        if (!target) return res.status(400).json({ error: 'Invalid channel' });
+        if (!target) return res.status(400).json({ error: 'Channel is required' });
         await client.join(target);
         res.json({ status: 'success' });
     } catch (err) {
@@ -3194,12 +4597,25 @@ app.post('/leave-channel', verifyDashboardRequest, async (req, res) => {
     }
 });
 
+// Public healthcheck — minimal on purpose. The old payload leaked 500 log
+// entries (chat content + usernames) and full stream state to anyone.
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
+        connected: client ? client.readyState() === 'OPEN' : false
+    });
+});
+
+// Rich diagnostics moved behind dashboard auth.
+app.get('/health/full', verifyDashboardRequest, (req, res) => {
+    res.json({
+        status: 'ok',
         connected: client ? client.readyState() === 'OPEN' : false,
-        channelCount: connectedChannels.size,
-        uptimeSeconds: Math.floor((Date.now() - startTime.getTime()) / 1000)
+        channels: Array.from(connectedChannels),
+        streamStates: Object.fromEntries(streamStates),
+        startTime: startTime.toISOString(),
+        sharedChatGuard: sharedChatGuard.stats(),
+        logs: logger.getLogs()
     });
 });
 
@@ -3215,6 +4631,111 @@ app.get('/api/system-status', verifyDashboardRequest, (req, res) => {
     });
 });
 
+// --- Public Points API (no auth) ---
+// planetcuhz.com embeds the dashboard and renders these directly, so they are
+// deliberately unauthenticated: read-only, no chat content, no PII beyond the
+// public Twitch display names already visible in chat and on !top.
+// Cached 60s so a busy site can't hammer the DB.
+
+// Normalized the same way points_service does, so lookups match stored rows.
+function normalizePointsUser(name) {
+    return String(name || '').toLowerCase().replace('@', '').trim();
+}
+
+app.get('/api/points/leaderboard', async (req, res) => {
+    try {
+        const raw = parseInt(req.query.limit, 10);
+        const limit = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), 100) : 10;
+        const rows = await pointsService.getRichList(limit);
+        res.set('Cache-Control', 'public, max-age=60');
+        res.json({
+            updated_at: new Date().toISOString(),
+            leaderboard: rows.map((r, i) => ({
+                rank: i + 1,
+                username: r.username,
+                points: r.points
+            }))
+        });
+    } catch (err) {
+        logger.error('/api/points/leaderboard failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
+app.get('/api/points/user/:username', async (req, res) => {
+    try {
+        const username = normalizePointsUser(req.params.username);
+        if (!username) return res.status(404).json({ error: 'not found' });
+
+        const points = await pointsService.getBalance(username);
+        if (points === null) {
+            res.set('Cache-Control', 'no-store');
+            return res.status(503).json({ error: 'points balance unavailable' });
+        }
+
+        // points_service exposes no rank query and we don't own that file, so
+        // rank comes from the top-100 rich list; anyone below that returns null.
+        const top = await pointsService.getRichList(100);
+        const idx = top.findIndex(r => normalizePointsUser(r.username) === username);
+
+        // getBalance() returns 0 for both "no row" and "row with 0 points", so a
+        // 0-balance user absent from the top 100 is treated as not found. A real
+        // 0-point holder can't be told apart without a query we're not allowed to add.
+        if (points === 0 && idx === -1) {
+            return res.status(404).json({ error: 'not found' });
+        }
+
+        res.set('Cache-Control', 'public, max-age=60');
+        res.json({
+            username,
+            points,
+            rank: idx === -1 ? null : idx + 1
+        });
+    } catch (err) {
+        logger.error('/api/points/user failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
+// Same POINT_REWARDS registry the bot announces via !rewards — single source of truth.
+app.get('/api/rewards', (req, res) => {
+    try {
+        res.set('Cache-Control', 'public, max-age=60');
+        res.json({
+            updated_at: new Date().toISOString(),
+            rewards: POINT_REWARDS.map(r => ({ cost: r.cost, name: r.name, note: r.note || null }))
+        });
+    } catch (err) {
+        logger.error('/api/rewards failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
+// THE CUHZ LAB — read-only lounge state for the OBS page (Lane K). This is the
+// ONLY lounge route and it is GET-only. Route-level CORS because the global
+// cors() above allows POST and would otherwise be inherited. Unknown, disabled
+// and non-allowlisted channels get the identical house-default payload, so the
+// route is not a channel-enumeration oracle. The JSON is serialized once per
+// state change, not per request, so a poll flood cannot starve the IRC loop.
+app.use('/api/lounge', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    res.set('Allow', 'GET');
+    res.status(405).json({ error: 'GET only' });
+});
+app.get('/api/lounge/state', cors({ methods: ['GET'], origin: '*' }), (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.type('application/json');
+        const raw = typeof req.query.channel === 'string' ? req.query.channel : '';
+        const login = String(sanitizeChannel(raw) || '').replace(/^#/, '');
+        const roomId = loungeEnabled() ? LOUNGE_ROOMS[login] : null;
+        res.send(roomId ? loungeStateJson(roomId) : loungeHouseJson());
+    } catch (err) {
+        logger.error('/api/lounge/state failed:', err.message);
+        res.status(500).json({ error: 'internal error' });
+    }
+});
+
 app.get('/', (req, res) => {
     try {
         const templatePath = path.join(__dirname, 'dashboard.html');
@@ -3227,5 +4748,32 @@ app.get('/', (req, res) => {
 
 app.listen(config.port, () => {
     logger.info(`Bot API listening on port ${config.port}`);
+    // Website → bot: every 5 minutes, join any newly approved channel. Inside
+    // listen() so the isolated boot harness (which forbids timers) never sees it.
+    if (BOT_SYNC_URL) {
+        const syncClock = setInterval(async () => {
+            try {
+                if (!client || client.readyState() !== 'OPEN') return;
+                const wanted = await fetchSyncedChannels();
+                for (const ch of wanted) {
+                    if (connectedChannels.has(ch)) continue;
+                    await client.join(ch);
+                    logger.info(`🔗 Joined ${ch} from a website request`);
+                }
+            } catch (err) {
+                logger.error('website channel re-sync failed:', err.message);
+            }
+        }, BOT_SYNC_INTERVAL_MS);
+        if (typeof syncClock.unref === 'function') syncClock.unref();
+    }
+
+    // Lane K: turbo decay and idle revert. Started here, not at module level —
+    // the isolated boot harness forbids timers and never invokes this callback.
+    const loungeClock = setInterval(() => {
+        for (const roomId of LOUNGE_ROOM_IDS) {
+            if (loungeControl.tick(roomId)) loungeStateChanged(roomId);
+        }
+    }, 5000);
+    if (typeof loungeClock.unref === 'function') loungeClock.unref();
     initializeTwitchClient();
 });

@@ -29,7 +29,7 @@ function assertNoRetiredDiscordInvite() {
         const contents = fs.readFileSync(file, 'utf8');
         assert.ok(
             !contents.includes(RETIRED_INVITE_CODE),
-            `retired Discord invite code found in ${path.relative(srcDir, file)} — canonical invite is https://discord.gg/eNxDKkxQdN`
+            `retired Discord invite code found in ${path.relative(srcDir, file)} — canonical invite is https://discord.gg/uDPEtrcsg4`
         );
     }
 }
@@ -54,9 +54,9 @@ function run() {
 
     // Voice-only Discord (discord.gg) — the invite the site footer links — is
     // an approved host, and the registered APPROVED_LINKS entry passes the gate.
-    assert.strictEqual(policy.isApprovedUrl('https://discord.gg/eNxDKkxQdN'), true);
+    assert.strictEqual(policy.isApprovedUrl('https://discord.gg/uDPEtrcsg4'), true);
     assert.strictEqual(policy.isApprovedUrl(policy.APPROVED_LINKS.voiceDiscord), true);
-    assert.strictEqual(policy.isApprovedUrl('http://discord.gg/eNxDKkxQdN'), false); // http rejected
+    assert.strictEqual(policy.isApprovedUrl('http://discord.gg/uDPEtrcsg4'), false); // http rejected
 
     const phishingOutput = policy.validateOutbound('Pay here: https://evil.example/checkout', { source: 'ai' });
     assert.strictEqual(phishingOutput.allowed, false);
@@ -117,7 +117,7 @@ function run() {
     }
 
     // Canonical Discord invite everywhere; the retired invite retired for good.
-    assert.strictEqual(policy.APPROVED_LINKS.discord, 'https://discord.gg/eNxDKkxQdN');
+    assert.strictEqual(policy.APPROVED_LINKS.discord, 'https://discord.gg/uDPEtrcsg4');
     assert.strictEqual(policy.APPROVED_LINKS.discord, policy.APPROVED_LINKS.voiceDiscord);
     assertNoRetiredDiscordInvite();
 
