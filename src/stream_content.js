@@ -31,7 +31,7 @@ function launchCommandResponse(command, opts = {}) {
 }
 
 function utilityHelp(enableGambling = false) {
-    const base = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf !sub !raid';
+    const base = '🛠️ Utility: !lurk !unlurk !points !top !uptime !game !socials !commands !ping !nf !sub !raid !raider !topclip !vod !age !followers !emotes !tags !category !rank !chatrules';
     return enableGambling ? `${base} !gamble` : base;
 }
 

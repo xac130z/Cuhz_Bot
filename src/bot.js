@@ -23,6 +23,8 @@ const keywordListener = require('./keyword_listener');
 const followageService = require('./followage_service');
 const streakService = require('./streak_service');
 const clipsService = require('./clips_service');
+const raiderService = require('./raider_service');
+const twitchEdge = require('./twitch_edge_service');
 
 // Watch Streak truth is session-scoped: only Twitch's verified USERNOTICE can
 // populate this tracker. Ordinary chat text never becomes a detected streak.
@@ -48,9 +50,12 @@ const CHANNEL_TIERS = {
     'planetcuhz':            TIERS.PREMIUM,
     'thatgirlmahni_':        TIERS.BASIC,
     'qweenstormygirlnz89':   TIERS.BASIC,
+    'stormygirlnz89':        TIERS.BASIC,
     'razredg1':              TIERS.BASIC,
     'snowy_wolfies_ttv':     TIERS.BASIC,
-    'ohthatztayy':           TIERS.BASIC
+    'ohthatztayy':           TIERS.BASIC,
+    'westsiderelly':         TIERS.BASIC,
+    'grouch392':             TIERS.BASIC
 };
 
 // --- Global Error Handlers (Prevention) ---
@@ -2104,7 +2109,7 @@ async function handleMessage(channel, tags, message, self) {
         client.say(channel, '🤖 Want CUHZ Bot in your channel? Compare Community, Silver, Gold, Partner, and Architect plans → https://planetcuhz.com/pricing');
         return;
     }
-    if (msg === '!streak') {
+    if (msg === '!streak' || msg === '!watchstreak') {
         sendMessage(channel, streakTracker.commandReply(channel), { source: 'streak_command' });
         return;
     }
@@ -2277,7 +2282,7 @@ async function handleMessage(channel, tags, message, self) {
         const brand     = '🌌 Brand: !cuhz !planet !chain !whatiscuhz !rules !pointsinfo';
         const shoutouts = '🎤 Shoutouts: !ac !4 !four !ec !rock !pnx !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !storm !juan !rico !bern !dame';
         const crew      = '🎤 Crew: !uni !chi !drizzy !jay !rell !jxy !keem !jaylo !tank !neb !papi !raz !famous !rebound !thorn !zuri !shock !kay !yoo !tay !badguy !night !reacts';
-        const modsPro   = '🛡️ Mods: !so !raid !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
+        const modsPro   = '🛡️ Mods: !so !raid !raider !give !title !game !ban !timeout !announce !chatreport !mood !settoday !cleartoday';
         const ai        = 'AI: !ask !code !whois !topchatters';
 
         // Only advertised where the commands actually work (flag on + selling surface).
@@ -2300,7 +2305,7 @@ async function handleMessage(channel, tags, message, self) {
             // Basic — limited shoutouts, no AI, no info-link dump
             sendMessage(channel, utility);
             sendMessage(channel, vibes + ' | 🌌 Brand: !cuhz !planet');
-            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !tay !yoo | Mods: !so !raid !settoday — Stay CUHZ 🚀');
+            sendMessage(channel, '🎤 Shoutouts: !4 !four !ec !rock !tj !spence !snowy !snow !kasha !qween !fvmous !gg !brady !limit !balen !joee !mahni !tay !yoo | Mods: !so !raid !raider !settoday — Stay CUHZ 🚀');
         }
         return;
     }
@@ -2453,6 +2458,13 @@ async function handleMessage(channel, tags, message, self) {
         return;
     }
 
+    // !raider / !raiders / !raidtarget — scans live roster and recommends who to raid!
+    if (msg === '!raider' || msg === '!raiders' || msg === '!raidtarget') {
+        const reply = await raiderService.getRaiderRecommendation(cleanChannel);
+        sendMessage(channel, reply);
+        return;
+    }
+
     // --- Phase 8: Utility commands ---
     if (msg === '!lurk') {
         const line = pickNoRepeat(`lurk:${cleanChannel}`, LURK_QUOTES, 2).replace('{user}', tags.username);
@@ -2486,14 +2498,26 @@ async function handleMessage(channel, tags, message, self) {
     }
 
     if (msg === '!uptime') {
-        const state = streamStates.get(channel);
+        let state = streamStates.get(channel);
         const channelName = channel.replace('#', '');
 
+        // Resilient fallback to Twitch Edge GQL if state is missing or reports offline
+        if (!state || !state.isLive) {
+            const edgeStream = await twitchEdge.getLiveStream(cleanChannel);
+            if (edgeStream && edgeStream.isLive) {
+                state = edgeStream;
+                streamStates.set(channel, {
+                    ...edgeStream,
+                    isLive: true,
+                    startedAt: edgeStream.startedAt,
+                    game: edgeStream.game
+                });
+            }
+        }
+
         if (state && state.isLive && state.startedAt) {
-            const diff = Date.now() - state.startedAt.getTime();
-            const hours = Math.floor(diff / (1000 * 60 * 60));
-            const minutes = Math.floor((diff / (1000 * 60)) % 60);
-            sendMessage(channel, `🔴 ${channelName} has been live for ${hours}h ${minutes}m — grinding 💎`);
+            const duration = twitchEdge.formatUptimeDuration(state.startedAt);
+            sendMessage(channel, `🔴 ${channelName} has been live for ${duration} — grinding 💎`);
         } else {
             sendMessage(channel, `Stream's offline right now cuhz. Check the schedule 📅`);
         }
@@ -2512,6 +2536,96 @@ async function handleMessage(channel, tags, message, self) {
 
     if (msg === '!schedule' || msg === '!stream') {
         client.say(channel, `@${tags.username} 🗓 Check the schedule tab & turn on notifications for updates!`);
+        return;
+    }
+
+    // --- Twitch Edge Intelligence Suite ---
+    if (msg === '!topclip' || msg === '!bestclip') {
+        const clip = await twitchEdge.getTopClip(cleanChannel);
+        if (clip) {
+            sendMessage(channel, `🎬 Most Legendary Clip: "${clip.title}" (${clip.viewCount} views) clipped by @${clip.curator} → ${clip.url} 🔥`);
+        } else {
+            sendMessage(channel, `🎬 No community clips recorded yet cuhz. Type !clip to make history! 💎`);
+        }
+        return;
+    }
+
+    if (msg === '!vod' || msg === '!laststream' || msg === '!pastbroadcast') {
+        const vod = await twitchEdge.getLastVOD(cleanChannel);
+        if (vod) {
+            sendMessage(channel, `📼 Previous Broadcast: "${vod.title}" (${vod.durationFormatted} · ${vod.viewCount} views) → ${vod.url} 💎`);
+        } else {
+            sendMessage(channel, `📼 No past broadcast archives found for this channel cuhz! 🌌`);
+        }
+        return;
+    }
+
+    if (msg === '!age' || msg.startsWith('!age ') || msg === '!accountage' || msg.startsWith('!accountage ')) {
+        const match = message.match(/@?([A-Za-z0-9_]{3,25})/g);
+        const target = (match && match.length >= 2) ? match[1].replace('@', '') : tags.username;
+        const age = await twitchEdge.getAccountAge(target);
+        if (age) {
+            const tenure = age.yearsOld > 0 ? `${age.yearsOld}y ${age.remainingDays}d` : `${age.daysOld} days`;
+            sendMessage(channel, `🎂 @${age.displayName} joined Twitch on ${age.dateFormatted} (${tenure} ago) — Certified OG! 🚀`);
+        } else {
+            sendMessage(channel, `🎂 Couldn't find Twitch account creation date for @${target} cuhz! 🌌`);
+        }
+        return;
+    }
+
+    if (msg === '!followers' || msg === '!goal') {
+        const f = await twitchEdge.getFollowerCount(cleanChannel);
+        if (f) {
+            sendMessage(channel, `🎯 Community Count: @${f.displayName} currently has ${f.formatted} verified followers on Twitch! Keep that frequency rising 💎`);
+        } else {
+            sendMessage(channel, `🎯 Follower count unavailable right now cuhz — check back in a sec! 🌌`);
+        }
+        return;
+    }
+
+    if (msg === '!emotes' || msg === '!subemotes') {
+        const tokens = await twitchEdge.getSubEmotes(cleanChannel);
+        if (tokens && tokens.length > 0) {
+            sendMessage(channel, `💎 Official Sub Emotes for @${cleanChannel}: ${tokens.slice(0, 10).join(' ')} — Sub up to unlock cosmic status! 🌌`);
+        } else {
+            sendMessage(channel, `💎 Check the emote menu in chat to unlock custom creator emotes! 🚀`);
+        }
+        return;
+    }
+
+    if (msg === '!tags') {
+        const stream = await twitchEdge.getLiveStream(cleanChannel);
+        if (stream && stream.tags && stream.tags.length > 0) {
+            sendMessage(channel, `🏷️ Stream Tags: [${stream.tags.join('] [')}]`);
+        } else {
+            sendMessage(channel, `🏷️ No special tags set on this stream right now cuhz.`);
+        }
+        return;
+    }
+
+    if (msg === '!category' || msg === '!rank') {
+        const stream = await twitchEdge.getLiveStream(cleanChannel);
+        const gameName = stream && stream.game ? stream.game : 'NBA 2K26';
+        const cat = await twitchEdge.getCategoryRank(gameName, cleanChannel);
+        if (cat) {
+            const rankStr = cat.rank ? `and holds rank #${cat.rank} in the category!` : `in the category!`;
+            sendMessage(channel, `🎮 Directory Scouting: ${cat.game} currently has ${cat.categoryViewers.toLocaleString()} total viewers across Twitch. @${cleanChannel} is live ${rankStr} 🔥`);
+        } else {
+            sendMessage(channel, `🎮 Category scouting unavailable right now cuhz.`);
+        }
+        return;
+    }
+
+    if (msg === '!chatrules' || msg === '!chatmode') {
+        const rules = await twitchEdge.getChatRules(cleanChannel);
+        if (rules) {
+            const slow = rules.slowModeSeconds ? `${rules.slowModeSeconds}s delay` : 'OFF';
+            const follow = rules.followersOnlyMinutes ? `${rules.followersOnlyMinutes}m minimum` : 'OFF';
+            const links = rules.blockLinks ? 'Blocked' : 'Allowed';
+            sendMessage(channel, `🛡️ Chat Rules: Slow mode: ${slow} | Followers-only: ${follow} | Links: ${links} — Keep the chat hype and stay CUHZ! ⚡`);
+        } else {
+            sendMessage(channel, `🛡️ Chat Rules: Keep the vibes high, respect the community, and stay CUHZ! ⚡`);
+        }
         return;
     }
 
