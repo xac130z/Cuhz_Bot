@@ -1823,6 +1823,25 @@ function formatCuhznReceipt(login, profile, balance, nowMs = Date.now()) {
     return `\u{1F9FE} @${login} \u2014 ${parts.join(' \u00b7 ')}`;
 }
 
+// Channels where the arrival RECEIPT (the stats line) is suppressed — owner
+// request 2026-10-09: in Reason's stream the numbers read as clutter when
+// someone arrives. The personal greeting stays; !points and !watchtime still
+// answer on demand, and stats keep accruing — only the automatic arrival
+// line is silenced. Extend with NO_ARRIVAL_RECEIPT_CHANNELS (comma-separated
+// logins) on Railway without a code change; the hardcoded entry survives a
+// frozen env under the isolated boot harness.
+const NO_ARRIVAL_RECEIPT_CHANNELS = new Set(
+    ['four_a_reason']
+        .concat(String(process.env.NO_ARRIVAL_RECEIPT_CHANNELS || '').split(','))
+        .map(c => String(c).trim().toLowerCase().replace(/^#/, ''))
+        .filter(Boolean)
+);
+
+/** True when the automatic arrival stats line may be sent in this channel. */
+function arrivalReceiptAllowed(channel) {
+    return !NO_ARRIVAL_RECEIPT_CHANNELS.has(String(channel || '').toLowerCase().replace(/^#/, ''));
+}
+
 /** Live lookup. A stats failure must never suppress the greeting itself. */
 async function cuhznReceipt(login) {
     try {
@@ -3065,7 +3084,7 @@ async function handleMessage(channel, tags, message, self) {
                 // Then the receipt: what THEY have actually put in, live.
                 if (cuhznLine) {
                     sendMessage(channel, `${cuhznLine}`);
-                    const receipt = await cuhznReceipt(usernameL);
+                    const receipt = arrivalReceiptAllowed(channel) ? await cuhznReceipt(usernameL) : null;
                     if (receipt) sendMessage(channel, receipt);
                     cuhznGreeted = true;
                 } else if (channelPlan === 'gold') {
@@ -3091,7 +3110,7 @@ async function handleMessage(channel, tags, message, self) {
                     const line = cuhznLine || `${pickNoRepeat(`welcomeback:${channel}`, WELCOME_BACK_QUOTES, 3)} @${tags.username}`;
                     sendMessage(channel, line);
                     if (cuhznLine) {
-                        const receipt = await cuhznReceipt(usernameL);
+                        const receipt = arrivalReceiptAllowed(channel) ? await cuhznReceipt(usernameL) : null;
                         if (receipt) sendMessage(channel, receipt);
                         cuhznGreeted = true;
                     }
