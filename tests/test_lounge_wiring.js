@@ -31,8 +31,8 @@ check('the BASE operator list is numeric literals only — never logins, never e
     for (const id of ids) assert.match(id, /^\d{1,12}$/, `operator "${id}" must be a numeric Twitch id`);
     assert.doesNotMatch(m[0], /process\.env/, 'the base list must not read env — the boot harness freezes it to {}');
 });
-check('access defaults to operators-only and only LOUNGE_ACCESS=subscribers widens it', () => {
-    assert.match(src, /const LOUNGE_ACCESS = process\.env\.LOUNGE_ACCESS === 'subscribers' \? 'subscribers' : 'operators';/);
+check('access defaults to SUBSCRIBERS (owner 2026-10-10) and LOUNGE_ACCESS=operators narrows it', () => {
+    assert.match(src, /const LOUNGE_ACCESS = process\.env\.LOUNGE_ACCESS === 'operators' \? 'operators' : 'subscribers';/);
     assert.match(src, /createLoungeControl\(\{[^}]*access: LOUNGE_ACCESS/);
 });
 check('the base operator list is exactly planetcuhz + Phoenix (owner decisions 2026-09-18 / 2026-10-06)', () => {
@@ -71,10 +71,19 @@ check('the lounge block keys on room-id from tags, not on the channel login', ()
     const code = block.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
     assert.doesNotMatch(code, /pointsService|\bdb\.|database|mutatePoints|award/);
 });
-check('exactly one lounge route, GET, and no POST/PUT on /api/lounge', () => {
+check('one GET state route, and the ONLY write route is the gated /intent (changed on purpose 2026-10-10)', () => {
     const gets = (src.match(/app\.get\('\/api\/lounge\/state'/g) || []).length;
     assert.equal(gets, 1);
-    assert.doesNotMatch(src, /app\.(post|put|delete|patch)\('\/api\/lounge/);
+    // The single permitted write surface: POST /api/lounge/intent, which must
+    // verify the planetcuhz.com session through loungeWebGate BEFORE applyIntent.
+    const writes = src.match(/app\.(post|put|delete|patch)\('\/api\/lounge[^']*'/g) || [];
+    assert.deepEqual(writes, ["app.post('/api/lounge/intent'"]);
+    const route = src.slice(src.indexOf("app.post('/api/lounge/intent'"), src.indexOf("app.post('/api/lounge/intent'") + 2600);
+    assert.match(route, /loungeWebGate\.verify\(req\.headers\.authorization\)/, 'session verification must come first');
+    assert.match(route, /broadcaster: false/, 'web identity must never inherit broadcaster elevation');
+    assert.match(route, /loungeControl\.applyIntent\(/, 'writes must flow through the same validator as chat');
+    assert.match(route, /loungeStateChanged\(roomId\)/, 'applied writes must invalidate the serialized GET payload');
+    assert.match(route, /web_floor/, 'the web door needs its own rate floor (operators skip the module limiter)');
 });
 check('the tick clock lives inside app.listen(), not at module level', () => {
     const listenAt = src.indexOf('app.listen(config.port');
