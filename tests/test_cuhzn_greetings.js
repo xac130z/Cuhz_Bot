@@ -129,4 +129,56 @@ check('the receipt lookup is fail-safe: a stats error cannot suppress the greeti
     assert.match(fn, /try \{/); assert.match(fn, /catch \(err\)/); assert.match(fn, /return null;/);
 });
 
+// ---- Arrival receipt suppression (owner request 2026-10-09) ----------------
+// In Reason's stream the automatic stats line on arrival is OFF. The personal
+// greeting line stays; stats still accrue and still answer on demand.
+const receiptGateSrc = (() => {
+    const a = src.indexOf('const NO_ARRIVAL_RECEIPT_CHANNELS');
+    const b = src.indexOf('/** Live lookup.');
+    assert.ok(a > -1 && b > a, 'receipt gate block must exist above cuhznReceipt');
+    return src.slice(a, b);
+})();
+
+check('four_a_reason is hardcoded into the no-arrival-receipt set (survives a frozen env)', () => {
+    assert.match(receiptGateSrc, /\[\s*'four_a_reason'\s*\]/);
+});
+
+check('arrivalReceiptAllowed suppresses Reason and only Reason by default', () => {
+    const vm = require('node:vm');
+    const sandbox = { process: { env: {} } };
+    vm.createContext(sandbox);
+    vm.runInContext(receiptGateSrc + '\nthis.arrivalReceiptAllowed = arrivalReceiptAllowed;', sandbox);
+    assert.equal(sandbox.arrivalReceiptAllowed('#four_a_reason'), false);
+    assert.equal(sandbox.arrivalReceiptAllowed('four_a_reason'), false);
+    assert.equal(sandbox.arrivalReceiptAllowed('#FOUR_A_REASON'), false);
+    assert.equal(sandbox.arrivalReceiptAllowed('#planetcuhz'), true);
+    assert.equal(sandbox.arrivalReceiptAllowed('#cuhz_bot'), true);
+    assert.equal(sandbox.arrivalReceiptAllowed('#westsiderelly'), true);
+});
+
+check('NO_ARRIVAL_RECEIPT_CHANNELS env extends the set without a code change', () => {
+    const vm = require('node:vm');
+    const sandbox = { process: { env: { NO_ARRIVAL_RECEIPT_CHANNELS: ' #PlanetCuhz , snowy_wolfies_ttv ' } } };
+    vm.createContext(sandbox);
+    vm.runInContext(receiptGateSrc + '\nthis.arrivalReceiptAllowed = arrivalReceiptAllowed;', sandbox);
+    assert.equal(sandbox.arrivalReceiptAllowed('#planetcuhz'), false);
+    assert.equal(sandbox.arrivalReceiptAllowed('#snowy_wolfies_ttv'), false);
+    assert.equal(sandbox.arrivalReceiptAllowed('#four_a_reason'), false); // hardcoded entry still there
+    assert.equal(sandbox.arrivalReceiptAllowed('#cuhz_bot'), true);
+});
+
+check('EVERY arrival receipt lookup in handleMessage goes through the gate', () => {
+    const calls = src.match(/await cuhznReceipt\(/g) || [];
+    const gated = src.match(/arrivalReceiptAllowed\(channel\) \? await cuhznReceipt\(usernameL\) : null/g) || [];
+    assert.ok(calls.length >= 2, 'expected the two arrival call sites to exist');
+    assert.equal(gated.length, calls.length,
+        'every cuhznReceipt call on the arrival path must be gated by arrivalReceiptAllowed');
+});
+
+check('the greeting line itself is NOT gated — recognition survives, only numbers go', () => {
+    // Both arrival paths still send the cuhzn line unconditionally.
+    assert.match(src, /sendMessage\(channel, `\$\{cuhznLine\}`\);/);
+    assert.match(src, /const line = cuhznLine \|\|/);
+});
+
 console.log(`\n${passed} cuhzn-greeting checks passed.`);

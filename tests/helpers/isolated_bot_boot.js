@@ -91,13 +91,64 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             // asserts the zero-require property so this line can never become a hole.
             if (name === './lounge_control') return require('../../src/lounge_control');
             if (name === './lounge_menu') return require('../../src/lounge_menu');
+            // 2026-09-26 commerce merge modules (gap found 2026-10-09 — every
+            // evaluateBotBoot suite had been failing on main since that merge).
+            // These five are PURE (zero I/O requires; stream_content pulls only
+            // safety_policy) and bot.js consumes some at module level
+            // (createTracker, createListener, COMMERCE_COMMAND_NAMES), so they
+            // load for real:
+            if (name === './safety_policy') return require('../../src/safety_policy');
+            if (name === './stream_content') return require('../../src/stream_content');
+            if (name === './commerce_content') return require('../../src/commerce_content');
+            if (name === './keyword_listener') return require('../../src/keyword_listener');
+            if (name === './streak_service') return require('../../src/streak_service');
+            // I/O-backed services: inert shapes. Methods the per-message path
+            // touches return harmless values; everything network/db-shaped
+            // stays forbidden so a test can never hit the outside world.
+            if (name === './tier_service') return Object.freeze({
+                getChannelPlan: () => null,
+                getChannelPlanAwait: async () => null,
+                init() {},
+                startPurchaseWatcher: forbid('tier_service.startPurchaseWatcher'),
+            });
+            if (name === './roster_service') return Object.freeze({
+                start: forbid('roster_service.start'),
+            });
+            if (name === './followage_service') return Object.freeze({
+                getFollowage: forbid('followage_service.getFollowage'),
+                buildReply: forbid('followage_service.buildReply'),
+            });
+            if (name === './clips_service') return Object.freeze({
+                handleClipCommand: forbid('clips_service.handleClipCommand'),
+            });
+            if (name === './raider_service') return Object.freeze({
+                getRaiderRecommendation: forbid('raider_service.getRaiderRecommendation'),
+            });
+            if (name === './twitch_edge_service') return Object.freeze({
+                getLiveStream: forbid('twitch_edge.getLiveStream'),
+                getTopClip: forbid('twitch_edge.getTopClip'),
+                getLastVOD: forbid('twitch_edge.getLastVOD'),
+                getAccountAge: forbid('twitch_edge.getAccountAge'),
+                getFollowerCount: forbid('twitch_edge.getFollowerCount'),
+                getSubEmotes: forbid('twitch_edge.getSubEmotes'),
+                getCategoryRank: forbid('twitch_edge.getCategoryRank'),
+                getChatRules: forbid('twitch_edge.getChatRules'),
+                formatUptimeDuration: () => 'offline',
+            });
             if (name === 'fs') return Object.freeze({
                 existsSync() { evidence.fileExistenceProbes++; return false; },
                 readFileSync: forbid('fs.readFileSync'),
                 writeFileSync: forbid('fs.writeFileSync'),
             });
             if (name === 'path') return path;
-            if (name === 'node:crypto') return Object.freeze({ randomUUID: forbid('randomUUID') });
+            // Both spellings: the 2026-09-26 commerce merge requires bare 'crypto'
+            // (production main had failed this harness since then — found
+            // 2026-10-09). timingSafeEqual is pure and deterministic, so the real
+            // one passes through; randomUUID stays forbidden (nondeterminism).
+            if (name === 'node:crypto' || name === 'crypto') return Object.freeze({
+                randomUUID: forbid('randomUUID'),
+                timingSafeEqual: require('node:crypto').timingSafeEqual,
+            });
             if (name === 'tmi.js') return {
                 Client: class { constructor() { forbid('Twitch client construction')(); } },
             };
