@@ -98,7 +98,11 @@ const LOUNGE_INTENT_RE = /^!(lounge|lab)(\s|$)|^!(vibe|color|zoom|card|glow)\s/;
 
 // Who may steer (declared BEFORE the constructor that reads it — TDZ). Default 'operators' = only the operator list. Set
 // LOUNGE_ACCESS=subscribers on Railway to open the safe subset to subs later.
-const LOUNGE_ACCESS = process.env.LOUNGE_ACCESS === 'subscribers' ? 'subscribers' : 'operators';
+// Owner ruling 2026-10-10 replaces 2026-09-18 operators-only: subscribers USE
+// the lounge — but only after linking their Twitch on planetcuhz.com (the
+// webAuthed layer below). Default is therefore subscribers; env can still
+// pull it back to operators-only in one Railway change.
+const LOUNGE_ACCESS = process.env.LOUNGE_ACCESS === 'operators' ? 'operators' : 'subscribers';
 const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT, access: LOUNGE_ACCESS });
 const loungeEnabled = () => process.env.LOUNGE_ENABLED !== 'false';   // kill switch; default on
 
@@ -106,6 +110,46 @@ const _loungeReplies = new Map();   // channel -> [sentAt] within the last minut
 const _loungeLogins  = new Map();   // login -> user-id, learned from tags this session (for !lab mute <login>)
 const _loungeState   = new Map();   // roomId -> { seq, bootId, json } — serialized once per change, not per poll
 let _loungeHouseJson = null;
+
+// --- Website-link gate for CHAT control (owner 2026-10-10) -----------------
+// "People who have not authenticated or are not subscribed cannot use the
+// lounge." The subscription half comes from Twitch IRC tags (authoritative).
+// This half answers "has this Twitch id signed in on planetcuhz.com?" via the
+// site's lounge-access edge function (service-role lookup; same SITE_API_*
+// pair roster/tier sync already use). Operators never need it. Fail closed:
+// no config, non-200, timeout or network error all mean "not linked", and
+// only positive answers cache long (5 min; negatives 60 s so a fresh sign-in
+// unlocks within a minute).
+const { createWebGate: _createLoungeWebGate } = require('./lounge_web_gate');
+const loungeWebGate = _createLoungeWebGate({
+    supabaseUrl: process.env.SUPABASE_URL,
+    anonKey: process.env.SUPABASE_ANON_KEY,
+    httpGet: (url, headers) => axios.get(url, { headers, timeout: 8000, validateStatus: null })
+        .then(r => ({ status: r.status, data: r.data })),
+});
+const _webLinkCache = new Map(); // twitchId -> { until, linked }
+async function isWebLinked(twitchId) {
+    const id = String(twitchId || '');
+    if (!/^\d{1,12}$/.test(id)) return false;
+    if (LOUNGE_OPERATOR_IDS.includes(id)) return true;   // operators are pre-trusted
+    if (!config.siteApiUrl || !config.siteApiSecret) return false;
+    const t = Date.now();
+    const hit = _webLinkCache.get(id);
+    if (hit && hit.until > t) return hit.linked;
+    try {
+        const res = await axios.get(`${String(config.siteApiUrl).replace(/\/+$/, '')}/lounge-access`, {
+            params: { twitch_id: id },
+            headers: { Authorization: `Bearer ${config.siteApiSecret}` },
+            timeout: 6000,
+            validateStatus: null,
+        });
+        const linked = !!(res && res.status === 200 && res.data && res.data.linked === true);
+        _webLinkCache.set(id, { until: t + (linked ? 5 * 60 * 1000 : 60 * 1000), linked });
+        return linked;
+    } catch (err) {
+        return false; // network trouble is never an approval, and never cached
+    }
+}
 
 function loungeActor(tags) {
     const badges = (tags && tags.badges) || {};
@@ -168,6 +212,7 @@ function loungeReason(r, actor) {
         case 'bad_switch':          return `${at}on or off.`;
         case 'color_operator_only': return `${at}that color is operator-only — !lounge colors`;
         case 'muted':               return `${at}you can't change the lounge right now.`;
+        case 'website_auth_required': return `${at}link your Twitch once at planetcuhz.com/auth — then your sub unlocks the lounge controls 💎`;
         case 'bad_vibe':            return `${at}vibes: chill, hype.`;
         case 'bad_color':           return `${at}!lounge colors for the list.`;
         case 'bad_zoom':            return `${at}zoom in, out or reset.`;
@@ -194,10 +239,20 @@ function handleLoungeIntent(channel, roomId, actor, message) {
     const r = loungeControl.applyIntent(roomId, actor, message);
     if (r === null) return false;
     switch (r.status) {
-        case 'status':
-            loungeSay(channel, `🛋️ Lounge: ${describeLoungeState(r.state)}`
-                + (r.role === 'viewer' && LOUNGE_ACCESS === 'subscribers' ? ' — subs steer it: !lounge vibe hype' : ''));
+        case 'status': {
+            // The summon moment (owner 2026-10-10): !lounge answers with the
+            // state, and tells THIS user exactly what their next step is —
+            // sign in, subscribe, or here's your board. Never a dead door.
+            let hint = '';
+            if (LOUNGE_ACCESS === 'subscribers') {
+                if (r.role === 'operator') hint = ' — full board is yours: !lab';
+                else if (!actor.webAuthed) hint = ' — step 1: link your Twitch at planetcuhz.com/auth, then subs steer it';
+                else if (r.role !== 'subscriber') hint = ' — you\'re linked ✓ — a cuhz_bot sub unlocks the controls';
+                else hint = ' — you\'re in cuhz: !lounge vibe hype · color mint · card 1-5 · zoom in · glow on · !lounge colors';
+            }
+            loungeSay(channel, `🛋️ Lounge: ${describeLoungeState(r.state)}${hint}`);
             return true;
+        }
         case 'colors':
             loungeSay(channel, `🎨 Colors: ${r.palettes.join(' ')} — !lounge color <name>`);
             return true;
@@ -3237,6 +3292,10 @@ async function handleMessage(channel, tags, message, self) {
     if (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')) && LOUNGE_INTENT_RE.test(msg)) {
         const roomId = String(tags['room-id']);
         const actor = loungeActor(tags);
+        // Website-link layer (owner 2026-10-10): resolved here because the
+        // state machine is pure/sync. Cached, so this is one lookup per user
+        // per 5 minutes, and operators short-circuit without any network.
+        actor.webAuthed = await isWebLinked(actor.userId);
         if (actor.login && /^\d{1,12}$/.test(String(actor.userId || ''))) {
             _loungeLogins.set(String(actor.login).toLowerCase(), String(actor.userId));
         }
@@ -3551,7 +3610,7 @@ async function handleMessage(channel, tags, message, self) {
             // Advertised only where it is live (honesty law: no doors that don't open).
             lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
                        ? (LOUNGE_ACCESS === 'subscribers'
-                           ? '🛋️ Lounge (subs): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
+                           ? '🛋️ Lounge (subs — link once at planetcuhz.com/auth): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
                            : '🛋️ Lounge: !lounge shows what is on screen · !lounge colors · !lounge whoami — steering is operator-only right now')
                        : null,
             // Advertised only where the commerce registry actually answers.
@@ -4769,12 +4828,75 @@ app.get('/api/rewards', (req, res) => {
     }
 });
 
-// THE CUHZ LAB — read-only lounge state for the OBS page (Lane K). This is the
-// ONLY lounge route and it is GET-only. Route-level CORS because the global
-// cors() above allows POST and would otherwise be inherited. Unknown, disabled
-// and non-allowlisted channels get the identical house-default payload, so the
-// route is not a channel-enumeration oracle. The JSON is serialized once per
-// state change, not per request, so a poll flood cannot starve the IRC loop.
+// LOUNGE WEB CONTROL — authenticated writes from planetcuhz.com (2026-10-10).
+// The ONLY write surface the lounge has besides Twitch chat. Identity comes
+// from the website's Supabase session, verified ONLINE per request (cached
+// 45s) by lounge_web_gate — and only the two shared controllers pass. The
+// verified intent then flows through the SAME loungeControl.applyIntent as
+// chat: identical grammar, bounds, cooldowns, lock, audit. CORS here is the
+// site only; CORS never authenticates, the gate does.
+const loungeWebCors = cors({
+    origin: ['https://planetcuhz.com', 'https://www.planetcuhz.com', 'http://localhost:5173'],
+    methods: ['POST'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+});
+const _loungeWebFloor = new Map(); // verified twitchId -> { last, stamps[] }
+app.options('/api/lounge/intent', loungeWebCors);
+app.post('/api/lounge/intent', loungeWebCors, async (req, res) => {
+    try {
+        if (!loungeEnabled()) return res.status(503).json({ ok: false, reason: 'lounge_disabled' });
+        const who = await loungeWebGate.verify(req.headers.authorization);
+        if (!who.ok) {
+            const code = who.reason === 'auth_unreachable' ? 503 : 401;
+            return res.status(code).json({ ok: false, reason: who.reason });
+        }
+        const text = typeof req.body.text === 'string' ? req.body.text.trim().slice(0, 200) : '';
+        if (!/^!(lounge|lab)\b/i.test(text)) {
+            return res.status(400).json({ ok: false, reason: 'not_a_lounge_command', actingAs: who.login });
+        }
+        const rawChannel = typeof req.body.channel === 'string' ? req.body.channel : 'cuhz_bot';
+        const login = String(sanitizeChannel(rawChannel) || '').replace(/^#/, '');
+        const roomId = LOUNGE_ROOMS[login];
+        if (!roomId) return res.status(404).json({ ok: false, reason: 'unknown_channel', actingAs: who.login });
+        // Operators skip the module's rate limiter by design, so the web door
+        // adds its own floor: 1s between accepted writes and 10 per 30s per
+        // verified id. Chat has the IRC message rate as its natural floor.
+        const nowMs = Date.now();
+        const floor = _loungeWebFloor.get(who.twitchId) || { last: 0, stamps: [] };
+        floor.stamps = floor.stamps.filter(ts => nowMs - ts < 30000);
+        if (nowMs - floor.last < 1000 || floor.stamps.length >= 10) {
+            return res.status(429).json({ ok: false, reason: 'web_floor', actingAs: who.login });
+        }
+        // broadcaster:false ALWAYS — roleOf() elevates broadcasters, and web
+        // identity must never inherit that. webAuthed is definitionally true.
+        const actor = { userId: who.twitchId, login: who.login, broadcaster: false, moderator: false, subscriber: false, webAuthed: true };
+        const result = loungeControl.applyIntent(roomId, actor, text);
+        if (result.status === 'applied') {
+            floor.last = nowMs; floor.stamps.push(nowMs);
+            _loungeWebFloor.set(who.twitchId, floor);
+            loungeStateChanged(roomId);   // invalidate the serialized GET payload
+        }
+        logger.info(`🛋️ web intent by @${who.login} (${who.twitchId}): "${text}" -> ${result.status}${result.reason ? ':' + result.reason : ''}`);
+        return res.json({
+            ok: result.status === 'applied' || result.status === 'status' || result.status === 'colors' || result.status === 'whoami',
+            status: result.status,
+            reason: result.reason || null,
+            actingAs: who.login,
+            state: loungeControl.readState(roomId),
+        });
+    } catch (err) {
+        logger.error('/api/lounge/intent failed:', err.message);
+        return res.status(500).json({ ok: false, reason: 'internal_error' });
+    }
+});
+
+// THE CUHZ LAB — read-only lounge state for the OBS page (Lane K). Besides
+// the authenticated /intent write above, everything under /api/lounge is
+// GET-only. Route-level CORS because the global cors() above allows POST and
+// would otherwise be inherited. Unknown, disabled and non-allowlisted
+// channels get the identical house-default payload, so the route is not a
+// channel-enumeration oracle. The JSON is serialized once per state change,
+// not per request, so a poll flood cannot starve the IRC loop.
 app.use('/api/lounge', (req, res, next) => {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
     res.set('Allow', 'GET');

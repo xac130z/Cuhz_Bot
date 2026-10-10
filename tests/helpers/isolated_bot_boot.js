@@ -32,6 +32,7 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
         locals: fixtures.appLocals || {},
         use() {},
         get(route, ...handlers) { evidence.routes.push({ method: 'GET', route, handlers }); },
+        options(route, ...handlers) { evidence.routes.push({ method: 'OPTIONS', route, handlers }); },
         post(route, ...handlers) { evidence.routes.push({ method: 'POST', route, handlers }); },
         listen() {
             evidence.listenRequests++;
@@ -104,6 +105,9 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             if (name === './commerce_content') return require('../../src/commerce_content');
             if (name === './keyword_listener') return require('../../src/keyword_listener');
             if (name === './streak_service') return require('../../src/streak_service');
+            // Pure (lazy node:crypto only); bot.js constructs the gate at module
+            // level with an injected axios closure that itself stays unexercised.
+            if (name === './lounge_web_gate') return require('../../src/lounge_web_gate');
             // I/O-backed services: inert shapes. Methods the per-message path
             // touches return harmless values; everything network/db-shaped
             // stays forbidden so a test can never hit the outside world.
@@ -150,6 +154,7 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             if (name === 'node:crypto' || name === 'crypto') return Object.freeze({
                 randomUUID: forbid('randomUUID'),
                 timingSafeEqual: require('node:crypto').timingSafeEqual,
+                createHash: require('node:crypto').createHash,   // pure + deterministic
             });
             if (name === 'tmi.js') return {
                 Client: class { constructor() { forbid('Twitch client construction')(); } },

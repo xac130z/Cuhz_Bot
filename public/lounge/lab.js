@@ -281,6 +281,10 @@ if(exportBtn) exportBtn.onclick=()=>{
 
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape') { closeStage(); return; }
+  // On the stream overlay (or any live-controlled view) the keyboard must be
+  // dead: a stray keypress through OBS "Interact" would silently change the
+  // broadcast look until the next real state change.
+  if(STREAM_MODE || params.get('control')==='live') return;
   // Let form controls keep their native arrow-key and number-key behavior.
   if(e.target.matches('input, select, textarea') || e.target.isContentEditable) return;
   if(e.altKey || e.ctrlKey || e.metaKey) return;

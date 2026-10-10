@@ -7,8 +7,11 @@
 // provable by grep rather than by promise, and it lets the whole thing be tested
 // without booting the bot. Do not add a require() here. Ever.
 //
-// Ownership: chat is the ONLY writer, through applyIntent(). The HTTP layer gets
-// readState() and nothing else, so there is no write path over HTTP.
+// Ownership: every write goes through applyIntent() — chat directly, and
+// (2026-10-10) the website control route in bot.js, which first verifies the
+// caller's planetcuhz.com Supabase session and then calls the SAME validator
+// with the same bounds, cooldowns and audit. The public GET layer still gets
+// readState() and nothing else.
 //
 // Access ladder (owner decision 2026-09-16):
 //   operator    Phoenix / four_a_reason / William — full range, lock, house, mute
@@ -233,15 +236,14 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
         if (!r) {
             r = {
                 seq: 0, state: { ...HOUSE }, setBy: null, setAtMs: 0,
-                // Lock-at-boot depends on who can steer at all (owner, 2026-10-10):
-                //  - subscribers mode: restart implies LOCKED — losing a lock would
-                //    re-open wide control during the exact incident it was closed for.
-                //  - operators-only mode: restart implies UNLOCKED — only the two
-                //    named ids can steer anyway, and a boot-time lock meant every
-                //    deploy left the lounge dead until a mod typed !lounge unlock
-                //    (which is exactly what happened in production). The lock stays
-                //    available as an incident brake (!lounge lock) in both modes.
-                locked: operatorsOnly ? false : true, lockedBy: null,
+                // Boots UNLOCKED in both modes (owner, 2026-10-10). The old
+                // restart-implies-locked rule left the lounge dead after every
+                // deploy until someone typed !lounge unlock — observed for
+                // weeks in production. Steering is already double-gated
+                // (operators, or sub + website link) plus per-user cooldowns
+                // and mute; !lounge lock remains a live incident brake, it
+                // just doesn't re-arm itself on restart.
+                locked: false, lockedBy: null,
                 lastApplyMs: 0, lastGlowMs: 0, lastTurboMs: 0,
                 burst: [], coolingUntilMs: 0, badge: true,
                 users: new Map(), muted: new Set(), audit: [],
@@ -311,7 +313,10 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
                 s[parsed.intent] = parsed.value; break;
             }
             case 'reset':
-                Object.assign(s, HOUSE); break;
+                // The saved house look when an operator has set one ("!lab house
+                // set confirm" promises '!lounge reset brings it back'); the
+                // factory default otherwise.
+                Object.assign(s, r.house || HOUSE); break;
             default:
                 return { status: 'rejected', reason: 'unknown_intent' };
         }
@@ -381,6 +386,15 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
         // control on their next message with no cleanup job.
         if (!isOperator && role !== 'subscriber') {
             return { status: 'rejected', reason: 'subscribers_only',
+                quiet: !throttleReply(r, actor.userId, t) };
+        }
+        // Website-link gate (owner 2026-10-10): a subscriber steers only after
+        // authenticating on planetcuhz.com. The caller resolves actor.webAuthed
+        // (chat: lounge-access lookup; web: the Supabase session gate — both
+        // fail closed). Checked AFTER the sub gate so each refusal names the
+        // user's actual next step. Operators are never web-gated.
+        if (!isOperator && actor.webAuthed !== true) {
+            return { status: 'rejected', reason: 'website_auth_required',
                 quiet: !throttleReply(r, actor.userId, t) };
         }
         if (r.muted.has(String(actor.userId))) {
@@ -521,7 +535,12 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
     }
 
     const auditOf = roomId => room(String(roomId)).audit.slice(-L.auditMax);
-    const setBadge = (roomId, on) => { room(String(roomId)).badge = !!on; };
+    const setBadge = (roomId, on) => {
+        const r = room(String(roomId));
+        r.badge = !!on;
+        r.seq += 1;   // the overlay drops payloads whose seq it has seen — a badge
+                      // toggle must count as a change or it never shows up
+    };
 
     return Object.freeze({
         applyIntent, readState, tick, mute, setHouse, auditOf, setBadge,

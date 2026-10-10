@@ -19,7 +19,9 @@ const clock = () => T;
 // Most of this file exercises the WIDER ladder (subs steer), so it opts in with
 // access:'subscribers'. The default is operators-only; see the block at the end.
 const make = (o = {}) => createLoungeControl({ now: clock, operatorIds: [PHOENIX, FOUR, OWNER], cardCount: 5, access: 'subscribers', ...o });
-const sub = (id, login = 'subby') => ({ userId: id, login, subscriber: true });
+// sub() = a subscriber who HAS linked on planetcuhz.com (webAuthed), the
+// common happy-path fixture since the 2026-10-10 website-auth layer.
+const sub = (id, login = 'subby') => ({ userId: id, login, subscriber: true, webAuthed: true });
 const viewer = (id, login = 'rando') => ({ userId: id, login });
 const op = () => ({ userId: PHOENIX, login: 'operator_a' });
 const mod = (id = '500') => ({ userId: id, login: 'modperson', moderator: true });
@@ -103,10 +105,10 @@ check('a rejected argument never mutates state', () => {
     assert.equal(after.seq, before.seq);
 });
 
-check('restart starts LOCKED — losing a lock would reopen control mid-incident', () => {
+check('restart starts UNLOCKED (owner 2026-10-10) — steering is already double-gated', () => {
     const l = make();
-    assert.equal(l.readState(ROOM).locked, true);
-    assert.equal(l.applyIntent(ROOM, sub('12'), '!lounge color mint').reason, 'locked');
+    assert.equal(l.readState(ROOM).locked, false, 'no dead !lounge unlock step after a deploy');
+    assert.equal(l.applyIntent(ROOM, sub('12'), '!lounge color mint').status, 'applied');
 });
 
 check('mods can lock and unlock but cannot paint', () => {
@@ -260,7 +262,7 @@ check('rooms are isolated — one channel cannot drive another', () => {
     l.applyIntent(ROOM, op(), '!lounge color peach');
     assert.equal(l.readState(ROOM).palette, 'peach');
     assert.equal(l.readState(other).palette, 'transparent');   // untouched room = house default
-    assert.equal(l.readState(other).locked, true);
+    assert.equal(l.readState(other).locked, false);  // fresh rooms boot unlocked (2026-10-10)
 });
 
 check('a missing or non-numeric room id writes nothing', () => {
@@ -401,10 +403,19 @@ check('operators-only boots UNLOCKED: an operator steers immediately after a res
     assert.equal(r.status, 'applied', 'first command after boot lands with no unlock');
 });
 
-check('subscribers mode still boots LOCKED: restart must not reopen wide control mid-incident', () => {
+check('the website-link gate: an UNLINKED subscriber is refused with their exact next step', () => {
     const l = make();                       // access: subscribers
-    assert.equal(l.readState(ROOM).locked, true);
-    assert.equal(l.applyIntent(ROOM, sub('36'), '!lounge color mint').reason, 'locked');
+    const unlinked = { userId: '36', login: 'paidbutunlinked', subscriber: true };
+    const r = l.applyIntent(ROOM, unlinked, '!lounge color mint');
+    assert.equal(r.status, 'rejected');
+    assert.equal(r.reason, 'website_auth_required');
+    assert.equal(l.readState(ROOM).palette, 'transparent', 'nothing moved');
+});
+
+check('the website-link gate never blocks an operator', () => {
+    const l = make();
+    const r = l.applyIntent(ROOM, { userId: PHOENIX, login: 'operator_a' }, '!lounge vibe hype');
+    assert.equal(r.status, 'applied', 'operators are pre-trusted — no web layer in their path');
 });
 
 check('operators-only: the lock is still a working incident brake (and operators pass it, as always)', () => {
