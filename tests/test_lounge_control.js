@@ -394,6 +394,30 @@ check('an unknown access value fails closed to operators-only', () => {
     assert.equal(createLoungeControl({ now: clock, access: 'subscribers' }).stats().access, 'subscribers');
 });
 
+check('operators-only boots UNLOCKED: an operator steers immediately after a restart (owner 2026-10-10)', () => {
+    const l = createLoungeControl({ now: clock, operatorIds: [OWNER], cardCount: 5 });
+    assert.equal(l.readState(ROOM).locked, false, 'no dead !lounge unlock step after a deploy');
+    const r = l.applyIntent(ROOM, { userId: OWNER, login: 'planetcuhz' }, '!lounge vibe hype');
+    assert.equal(r.status, 'applied', 'first command after boot lands with no unlock');
+});
+
+check('subscribers mode still boots LOCKED: restart must not reopen wide control mid-incident', () => {
+    const l = make();                       // access: subscribers
+    assert.equal(l.readState(ROOM).locked, true);
+    assert.equal(l.applyIntent(ROOM, sub('36'), '!lounge color mint').reason, 'locked');
+});
+
+check('operators-only: the lock is still a working incident brake (and operators pass it, as always)', () => {
+    const l = createLoungeControl({ now: clock, operatorIds: [OWNER], cardCount: 5 });
+    assert.equal(l.applyIntent(ROOM, mod('37'), '!lounge lock').status, 'applied');
+    assert.equal(l.readState(ROOM).locked, true);
+    // Existing semantics unchanged by the boot-state change: isMod includes
+    // operators, so the brake stops everyone EXCEPT the two named operators —
+    // it exists to stop the wider ladder, not the owners of the board.
+    const r = l.applyIntent(ROOM, { userId: OWNER, login: 'planetcuhz' }, '!lounge vibe hype');
+    assert.equal(r.status, 'applied', 'an operator is never locked out of their own board');
+});
+
 check('the house palette is transparent — an opaque default paints a square over the stream', () => {
     const { HOUSE } = require('../src/lounge_control');
     assert.equal(HOUSE.palette, 'transparent');

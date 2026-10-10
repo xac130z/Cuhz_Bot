@@ -79,7 +79,10 @@ const { parseLab: parseLabCommand, renderMenu: renderLabMenu } = require('./loun
 // (comma-separated for several). Non-numeric entries are dropped silently.
 // Owner decision 2026-09-18: ONLY planetcuhz and Phoenix. four_a_reason removed
 // from the base (he can be re-added through LOUNGE_OPERATOR_EXTRA_IDS in seconds).
-const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['1293717308']);
+// Phoenix CONFIRMED by owner 2026-10-06: phoenixpnyc, Twitch id 823707557
+// (never 757210754 — that is a different account). Hardcoded now that the id
+// is locked, so her control no longer waits on a Railway env var.
+const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['1293717308', '823707557']);
 const LOUNGE_OPERATOR_IDS = Object.freeze([
     ...LOUNGE_OPERATOR_BASE_IDS,
     ...String(process.env.LOUNGE_OPERATOR_EXTRA_IDS || '')
@@ -1780,10 +1783,11 @@ const CUHZNS = {
     // The live receipt (messages / watch time / points) says what there is to say.
     '731191493':  { login: 'ohthatztayy', pool: ['It\u2019s giving 2K legend energy \u2014 ohthatztayy locked in! \u{1F3AE}\u{1F3C0}'],
                     receipt: null },
-    // Phoenix is deliberately absent: phoenixnyc (757210754) vs phoenixpnyc
-    // (823707557) is still unconfirmed, and greeting the wrong account with
-    // someone's personal line is worse than a generic welcome. Same rule as
-    // LOUNGE_OPERATOR_IDS. One line to add once the owner confirms.
+    // Phoenix: account CONFIRMED by the owner 2026-10-06 as phoenixpnyc
+    // (823707557) — she is a lounge operator now (LOUNGE_OPERATOR_BASE_IDS).
+    // Still no greeting entry here on purpose: her personal line is the
+    // owner's words to write, not ours to invent. Add it under '823707557'
+    // whenever he supplies one.
 };
 
 /** The arriving user's own line, or null for everyone else. Id only. */
@@ -4553,15 +4557,50 @@ const app = express();
 const allowedOrigins = new Set([config.dashboardUrl, config.apiBase].filter(Boolean).map(url => {
     try { return new URL(url).origin; } catch (_) { return null; }
 }).filter(Boolean));
-app.use(cors({
+const dashboardCors = cors({
     origin(origin, callback) {
         if (!origin || allowedOrigins.has(origin)) return callback(null, true);
         return callback(new Error('Origin not allowed'));
     },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Authorization', 'Content-Type']
-}));
+});
+// The dashboard allowlist must NOT shadow the lounge surfaces: /api/lounge is
+// GET-only public state with its own origin:'*' CORS below, and /lounge is the
+// static overlay. Before this skip, a cross-origin lounge poll (e.g. the
+// Netlify preview) died here with a CORS error before the route-level
+// origin:'*' ever ran — observed live as "Failed to fetch / Live control
+// unavailable" on 2026-10-09.
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/lounge') || req.path.startsWith('/lounge')) return next();
+    return dashboardCors(req, res, next);
+});
 app.use(express.json({ limit: '16kb' }));
+
+// ============================================================================
+// THE LOUNGE, SERVED BY THE BOT ITSELF (2026-10-10).
+//
+// The OBS overlay used to load from a laptop-local server (127.0.0.1:8782)
+// that had to be running for the lounge to exist on stream — it wasn't, and
+// the overlay sat dead. The page is static (no secrets, noindex), so the bot
+// now serves it at /lounge: one process to keep alive instead of two, and the
+// live-control poll of /api/lounge/state becomes SAME-ORIGIN (the hosted
+// preview's "Failed to fetch" poll was a cross-origin fetch dying against the
+// CORS allowlist above — static assets bypass that allowlist entirely, and
+// the GET-only lounge API keeps its own wide-open CORS below).
+//
+// Cache policy: art PNGs are immutable-ish (hash-manifested) — a day is fine;
+// HTML/JS/CSS revalidate every time so a deploy lands on the next OBS refresh.
+app.use('/lounge', express.static(path.join(__dirname, '..', 'public', 'lounge'), {
+    fallthrough: false,
+    setHeaders(res, filePath) {
+        if (/\.png$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+        } else {
+            res.setHeader('Cache-Control', 'no-cache');
+        }
+    },
+}));
 
 function verifyDashboardRequest(req, res, next) {
     const authHeader = req.headers.authorization;

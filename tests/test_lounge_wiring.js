@@ -35,10 +35,12 @@ check('access defaults to operators-only and only LOUNGE_ACCESS=subscribers wide
     assert.match(src, /const LOUNGE_ACCESS = process\.env\.LOUNGE_ACCESS === 'subscribers' \? 'subscribers' : 'operators';/);
     assert.match(src, /createLoungeControl\(\{[^}]*access: LOUNGE_ACCESS/);
 });
-check('the base operator list is planetcuhz only (owner decision 2026-09-18)', () => {
+check('the base operator list is exactly planetcuhz + Phoenix (owner decisions 2026-09-18 / 2026-10-06)', () => {
     const m = src.match(/const LOUNGE_OPERATOR_BASE_IDS = Object\.freeze\(\[([^\]]*)\]\)/);
     const ids = m[1].split(',').map(x => x.trim().replace(/['"]/g, '')).filter(Boolean);
-    assert.deepEqual(ids, ['1293717308']);
+    // Phoenix hardcoded only AFTER the owner locked her account on 2026-10-06:
+    // phoenixpnyc = 823707557. The wrong candidate (757210754) must never land here.
+    assert.deepEqual(ids, ['1293717308', '823707557']);
 });
 check('the env operator list is ADDITIVE and numeric-filtered (env can add, never replace)', () => {
     const block = src.slice(src.indexOf('const LOUNGE_OPERATOR_IDS = Object.freeze(['),
@@ -115,7 +117,8 @@ check('enabled channel returns a v1 state payload with no-store caching', () => 
     assert.equal(r.type, 'application/json');
     assert.equal(r.json.version, 1);
     assert.match(r.json.bootId, /^\d+$/);
-    assert.equal(r.json.locked, true, 'restart implies locked (fail closed)');
+    assert.equal(r.json.locked, false,
+        'operators-only ships UNLOCKED at boot (owner 2026-10-10) — only the two named ids steer, and a boot lock left the lounge dead after every deploy');
     assert.equal(r.json.cardCount, 5);
     assert.equal(r.json.pollMs, 2000);
     for (const k of ['vibe', 'palette', 'card', 'zoom', 'glow', 'setByLogin', 'seq', 'updatedAtMs']) assert.ok(k in r.json, k);

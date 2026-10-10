@@ -43,9 +43,12 @@ check('a cuhzn is not greeted in their own channel', () => {
     assert.match(fn, /c\.login === String\(channelLogin/, 'broadcaster guard present');
 });
 
-check('Phoenix is absent until her account is confirmed (fail closed)', () => {
-    assert.doesNotMatch(block, /'757210754'|'823707557'/,
-        'neither phoenixnyc nor phoenixpnyc may be added by guess');
+check('Phoenix has NO greeting entry until the owner writes her line (account itself confirmed 2026-10-06)', () => {
+    // She is a lounge operator (see LOUNGE_OPERATOR_BASE_IDS) — but a personal
+    // arrival line is the owner's words, so the registry must not carry a
+    // Phoenix ENTRY yet. Comments may cite the id; a registry KEY may not.
+    assert.doesNotMatch(block, /'823707557':\s*\{/, 'no invented Phoenix greeting entry');
+    assert.doesNotMatch(block, /'757210754':\s*\{/, 'the wrong account must never get an entry');
 });
 
 check('the welcome path calls the registry with the numeric id from tags', () => {
