@@ -40,6 +40,8 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
     };
     const express = () => app;
     express.json = () => () => {};
+    // 2026-10-10: the bot serves public/lounge itself; static() is inert here.
+    express.static = () => (req, res, next) => (typeof next === 'function' ? next() : undefined);
     const inertServices = new Set([
         './ai_service', './mood_tracker', './context_handler', './user_memory',
         './points_service', './raffle_service', './forge_service', './loyalty',

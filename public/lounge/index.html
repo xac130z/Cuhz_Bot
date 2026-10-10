@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CUHZ • Infinity Lab</title>
+  <meta name="robots" content="noindex, nofollow">
+  <!-- Served by CUHZ Bot itself (public/lounge): the state API lives on the
+       same origin, so live control needs no ?api= param and no local server.
+       An explicit ?api= still wins (control.js checks the param first). -->
+  <script>window.CUHZ_DEFAULT_API = location.origin;</script>
+  <link rel="stylesheet" href="lab.css">
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">PLANET CUHZ × CUHZ BOT / COMMUNITY PLAYGROUND</div>
+      <h1>INFINITY <span>LAB.</span></h1>
+      <p id="intro">Five approved artworks, fifteen picture-within-picture treatments. Presets: Chill 🌙 · Hype ⚡ · Turbo 🚀 · or custom. Keys: 1 Chill · 2 Hype · 3 Turbo · ← → cycle cards.</p>
+    </div>
+    <button id="spotlight">Spotlight selected</button>
+  </header>
+
+  <section class="toolbar" aria-label="Design controls">
+    <!-- preset bar injected by lab.js -->
+    <h2>Backdrop · 10 choices</h2>
+    <div id="background" class="choices"></div>
+    <h2 style="margin-top:22px">Experiment · adjustments</h2>
+    <div id="adjustments"></div>
+    <div class="actions">
+      <button id="reset">Reset adjustments</button>
+      <label><input id="all" type="checkbox" checked> Apply changes to all <span id="scopeCount">15</span></label>
+      <button id="export">Download selected PNG</button>
+    </div>
+    <p id="status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section id="grid" aria-label="15 emote variants"></section>
+
+  <small id="artHint"></small>
+  <nav class="lounge-links" aria-label="Lounge resources">
+    <a href="?art=alpha&amp;control=live&amp;channel=cuhz_bot&amp;api=https://cuhzbot-production.up.railway.app">Follow the live Lounge (read-only)</a>
+    <a href="?art=alpha">Alpha gallery &amp; transparent exports</a>
+    <a href="https://www.twitch.tv/cuhz_bot" target="_blank" rel="noopener noreferrer">CUHZ Bot on Twitch</a>
+    <a href="https://planetcuhz.com" target="_blank" rel="noopener noreferrer">Planet CUHZ</a>
+  </nav>
+</main>
+
+<section id="stage" hidden role="dialog" aria-modal="true" aria-labelledby="stageTitle">
+  <button id="close">Back to all 15 · Esc</button>
+  <h2 id="stageTitle"></h2>
+  <canvas id="stageCanvas" width="800" height="800" aria-label="Animated preview of selected CUHZ artwork"></canvas>
+</section>
+
+<script src="art-manifest.js"></script>
+<script src="lab.js"></script>
+<script src="control.js"></script>
+</body>
+</html>

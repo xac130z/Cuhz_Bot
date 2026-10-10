@@ -1,0 +1,436 @@
+/* ─── Planet Cuhz Theme Tokens ─── */
+:root {
+  --void: #000014;
+  --space: #0A0E27;
+  --panel: #0F1730;
+  --ridge: #1B2350;
+  
+  --cyan: #00EAFF;
+  --blue: #00B8FF;
+  --purple: #B24BF3;
+  --magenta: #FF1493;
+  --gold: #FFC42A;
+  --green: #00F875;
+  
+  --text-high: #F5F8FF;
+  --text-mid: #94A3B8;
+  --text-muted: #64748B;
+  
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(0, 234, 255, 0.3);
+  --spectrum: linear-gradient(135deg, #00F875, #00B8FF, #7935FF, #C62EFF);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--void);
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(0, 248, 117, 0.07) 0%, transparent 40%),
+    radial-gradient(circle at 50% 10%, rgba(0, 184, 255, 0.10) 0%, transparent 50%),
+    radial-gradient(circle at 85% 15%, rgba(178, 75, 243, 0.08) 0%, transparent 45%);
+  color: var(--text-high);
+  font: 13px 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+main {
+  max-width: 1720px;
+  margin: 0 auto;
+  padding: 12px 20px 24px;
+}
+
+/* ── Compact Cinematic Header ── */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.eyebrow {
+  letter-spacing: 0.2em;
+  font-size: 10px;
+  font-weight: 800;
+  background: var(--spectrum);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+h1 {
+  font-size: clamp(22px, 2.5vw, 32px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: #fff;
+  text-shadow: 0 0 24px rgba(0, 234, 255, 0.3);
+  line-height: 1.1;
+}
+
+h1 span {
+  color: var(--cyan);
+}
+
+p {
+  line-height: 1.4;
+  color: var(--text-mid);
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+/* ── Broadcast-Tuned Compact Toolbar ── */
+.toolbar {
+  background: rgba(15, 23, 48, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 8px 30px rgba(0, 0, 20, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px 18px;
+  margin: 10px 0 14px;
+}
+
+h2 {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--cyan);
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Preset Bar ── */
+.preset-bar {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.preset-bar h2 {
+  color: var(--gold);
+}
+
+.preset-bar button {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 8px;
+  margin-right: 6px;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#preset-chill[aria-pressed=true] {
+  background: rgba(0, 184, 255, 0.25);
+  border-color: var(--blue);
+  color: var(--blue);
+  box-shadow: 0 0 16px rgba(0, 184, 255, 0.4);
+}
+
+#preset-hype[aria-pressed=true] {
+  background: rgba(255, 196, 42, 0.25);
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 16px rgba(255, 196, 42, 0.4);
+}
+
+#preset-turbo[aria-pressed=true] {
+  background: rgba(255, 20, 147, 0.25);
+  border-color: var(--magenta);
+  color: var(--magenta);
+  box-shadow: 0 0 16px rgba(255, 20, 147, 0.4);
+}
+
+/* ── Interactive Buttons ── */
+button {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--ridge);
+  color: var(--text-high);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+button:hover {
+  background: rgba(0, 234, 255, 0.15);
+  border-color: var(--cyan);
+  color: #fff;
+}
+
+button[aria-pressed=true] {
+  background: rgba(0, 234, 255, 0.2);
+  border-color: var(--cyan);
+  color: var(--cyan);
+  box-shadow: 0 0 12px rgba(0, 234, 255, 0.3);
+}
+
+button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+#spotlight {
+  background: linear-gradient(135deg, rgba(0, 234, 255, 0.25), rgba(178, 75, 243, 0.25));
+  border: 1px solid var(--cyan);
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 8px 18px;
+  border-radius: 10px;
+  box-shadow: 0 0 16px rgba(0, 234, 255, 0.25);
+}
+
+/* ── Backdrop Choices ── */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Adjustments Sliders ── */
+#adjustments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+#adjustments label {
+  display: grid;
+  gap: 3px;
+  width: 130px;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-mid);
+}
+
+output {
+  font-size: 10px;
+  color: var(--cyan);
+  font-family: ui-monospace, monospace;
+}
+
+input[type="range"] {
+  accent-color: var(--cyan);
+  background: var(--ridge);
+  height: 5px;
+  border-radius: 3px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+#status {
+  margin-top: 8px;
+  margin-bottom: 0;
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* ── 15-Card Screen Fit Grid (Clean 5x3 viewport fit) ── */
+#grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.card {
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card:hover {
+  transform: translateY(-2px) scale(1.02);
+  border-color: var(--hairline-strong);
+  box-shadow: 0 10px 24px rgba(0, 234, 255, 0.2);
+}
+
+.card[aria-pressed=true] {
+  border-color: var(--cyan);
+  box-shadow: 0 0 20px rgba(0, 234, 255, 0.35);
+}
+
+.card canvas {
+  width: 100%;
+  display: block;
+  aspect-ratio: 1;
+  background: var(--void);
+}
+
+.card span {
+  display: block;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text-high);
+  border-top: 1px solid var(--hairline);
+}
+
+/* ── Stage / Spotlight ── */
+#stage {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 20, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 100;
+  padding: 24px;
+  text-align: center;
+  overflow: auto;
+}
+
+#stage[hidden] {
+  display: none;
+}
+
+#stageTitle {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #fff;
+  margin-bottom: 14px;
+  text-shadow: 0 0 20px rgba(0, 234, 255, 0.4);
+}
+
+#stageCanvas {
+  display: block;
+  margin: 10px auto 20px;
+  width: min(70vh, 80vw);
+  height: min(70vh, 80vw);
+  border-radius: 18px;
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 0 50px rgba(0, 234, 255, 0.25);
+  background: var(--void);
+}
+
+#close {
+  float: right;
+}
+
+small {
+  display: block;
+  color: var(--text-muted);
+  margin-top: 14px;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ── OBS Stream Mode Overlay ── */
+/* The page background is set on `html, body` (line ~26). Clearing only the BODY
+   leaves <html> still painting --void plus its gradient, which on an OBS browser
+   source shows up as a visible lighter rectangle over the scene — a seam exactly
+   the size of the source. Both elements must be cleared. lab.js adds the class
+   to documentElement as well as body. */
+html.stream-mode,
+body.stream-mode {
+  background: transparent !important;
+  background-image: none !important;
+  margin: 0;
+  overflow: hidden;
+}
+
+body.stream-mode main {
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+}
+
+#streamCanvas {
+  display: block;
+  filter: drop-shadow(0 0 35px rgba(0, 234, 255, 0.35));
+}
+
+#stream-preset-pip {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  font: 800 12px system-ui, sans-serif;
+  color: var(--cyan);
+  background: rgba(10, 14, 39, 0.85);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 0 20px rgba(0, 234, 255, 0.3);
+  padding: 6px 14px;
+  border-radius: 10px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1200px) { #grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 900px)  { #grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px)  { #grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } header { display: block; } }
+
+/* ── Control mode (chat-driven, Lane K3) — stream chrome only ── */
+/* 13px mono floor: 11px smears under H.264 at stream bitrates. No gold here:
+   the only gold on screen is the chain in the artwork. */
+#lab-badge, #lab-signpost {
+  position: fixed; bottom: 20px; pointer-events: none;
+  font: 700 13px ui-monospace, "JetBrains Mono", Menlo, monospace;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  transition: opacity 180ms ease, color 180ms ease;
+}
+#lab-badge {
+  left: 20px; color: var(--text-high, #F4F6FF);
+  background: rgba(10, 14, 39, 0.72); border: 1px solid var(--hairline-strong, rgba(255,255,255,.14));
+  padding: 7px 14px; border-radius: 999px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+#lab-signpost { right: 20px; bottom: 52px; color: var(--cyan); opacity: 0.4; }
+#lab-signpost.is-fresh, #lab-badge.is-fresh { opacity: 1; }
+body:not(.stream-mode) #lab-badge, body:not(.stream-mode) #lab-signpost { bottom: auto; top: 12px; }
+@media (prefers-reduced-motion: reduce) { #lab-badge, #lab-signpost { transition: none; } }
+
+/* Keep controls comfortable in narrow OBS docks and on touch screens. */
+@media (max-width: 600px) {
+  main { padding: 12px; }
+  #spotlight { margin-top: 10px; }
+  button { min-height: 36px; }
+  #adjustments label { width: min(100%, 150px); }
+  #stage { padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  button, .card { transition: none; }
+  .card:hover { transform: none; }
+}
+
+.lounge-links { display:flex; justify-content:center; flex-wrap:wrap; gap:16px; margin:16px 0; }
+.lounge-links a { color:var(--cyan); line-height:1.6; }
+.lounge-links a:focus-visible { outline:2px solid var(--cyan); outline-offset:4px; }
+body.stream-mode .lounge-links { display:none; }
+#lab-connection { color:var(--text-mid); margin:8px 0; }
+body.stream-mode #lab-connection { display:none; }

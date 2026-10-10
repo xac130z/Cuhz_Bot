@@ -233,9 +233,15 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
         if (!r) {
             r = {
                 seq: 0, state: { ...HOUSE }, setBy: null, setAtMs: 0,
-                // Restart implies locked: losing a lock would re-open control
-                // during the exact incident it was closed for.
-                locked: true, lockedBy: null,
+                // Lock-at-boot depends on who can steer at all (owner, 2026-10-10):
+                //  - subscribers mode: restart implies LOCKED — losing a lock would
+                //    re-open wide control during the exact incident it was closed for.
+                //  - operators-only mode: restart implies UNLOCKED — only the two
+                //    named ids can steer anyway, and a boot-time lock meant every
+                //    deploy left the lounge dead until a mod typed !lounge unlock
+                //    (which is exactly what happened in production). The lock stays
+                //    available as an incident brake (!lounge lock) in both modes.
+                locked: operatorsOnly ? false : true, lockedBy: null,
                 lastApplyMs: 0, lastGlowMs: 0, lastTurboMs: 0,
                 burst: [], coolingUntilMs: 0, badge: true,
                 users: new Map(), muted: new Set(), audit: [],
