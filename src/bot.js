@@ -212,7 +212,9 @@ function loungeReason(r, actor) {
         case 'bad_switch':          return `${at}on or off.`;
         case 'color_operator_only': return `${at}that color is operator-only — !lounge colors`;
         case 'muted':               return `${at}you can't change the lounge right now.`;
-        case 'website_auth_required': return `${at}link your Twitch once at planetcuhz.com/auth — then your sub unlocks the lounge controls 💎`;
+        case 'website_auth_required': return `${at}get your Lounge Pass once at planetcuhz.com/lounge-pass (Twitch sign-in + terms) — then your sub steers 💎`;
+        case 'seat_taken':          return `${at}@${r.holder || 'someone'} has the wheel for ${Math.ceil((r.remainingMs || 0) / 1000)}s more — then !lounge drive`;
+        case 'seat_free':           return `${at}the wheel is already free.`;
         case 'bad_vibe':            return `${at}vibes: chill, hype.`;
         case 'bad_color':           return `${at}!lounge colors for the list.`;
         case 'bad_zoom':            return `${at}zoom in, out or reset.`;
@@ -245,10 +247,14 @@ function handleLoungeIntent(channel, roomId, actor, message) {
             // sign in, subscribe, or here's your board. Never a dead door.
             let hint = '';
             if (LOUNGE_ACCESS === 'subscribers') {
-                if (r.role === 'operator') hint = ' — full board is yours: !lab';
-                else if (!actor.webAuthed) hint = ' — step 1: link your Twitch at planetcuhz.com/auth, then subs steer it';
-                else if (r.role !== 'subscriber') hint = ' — you\'re linked ✓ — a cuhz_bot sub unlocks the controls';
-                else hint = ' — you\'re in cuhz: !lounge vibe hype · color mint · card 1-5 · zoom in · glow on · !lounge colors';
+                const d = r.state && r.state.driver;
+                const driving = d ? ` · 🏁 @${d.login} driving (${Math.max(1, Math.ceil((d.untilMs - Date.now()) / 60000))}m left)` : '';
+                if (r.role === 'operator') hint = `${driving} — full board is yours: !lab`;
+                else if (!actor.webAuthed) hint = `${driving} — step 1: Lounge Pass at planetcuhz.com/lounge-pass (Twitch sign-in + terms), then subs steer it`;
+                else if (r.role !== 'subscriber') hint = `${driving} — Lounge Pass ✓ — a cuhz_bot sub unlocks the wheel`;
+                else if (d && String(d.login || '').toLowerCase() === String(actor.login || '').toLowerCase()) hint = `${driving} — you\'re driving: vibe hype · color mint · card 1-5 · zoom in · glow on · !lounge done`;
+                else if (d) hint = `${driving} — you\'re set cuhz; wheel frees up soon, then !lounge drive`;
+                else hint = ' — you\'re set cuhz, wheel\'s free: !lounge vibe hype · color mint · card 1-5 · zoom in · glow on (first command takes the wheel, 5-min turns)';
             }
             loungeSay(channel, `🛋️ Lounge: ${describeLoungeState(r.state)}${hint}`);
             return true;
@@ -268,6 +274,8 @@ function handleLoungeIntent(channel, roomId, actor, message) {
             // setter). Only the lock, which changes nothing visible, gets a line.
             if (r.intent === 'lock')   loungeSay(channel, '🔒 Lounge locked — chat control paused.');
             if (r.intent === 'unlock') loungeSay(channel, '🔓 Lounge unlocked — subs can steer again.');
+            if (r.intent === 'drive')  loungeSay(channel, `🏁 @${actor.login} has the wheel for ${Math.round((r.seatMs || 0) / 60000)} min — !lounge vibe hype · color mint · card 1-5 · zoom in · glow on · depth 1-8 · !lounge done when you're finished`);
+            if (r.intent === 'done')   loungeSay(channel, `🏁 the wheel is free — next linked sub: !lounge drive`);
             return true;
         case 'rejected':
             if (!r.quiet) loungeSay(channel, loungeReason(r, actor));
@@ -3610,7 +3618,7 @@ async function handleMessage(channel, tags, message, self) {
             // Advertised only where it is live (honesty law: no doors that don't open).
             lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
                        ? (LOUNGE_ACCESS === 'subscribers'
-                           ? '🛋️ Lounge (subs — link once at planetcuhz.com/auth): !lounge · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
+                           ? '🛋️ Lounge (subs with a Lounge Pass — planetcuhz.com/lounge-pass): !lounge · !lounge drive (take the wheel, 5 min) · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
                            : '🛋️ Lounge: !lounge shows what is on screen · !lounge colors · !lounge whoami — steering is operator-only right now')
                        : null,
             // Advertised only where the commerce registry actually answers.

@@ -120,13 +120,16 @@ check('mods can lock and unlock but cannot paint', () => {
     assert.equal(l.applyIntent(ROOM, viewer('13'), '!lounge lock').status, 'silent');
 });
 
-check('one turn per viewer per 10s, and a 3s channel floor', () => {
+check('one turn per viewer per 10s; a second sub waits for the wheel, then the 3s floor', () => {
     const l = make();
     l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
-    assert.equal(l.applyIntent(ROOM, sub('20'), '!lounge color mint').status, 'applied');
+    assert.equal(l.applyIntent(ROOM, sub('20'), '!lounge color mint').status, 'applied');   // takes the wheel
     advance(1000);
     assert.equal(l.applyIntent(ROOM, sub('20'), '!lounge color peach').reason, 'your_turn_soon');
-    // a different sub is still inside the channel floor
+    // a different sub is blocked by the SEAT now (one driver at a time), not the floor
+    assert.equal(l.applyIntent(ROOM, sub('21'), '!lounge color peach').reason, 'seat_taken');
+    assert.equal(l.applyIntent(ROOM, sub('20'), '!lounge done').status, 'applied');          // wheel freed
+    // still inside the 3s channel floor from the mint change
     assert.equal(l.applyIntent(ROOM, sub('21'), '!lounge color peach').reason, 'channel_floor');
     advance(3000);
     assert.equal(l.applyIntent(ROOM, sub('21'), '!lounge color peach').status, 'applied');
@@ -137,8 +140,10 @@ check('asking for what is already on screen is free and silent (co-sign)', () =>
     l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
     l.applyIntent(ROOM, sub('30'), '!lounge vibe hype');
     advance(1000);
-    const r = l.applyIntent(ROOM, sub('31'), '!lounge vibe hype');
+    const r = l.applyIntent(ROOM, sub('30'), '!lounge vibe hype');
     assert.equal(r.status, 'cosigned');   // not a rejection, costs no turn
+    // a second sub without the wheel is told who's driving, not scolded about cooldowns
+    assert.equal(l.applyIntent(ROOM, sub('31'), '!lounge vibe hype').reason, 'seat_taken');
 });
 
 check('rejection replies are throttled to one per user per minute', () => {
@@ -155,9 +160,10 @@ check('rejection replies are throttled to one per user per minute', () => {
 check('a burst trips channel cooling', () => {
     const l = make({ limits: { userCooldownMs: 0, channelFloorMs: 0 } });
     l.applyIntent(ROOM, op(), '!lounge unlock');
-    for (let i = 0; i < 20; i++) { advance(10); l.applyIntent(ROOM, sub(String(100 + i)), `!lounge card ${(i % 5) + 1}`); }
+    // One driver at a time now: the burst comes from the wheel-holder (limits lifted above).
+    for (let i = 0; i < 20; i++) { advance(10); l.applyIntent(ROOM, sub('100'), `!lounge card ${(i % 5) + 1}`); }
     advance(10);
-    assert.equal(l.applyIntent(ROOM, sub('999'), '!lounge card 2').reason, 'cooling');
+    assert.equal(l.applyIntent(ROOM, sub('100'), '!lounge card 2').reason, 'cooling');
 });
 
 check('card is clamped to the real asset count, not the 15 card names', () => {
@@ -230,9 +236,66 @@ check('published state carries no user ids and no chat text', () => {
     assert.equal(json.includes('99'), false, 'user id leaked into state');
     assert.equal(json.includes('!lounge'), false, 'chat text leaked into state');
     assert.equal(s.setByLogin, 'coolcuhz');
-    assert.deepEqual(Object.keys(s).sort(), ['bootId','card','cardCount','depth','frozen','glow','locked',
+    assert.deepEqual(Object.keys(s).sort(), ['bootId','card','cardCount','depth','driver','frozen','glow','locked',
         'palette','pollMs','position','rotation','seq','setByLogin','shadow','speed','thickness','tilt',
         'updatedAtMs','version','vibe','zoom']);
+});
+
+// ---- The driver's seat (owner 2026-10-10: one person steers at a time) ----
+check('a free wheel is claimed by the first steering command — no ceremony', () => {
+    const l = make();
+    assert.equal(l.readState(ROOM).driver, null);
+    assert.equal(l.applyIntent(ROOM, sub('40', 'driverone'), '!lounge color mint').status, 'applied');
+    assert.equal(l.readState(ROOM).driver.login, 'driverone', 'first steer took the wheel');
+    turn();
+    const d = l.applyIntent(ROOM, sub('40', 'driverone'), '!lounge drive');
+    assert.equal(d.status, 'applied'); assert.equal(d.intent, 'drive', 'explicit !lounge drive still works for the holder');
+});
+
+check('while someone drives, another linked sub is told who has the wheel and for how long', () => {
+    const l = make();
+    l.applyIntent(ROOM, sub('41', 'first'), '!lounge drive'); turn();
+    const r = l.applyIntent(ROOM, sub('42', 'second'), '!lounge color mint');
+    assert.equal(r.reason, 'seat_taken'); assert.equal(r.holder, 'first');
+    assert.ok(r.remainingMs > 0 && r.remainingMs <= 5 * 60 * 1000);
+    assert.equal(l.applyIntent(ROOM, sub('42', 'second'), '!lounge drive').reason, 'seat_taken');
+});
+
+check('!lounge done frees the wheel; only the holder (or an operator) can release it', () => {
+    const l = make();
+    l.applyIntent(ROOM, sub('43', 'holder'), '!lounge drive'); turn();
+    assert.equal(l.applyIntent(ROOM, sub('44', 'other'), '!lounge done').reason, 'seat_taken');
+    assert.equal(l.applyIntent(ROOM, sub('43', 'holder'), '!lounge done').status, 'applied');
+    assert.equal(l.readState(ROOM).driver, null);
+    assert.equal(l.applyIntent(ROOM, sub('43', 'holder'), '!lounge done').reason, 'seat_free');
+    l.applyIntent(ROOM, sub('44', 'other'), '!lounge drive'); turn();
+    assert.equal(l.applyIntent(ROOM, op(), '!lounge done').status, 'applied', 'operators can clear any seat');
+});
+
+check('the turn expires on tick after seatMs and the wheel frees itself', () => {
+    const l = make();
+    l.applyIntent(ROOM, sub('45', 'timed'), '!lounge drive');
+    advance(5 * 60 * 1000 + 1);
+    const t = l.tick(ROOM);
+    assert.equal(t && t.reason, 'seat_expired');
+    assert.equal(l.readState(ROOM).driver, null);
+    assert.equal(l.applyIntent(ROOM, sub('46', 'next'), '!lounge drive').status, 'applied');
+});
+
+check('operators never need the seat, and taking it holds the wheel against subs', () => {
+    const l = make();
+    l.applyIntent(ROOM, sub('47', 'subby'), '!lounge drive'); turn();
+    assert.equal(l.applyIntent(ROOM, op(), '!lounge vibe hype').status, 'applied', 'operator steers through a held seat');
+    turn();
+    assert.equal(l.applyIntent(ROOM, op(), '!lounge drive').status, 'applied', 'operator can take the wheel');
+    turn();
+    assert.equal(l.applyIntent(ROOM, sub('47', 'subby'), '!lounge color mint').reason, 'seat_taken');
+});
+
+check('an unlinked or non-sub user cannot even take the wheel', () => {
+    const l = make();
+    assert.equal(l.applyIntent(ROOM, { userId: '48', login: 'nolink', subscriber: true }, '!lounge drive').reason, 'website_auth_required');
+    assert.equal(l.applyIntent(ROOM, viewer('49'), '!lounge drive').reason, 'subscribers_only');
 });
 
 check('the badge can be killed in one command', () => {
@@ -297,11 +360,11 @@ check('subscribers get the density controls, operators get the motion controls',
     const l = make(); l.applyIntent(ROOM, op(), '!lounge unlock'); turn();
     // density: allowed for a sub
     assert.equal(l.applyIntent(ROOM, sub('40'), '!lounge depth 8').status, 'applied'); turn();
-    assert.equal(l.applyIntent(ROOM, sub('41'), '!lounge thickness 0').status, 'applied'); turn();
+    assert.equal(l.applyIntent(ROOM, sub('40'), '!lounge thickness 0').status, 'applied'); turn();   // same driver: one wheel
     // motion: operator-only for the same reason turbo is
     for (const cmd of ['!lounge speed 100', '!lounge rotation 20', '!lounge position -20',
                        '!lounge tilt 25', '!lounge shadow on', '!lounge freeze on']) {
-        const r = l.applyIntent(ROOM, sub('42'), cmd);
+        const r = l.applyIntent(ROOM, sub('40'), cmd);
         assert.equal(r.status, 'rejected', cmd);
         assert.equal(r.reason, 'intent_operator_only', cmd);
         assert.equal(l.applyIntent(ROOM, op(), cmd).status, 'applied', `operator ${cmd}`);
