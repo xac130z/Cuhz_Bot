@@ -59,6 +59,13 @@ check('every manifest artwork file exists and its sha256 matches the shipped byt
     }
 });
 
+check('/lounge and /lounge/ both serve the page directly, and the page pins its base path (proxy-safe)', () => {
+    assert.match(botSrc, /app\.get\(\['\/lounge', '\/lounge\/'\]/, 'explicit handler for both slash forms');
+    assert.match(botSrc, /redirect: false/, 'express.static must not 301 the slash-less form (the site proxy loops on it)');
+    const html = fs.readFileSync(path.join(LOUNGE, 'index.html'), 'utf8');
+    assert.match(html, /<base href="\/lounge\/">/);
+});
+
 check('PNG caching is bounded and HTML revalidates (deploys land on the next OBS refresh)', () => {
     assert.match(botSrc, /max-age=86400/);
     assert.match(botSrc, /'no-cache'/);
