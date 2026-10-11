@@ -4902,7 +4902,16 @@ app.post('/api/lounge/intent', loungeWebCors, async (req, res) => {
             ok: result.status === 'applied' || result.status === 'status' || result.status === 'colors' || result.status === 'whoami',
             status: result.status,
             reason: result.reason || null,
+            intent: result.intent || null,
+            // Read intents carry their payloads so the site control room can
+            // render from the bot's truth, never from a hardcoded copy:
+            role: result.role || null,                       // whoami / status / colors
+            userId: result.status === 'whoami' ? result.userId : undefined,
+            palettes: result.status === 'colors' ? result.palettes : undefined,
+            holder: result.holder || null,                   // seat_taken
+            remainingMs: Number.isFinite(result.remainingMs) ? result.remainingMs : undefined,
             actingAs: who.login,
+            access: LOUNGE_ACCESS,
             state: loungeControl.readState(roomId),
         });
     } catch (err) {
