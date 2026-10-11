@@ -9,6 +9,10 @@
        same origin, so live control needs no ?api= param and no local server.
        An explicit ?api= still wins (control.js checks the param first). -->
   <script>window.CUHZ_DEFAULT_API = location.origin;</script>
+  <!-- The page is reachable as /lounge AND /lounge/ (planetcuhz.com proxies it
+       and normalizes the slash away). <base> pins every relative asset and
+       link to the mount path so both forms render identically. -->
+  <base href="/lounge/">
   <link rel="stylesheet" href="lab.css">
 </head>
 <body>

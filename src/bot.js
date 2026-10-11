@@ -4658,8 +4658,21 @@ app.use(express.json({ limit: '16kb' }));
 //
 // Cache policy: art PNGs are immutable-ish (hash-manifested) — a day is fine;
 // HTML/JS/CSS revalidate every time so a deploy lands on the next OBS refresh.
+// /lounge and /lounge/ both answer with the page directly (no 301): the
+// planetcuhz.com proxy forwards the slash-less form, and a redirect there
+// loops. The page's <base href="/lounge/"> keeps relative assets correct.
+app.get(['/lounge', '/lounge/'], (req, res) => {
+    // Read + send, not res.sendFile: Express 5's sendFile URL-encodes the
+    // path and 404s when the checkout path contains a space (local dev).
+    fs.readFile(path.join(__dirname, '..', 'public', 'lounge', 'index.html'), (err, html) => {
+        if (err) return res.status(500).type('text/plain').send('lounge page unavailable');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.type('html').send(html);
+    });
+});
 app.use('/lounge', express.static(path.join(__dirname, '..', 'public', 'lounge'), {
     fallthrough: false,
+    redirect: false,
     setHeaders(res, filePath) {
         if (/\.png$/i.test(filePath)) {
             res.setHeader('Cache-Control', 'public, max-age=86400');
