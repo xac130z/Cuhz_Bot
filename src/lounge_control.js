@@ -88,6 +88,7 @@ const LIMITS = Object.freeze({
     coSignWindowMs: 5000,       // asking for what is already live is free
     turboMaxMs: 60000,          // turbo decays to hype
     replyCooldownMs: 60000,     // at most one rejection line per user
+    seatMs: 5 * 60 * 1000,      // one driver at a time, five-minute turns (owner 2026-10-10)
     auditMax: 20,
 });
 
@@ -149,6 +150,9 @@ function parseCommand(message) {
         if (sub === 'reset') return { intent: 'reset' };
         if (sub === 'lock') return { intent: 'lock' };
         if (sub === 'unlock') return { intent: 'unlock' };
+        // The driver's seat: one person steers at a time (owner 2026-10-10).
+        if (sub === 'drive' || sub === 'seat' || sub === 'wheel') return { intent: 'drive' };
+        if (sub === 'done' || sub === 'release') return { intent: 'done' };
         intent = sub; rawValue = parts[2];
     } else if (has(ALIASES, head)) {
         intent = ALIASES[head];
@@ -247,6 +251,7 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
                 lastApplyMs: 0, lastGlowMs: 0, lastTurboMs: 0,
                 burst: [], coolingUntilMs: 0, badge: true,
                 users: new Map(), muted: new Set(), audit: [],
+                seat: null,   // { userId, login, untilMs } — the one non-operator who may steer right now
             };
             rooms.set(roomId, r);
         }
@@ -403,6 +408,48 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
         if (r.locked && !isMod) {
             return { status: 'rejected', reason: 'locked', quiet: !throttleReply(r, actor.userId, t) };
         }
+
+        // ---- The driver's seat (owner 2026-10-10: "only one person can use it
+        // at a time"). A linked subscriber takes the wheel with !lounge drive
+        // for one seatMs turn, steers, then !lounge done (or the turn expires
+        // in tick()). Operators never need the seat, but may take it to hold
+        // the wheel. Scheduling/calendar comes later; this is the live rule.
+        const seatFree = !r.seat || r.seat.untilMs <= t;
+        const holdsSeat = !seatFree && String(r.seat.userId) === String(actor.userId);
+        if (parsed.intent === 'drive') {
+            if (!seatFree && !holdsSeat && !isOperator) {
+                return { status: 'rejected', reason: 'seat_taken', holder: r.seat.login || null,
+                    remainingMs: Math.max(0, r.seat.untilMs - t), quiet: !throttleReply(r, actor.userId, t) };
+            }
+            r.seat = { userId: String(actor.userId), login: actor.login || null, untilMs: t + L.seatMs };
+            r.seq += 1;
+            record(r, { t, actor: actor.userId, login: actor.login || null, role,
+                intent: 'drive', value: null, decision: 'applied', seq: r.seq });
+            return { status: 'applied', intent: 'drive', seq: r.seq, state: readState(key), seatMs: L.seatMs };
+        }
+        if (parsed.intent === 'done') {
+            if (seatFree) return { status: 'rejected', reason: 'seat_free', quiet: !throttleReply(r, actor.userId, t) };
+            if (!holdsSeat && !isOperator) {
+                return { status: 'rejected', reason: 'seat_taken', holder: r.seat.login || null,
+                    remainingMs: Math.max(0, r.seat.untilMs - t), quiet: !throttleReply(r, actor.userId, t) };
+            }
+            r.seat = null;
+            r.seq += 1;
+            record(r, { t, actor: actor.userId, login: actor.login || null, role,
+                intent: 'done', value: null, decision: 'applied', seq: r.seq });
+            return { status: 'applied', intent: 'done', seq: r.seq, state: readState(key) };
+        }
+        // Every other write by a non-operator requires the wheel. A FREE wheel
+        // is claimed by the first steering command (no ceremony: "just type
+        // it"), so !lounge drive is the explicit form, not a prerequisite.
+        if (!isOperator) {
+            if (!seatFree && !holdsSeat) {
+                return { status: 'rejected', reason: 'seat_taken', holder: r.seat.login || null,
+                    remainingMs: Math.max(0, r.seat.untilMs - t), quiet: !throttleReply(r, actor.userId, t) };
+            }
+            if (seatFree) r.seat = { userId: String(actor.userId), login: actor.login || null, untilMs: t + L.seatMs };
+        }
+
         // Whole intents that only operators may reach at all.
         if (!isOperator && OPERATOR_ONLY_INTENTS.includes(parsed.intent)) {
             return { status: 'rejected', reason: 'intent_operator_only', intent: parsed.intent,
@@ -507,6 +554,9 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
         if (r.state.vibe === 'turbo' && r.lastTurboMs && t - r.lastTurboMs >= L.turboMaxMs) {
             r.state.vibe = 'hype'; r.seq += 1; reverted = 'turbo_decay';
         }
+        if (r.seat && r.seat.untilMs <= t) {
+            r.seat = null; r.seq += 1; reverted = 'seat_expired';
+        }
         if (r.lastApplyMs && t - r.lastApplyMs >= L.idleRevertMs) {
             const home = r.house || HOUSE;
             if (JSON.stringify(r.state) !== JSON.stringify(home)) {
@@ -530,6 +580,9 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
             position: r.state.position, speed: r.state.speed, tilt: r.state.tilt,
             locked: r.locked, cardCount: cards,
             setByLogin: r.badge ? r.setBy : null,
+            driver: (r.seat && r.seat.untilMs > now())
+                ? Object.freeze({ login: r.seat.login, untilMs: r.seat.untilMs })
+                : null,
             pollMs: 2000,
         });
     }
