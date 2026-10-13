@@ -440,14 +440,14 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
             return { status: 'applied', intent: 'done', seq: r.seq, state: readState(key) };
         }
         // Every other write by a non-operator requires the wheel. A FREE wheel
-        // is claimed by the first steering command (no ceremony: "just type
-        // it"), so !lounge drive is the explicit form, not a prerequisite.
+        // is claimed by the first accepted steering command (no ceremony:
+        // "just type it"). Check availability here, but claim only after the
+        // permission and rate gates pass so a rejected command takes no seat.
         if (!isOperator) {
             if (!seatFree && !holdsSeat) {
                 return { status: 'rejected', reason: 'seat_taken', holder: r.seat.login || null,
                     remainingMs: Math.max(0, r.seat.untilMs - t), quiet: !throttleReply(r, actor.userId, t) };
             }
-            if (seatFree) r.seat = { userId: String(actor.userId), login: actor.login || null, untilMs: t + L.seatMs };
         }
 
         // Whole intents that only operators may reach at all.
@@ -470,19 +470,22 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
         // Co-sign: asking for what is already live costs nothing and says nothing.
         // This is the commonest spam shape — everyone typing the same thing at
         // once — converted into a crowd signal instead of a wall of rejections.
-        if (isLive(r.state, parsed) && t - r.setAtMs <= L.coSignWindowMs) {
-            record(r, { t, actor: actor.userId, login: actor.login || null, role,
-                intent: parsed.intent, value: parsed.value, decision: 'cosigned' });
-            return { status: 'cosigned', intent: parsed.intent, value: parsed.value };
-        }
-
-        if (!isOperator) {
+        const cosigned = isLive(r.state, parsed) && t - r.setAtMs <= L.coSignWindowMs;
+        if (!isOperator && !cosigned) {
             const gate = limiter(r, actor.userId, parsed, t, L);
             if (gate) {
                 record(r, { t, actor: actor.userId, login: actor.login || null, role,
                     intent: parsed.intent, value: parsed.value, decision: 'rejected', reason: gate.reason });
                 return { ...gate, quiet: !throttleReply(r, actor.userId, t) };
             }
+        }
+        if (!isOperator && seatFree) {
+            r.seat = { userId: String(actor.userId), login: actor.login || null, untilMs: t + L.seatMs };
+        }
+        if (cosigned) {
+            record(r, { t, actor: actor.userId, login: actor.login || null, role,
+                intent: parsed.intent, value: parsed.value, decision: 'cosigned' });
+            return { status: 'cosigned', intent: parsed.intent, value: parsed.value };
         }
         return apply(r, key, actor, role, parsed, t);
     }

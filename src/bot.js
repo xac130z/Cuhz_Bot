@@ -8,6 +8,7 @@ const sharedChatGuard = createSharedChatGuard();
 const logger = require('./logger');
 const { calendarDiff, formatDuration, formatMinutes } = require('./duration');
 const db = require('./database');
+const { createReadinessService } = require('./readiness_service');
 const aiService = require('./ai_service');
 const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
@@ -4742,6 +4743,23 @@ app.get('/health', (req, res) => {
         status: 'ok',
         connected: client ? client.readyState() === 'OPEN' : false
     });
+});
+
+// Explicit operational readiness; legacy health routes and Railway's health
+// configuration remain unchanged. Checks are lazy, cached and single-flight.
+const readiness = createReadinessService({
+    getClient: () => shuttingDown ? null : client,
+    probeDatabase: async () => {
+        await db.ready;
+        const row = await db.prepare('SELECT 1 AS ready').get();
+        return row?.ready === 1;
+    }
+});
+app.get('/ready', async (_req, res) => {
+    let ready = false;
+    try { ready = await readiness.check(); } catch { /* public failures stay minimal */ }
+    res.set('Cache-Control', 'no-store');
+    return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready' });
 });
 
 // Rich diagnostics moved behind dashboard auth.
