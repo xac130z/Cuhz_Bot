@@ -93,12 +93,15 @@ function run() {
         assert.ok(plans.includes(exact), `!plans missing exact catalog entry: ${exact}`);
     }
     assert.match(plans, /CUHZ Bot \(one plan per Twitch channel\)/);
-    assert.match(plans, /Gold \$14\.99\/mo \(includes site Pro\)/);
+    assert.match(plans, /Gold \$14\.99\/mo/);
+    assert.match(plans, /Site membership is separate/);
+    assert.doesNotMatch(plans, /includes site Pro/i);
     assert.ok(plans.includes(PRICING_URL));
 
     assert.match(commerce.COMMERCE_COMMANDS['!community'], /free CUHZ Bot plan for one Twitch channel/);
     assert.match(commerce.COMMERCE_COMMANDS['!silver'], /Silver — \$4\.99\/mo for one CUHZ Bot plan on one Twitch channel/);
-    assert.match(commerce.COMMERCE_COMMANDS['!gold'], /Gold — \$14\.99\/mo for one CUHZ Bot plan on one Twitch channel; includes site Pro/);
+    assert.match(commerce.COMMERCE_COMMANDS['!gold'], /Gold — \$14\.99\/mo for one CUHZ Bot plan on one Twitch channel/);
+    assert.match(commerce.COMMERCE_COMMANDS['!gold'], /Site membership is sold separately; Studio image credits are not included/);
     assert.match(commerce.COMMERCE_COMMANDS['!partner'], /Partner — \$49\.99\/mo for one CUHZ Bot plan on one Twitch channel/);
     assert.strictEqual(commerce.COMMERCE_COMMANDS['!pro'], commerce.COMMERCE_COMMANDS['!membership']);
     assert.match(commerce.COMMERCE_COMMANDS['!pro'], /Free \$0 · Pro \$9\.99\/mo · Team \$24\.99\/mo/);
@@ -139,6 +142,7 @@ function run() {
     // The customer-facing dynamic help route advertises current public names,
     // not the retained !affiliate compatibility alias, and links canonical pricing.
     const botSource = fs.readFileSync(path.join(__dirname, '../src/bot.js'), 'utf8');
+    assert.doesNotMatch(botSource, /site Pro (membership )?(INCLUDED|included)/);
     const helpMatch = botSource.match(/const commerceHelp = '([^']+)'/);
     assert.ok(helpMatch, 'commerce help line must exist');
     const commerceHelp = helpMatch[1];
