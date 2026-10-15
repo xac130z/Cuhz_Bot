@@ -24,10 +24,10 @@
 // Legacy command names remain aliases for compatibility, but their replies use
 // only the current public catalog names.
 const COMMERCE_COMMANDS = Object.freeze({
-    '!plans': '💎 Live plans: Membership — Free $0, Pro $9.99/mo, Team $24.99/mo. CUHZ Bot (one plan per Twitch channel) — Community free, Silver $4.99/mo, Gold $14.99/mo (includes site Pro), Partner $49.99/mo, Architect Custom Build (quote). One-time — Founders $99, Coaching Sprint $25/session. Details and purchase guidance → https://planetcuhz.com/pricing',
+    '!plans': '💎 Live plans: Membership — Free $0, Pro $9.99/mo, Team $24.99/mo. CUHZ Bot (one plan per Twitch channel) — Community free, Silver $4.99/mo, Gold $14.99/mo, Partner $49.99/mo, Architect Custom Build (quote). Site membership is separate. One-time — Founders $99, Coaching Sprint $25/session. Details and purchase guidance → https://planetcuhz.com/pricing',
     '!community': '🤖 Community — free CUHZ Bot plan for one Twitch channel. Compare plans → https://planetcuhz.com/pricing · Start free bot onboarding → https://planetcuhz.com/bot',
     '!silver': '🥈 Silver — $4.99/mo for one CUHZ Bot plan on one Twitch channel. Compare plans and purchase → https://planetcuhz.com/pricing',
-    '!gold': '💎 Gold — $14.99/mo for one CUHZ Bot plan on one Twitch channel; includes site Pro membership. Compare plans and purchase → https://planetcuhz.com/pricing',
+    '!gold': '💎 Gold — $14.99/mo for one CUHZ Bot plan on one Twitch channel. Site membership is sold separately; Studio image credits are not included. Compare plans and purchase → https://planetcuhz.com/pricing',
     '!partner': '🛰️ Partner — $49.99/mo for one CUHZ Bot plan on one Twitch channel. Compare plans and purchase → https://planetcuhz.com/pricing',
     // Architect is QUOTE-ONLY by design — never emit a number here.
     '!architect': '🛠️ Architect Custom Build — quote only. Compare the live catalog → https://planetcuhz.com/pricing · Request an Architect quote → https://planetcuhz.com/solutions#start',

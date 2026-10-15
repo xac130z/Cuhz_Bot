@@ -8,6 +8,7 @@ const sharedChatGuard = createSharedChatGuard();
 const logger = require('./logger');
 const { calendarDiff, formatDuration, formatMinutes } = require('./duration');
 const db = require('./database');
+const { createReadinessService } = require('./readiness_service');
 const aiService = require('./ai_service');
 const moodTracker = require('./mood_tracker');
 const contextHandler = require('./context_handler');
@@ -354,7 +355,7 @@ function handleLabMenu(channel, roomId, actor, lab) {
 //
 //   Free     $0        → TIERS.BASIC    (bot, moderation, points, shoutouts)
 //   Silver   $4.99/mo  → TIERS.PRO      (socials rotation, isPP command set)
-//   Gold     $14.99/mo → TIERS.PREMIUM  (unlimited chat AI + site Pro included)
+//   Gold     $14.99/mo → TIERS.PREMIUM  (chat AI; site membership is separate)
 //   Partner  $49.99/mo → its OWN managed bot instance, not a row in this map
 //                        (own brand/name/avatar, hosted + run for them)
 //   Architect custom   → built-to-own custom bot, quoted per build
@@ -3388,7 +3389,7 @@ async function handleMessage(channel, tags, message, self) {
             free:      '🆓 Community — FREE, live NOW: CUHZ Bot in your channel · CUHZ Points (+1/msg) · !ask AI (10 pts) · shoutouts · !points !top !rewards. Start: type !bot 🚀',
             community: null, // alias of free — filled below
             silver:    '🥈 Silver — $4.99/mo: your channel upgraded — socials on auto-rotation every stream · extra commands & engagement (!followage !streamstats !gamble +more) · everything Free has. → planetcuhz.com/pricing',
-            gold:      '🥇 Gold — $14.99/mo: UNLIMITED AI in your chat (Gemini + Claude) · priority · site Pro membership INCLUDED — one sub covers chat + planetcuhz.com. → planetcuhz.com/pricing',
+            gold:      '🥇 Gold — $14.99/mo: UNLIMITED AI in your chat (Gemini + Claude) · priority · one Twitch channel. Site membership is separate; Studio image credits are not included. → planetcuhz.com/pricing',
             partner:   '🛰️ Partner — $49.99/mo: your OWN branded bot — your name, avatar & personality, built + hosted + run for you, monthly service touch, powered by VQNC Labs. 5 founding slots. Ask in the Discord 🌌',
             affiliate: null, // retired name — accepted as an arg alias of partner, filled below
             architect: '🏗️ Architect — custom quote: a bot you OWN, custom-coded — your branding, avatar & backstory, private AI on your game & rules. Ask in the Discord → planetcuhz.com/pricing',
@@ -3402,7 +3403,7 @@ async function handleMessage(channel, tags, message, self) {
             sendMessage(channel, PLAN_DETAILS[arg]);
             return;
         }
-        sendMessage(channel, '💎 CUHZ Bot plans: Free · Silver $4.99/mo · Gold $14.99/mo (unlimited AI + site Pro included) · Partner $49.99/mo (your own branded bot, run for you — 5 founding slots) · Architect custom. Details: !prices silver (or free/gold/partner/architect) → planetcuhz.com/pricing 💎');
+        sendMessage(channel, '💎 CUHZ Bot plans: Free · Silver $4.99/mo · Gold $14.99/mo (chat AI; site membership separate) · Partner $49.99/mo (your own branded bot, run for you — 5 founding slots) · Architect custom. Details: !prices silver (or free/gold/partner/architect) → planetcuhz.com/pricing 💎');
         return;
     }
 
@@ -4742,6 +4743,23 @@ app.get('/health', (req, res) => {
         status: 'ok',
         connected: client ? client.readyState() === 'OPEN' : false
     });
+});
+
+// Explicit operational readiness; legacy health routes and Railway's health
+// configuration remain unchanged. Checks are lazy, cached and single-flight.
+const readiness = createReadinessService({
+    getClient: () => shuttingDown ? null : client,
+    probeDatabase: async () => {
+        await db.ready;
+        const row = await db.prepare('SELECT 1 AS ready').get();
+        return row?.ready === 1;
+    }
+});
+app.get('/ready', async (_req, res) => {
+    let ready = false;
+    try { ready = await readiness.check(); } catch { /* public failures stay minimal */ }
+    res.set('Cache-Control', 'no-store');
+    return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready' });
 });
 
 // Rich diagnostics moved behind dashboard auth.

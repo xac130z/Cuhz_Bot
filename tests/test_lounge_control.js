@@ -252,6 +252,83 @@ check('a free wheel is claimed by the first steering command — no ceremony', (
     assert.equal(d.status, 'applied'); assert.equal(d.intent, 'drive', 'explicit !lounge drive still works for the holder');
 });
 
+check('restricted and invalid steering leave a free wheel unchanged for the next member', () => {
+    const cases = [
+        ['!lounge speed 100', 'intent_operator_only'],
+        ['!lounge rotation 10', 'intent_operator_only'],
+        ['!lounge position 10', 'intent_operator_only'],
+        ['!lounge tilt 10', 'intent_operator_only'],
+        ['!lounge shadow on', 'intent_operator_only'],
+        ['!lounge freeze on', 'intent_operator_only'],
+        ['!lounge vibe turbo', 'vibe_operator_only'],
+        ['!lounge color transparent', 'color_operator_only'],
+        ['!lounge vibe nonsense', 'bad_vibe'],
+        ['!lounge color nonsense', 'bad_color'],
+        ['!lounge depth 99', 'out_of_range'],
+    ];
+    for (const [command, reason] of cases) {
+        const l = make();
+        const before = l.readState(ROOM);
+        assert.equal(l.applyIntent(ROOM, sub('140', 'rejected'), command).reason, reason, command);
+        assert.deepEqual(l.readState(ROOM), before, `${command} must not claim or change the wheel`);
+        assert.equal(l.applyIntent(ROOM, sub('141', 'nextmember'), '!lounge color mint').status, 'applied', command);
+        assert.equal(l.readState(ROOM).driver.login, 'nextmember', command);
+    }
+});
+
+check('a channel-floor rejection leaves the free wheel for the next eligible member', () => {
+    const l = make();
+    l.applyIntent(ROOM, op(), '!lounge color mint');
+    const before = l.readState(ROOM);
+    assert.equal(l.applyIntent(ROOM, sub('142', 'tooearly'), '!lounge color peach').reason, 'channel_floor');
+    assert.deepEqual(l.readState(ROOM), before);
+    advance(3000);
+    assert.equal(l.applyIntent(ROOM, sub('143', 'nextmember'), '!lounge color peach').status, 'applied');
+    assert.equal(l.readState(ROOM).driver.login, 'nextmember');
+});
+
+check('a member cooldown does not reclaim a released wheel and block another member', () => {
+    const l = make();
+    l.applyIntent(ROOM, sub('144', 'previous'), '!lounge color mint');
+    l.applyIntent(ROOM, sub('144', 'previous'), '!lounge done');
+    advance(3000);
+    const before = l.readState(ROOM);
+    assert.equal(l.applyIntent(ROOM, sub('144', 'previous'), '!lounge color peach').reason, 'your_turn_soon');
+    assert.deepEqual(l.readState(ROOM), before);
+    assert.equal(l.applyIntent(ROOM, sub('145', 'nextmember'), '!lounge color peach').status, 'applied');
+    assert.equal(l.readState(ROOM).driver.login, 'nextmember');
+});
+
+check('a glow-floor rejection leaves the free wheel for another allowed decoration', () => {
+    const l = make();
+    l.applyIntent(ROOM, op(), '!lounge glow on');
+    advance(3000);
+    const before = l.readState(ROOM);
+    assert.equal(l.applyIntent(ROOM, sub('146', 'tooearly'), '!lounge glow off').reason, 'glow_floor');
+    assert.deepEqual(l.readState(ROOM), before);
+    assert.equal(l.applyIntent(ROOM, sub('147', 'nextmember'), '!lounge color mint').status, 'applied');
+    assert.equal(l.readState(ROOM).driver.login, 'nextmember');
+});
+
+check('a cooling rejection leaves a free wheel available when channel cooling ends', () => {
+    const l = make({ limits: { burstMax: 1 } });
+    l.applyIntent(ROOM, op(), '!lounge card 2');
+    advance(3000);
+    const before = l.readState(ROOM);
+    assert.equal(l.applyIntent(ROOM, sub('148', 'cooling'), '!lounge color peach').reason, 'cooling');
+    assert.deepEqual(l.readState(ROOM), before);
+    advance(60000);
+    assert.equal(l.applyIntent(ROOM, sub('149', 'nextmember'), '!lounge color mint').status, 'applied');
+    assert.equal(l.readState(ROOM).driver.login, 'nextmember');
+});
+
+check('an eligible co-sign still claims a free wheel without spending a rate-limited turn', () => {
+    const l = make();
+    l.applyIntent(ROOM, op(), '!lounge color mint');
+    assert.equal(l.applyIntent(ROOM, sub('150', 'cosigner'), '!lounge color mint').status, 'cosigned');
+    assert.equal(l.readState(ROOM).driver.login, 'cosigner');
+});
+
 check('while someone drives, another linked sub is told who has the wheel and for how long', () => {
     const l = make();
     l.applyIntent(ROOM, sub('41', 'first'), '!lounge drive'); turn();
