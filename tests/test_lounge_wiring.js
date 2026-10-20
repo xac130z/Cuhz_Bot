@@ -31,32 +31,23 @@ check('the BASE operator list is numeric literals only — never logins, never e
     for (const id of ids) assert.match(id, /^\d{1,12}$/, `operator "${id}" must be a numeric Twitch id`);
     assert.doesNotMatch(m[0], /process\.env/, 'the base list must not read env — the boot harness freezes it to {}');
 });
-check('access defaults to SUBSCRIBERS (owner 2026-10-10) and LOUNGE_ACCESS=operators narrows it', () => {
-    assert.match(src, /const LOUNGE_ACCESS = process\.env\.LOUNGE_ACCESS === 'operators' \? 'operators' : 'subscribers';/);
+check('legacy access is owner-only, default off and locked; V2 disables legacy dispatch', () => {
+    assert.match(src, /const LOUNGE_ACCESS = 'operators';/);
     assert.match(src, /createLoungeControl\(\{[^}]*access: LOUNGE_ACCESS/);
+    assert.match(src, /initialLocked: true/);
+    assert.match(src, /process\.env\.LOUNGE_ENABLED === 'true' && !loungeV2\.enabled/);
 });
-check('the base operator list is exactly planetcuhz + Phoenix (owner decisions 2026-09-18 / 2026-10-06)', () => {
+check('the legacy base operator list is the owner only; Phoenix is a member', () => {
     const m = src.match(/const LOUNGE_OPERATOR_BASE_IDS = Object\.freeze\(\[([^\]]*)\]\)/);
     const ids = m[1].split(',').map(x => x.trim().replace(/['"]/g, '')).filter(Boolean);
-    // Phoenix hardcoded only AFTER the owner locked her account on 2026-10-06:
-    // phoenixpnyc = 823707557. The wrong candidate (757210754) must never land here.
-    assert.deepEqual(ids, ['1293717308', '823707557']);
+    assert.deepEqual(ids, ['1293717308']);
 });
-check('the env operator list is ADDITIVE and numeric-filtered (env can add, never replace)', () => {
-    const block = src.slice(src.indexOf('const LOUNGE_OPERATOR_IDS = Object.freeze(['),
-                            src.indexOf('const LOUNGE_ROOMS'));
-    assert.match(block, /\.\.\.LOUNGE_OPERATOR_BASE_IDS/, 'base ids must always be included');
-    assert.match(block, /LOUNGE_OPERATOR_EXTRA_IDS/);
-    assert.match(block, /\/\^\\d\{1,12\}\$\//, 'env ids must be filtered to numeric');
-    // Prove the filter: run the same expression against hostile env values.
-    const parse = v => String(v || '').split(',').map(x => x.trim()).filter(x => /^\d{1,12}$/.test(x));
-    assert.deepEqual(parse('757210754'), ['757210754']);
-    assert.deepEqual(parse('757210754, 823707557'), ['757210754', '823707557']);
-    assert.deepEqual(parse('phoenixnyc'), [], 'a LOGIN must never become an operator');
-    assert.deepEqual(parse('*'), []);
-    assert.deepEqual(parse('12345678901234567890'), [], 'over-long ids rejected');
-    assert.deepEqual(parse(''), []);
-    assert.deepEqual(parse(undefined), []);
+check('environment and badge flags cannot add legacy operators or subscribers', () => {
+    assert.match(src, /const LOUNGE_OPERATOR_IDS = LOUNGE_OPERATOR_BASE_IDS;/);
+    assert.doesNotMatch(src, /LOUNGE_OPERATOR_EXTRA_IDS/);
+    const actor = src.slice(src.indexOf('function loungeActor('), src.indexOf('function loungeSay('));
+    assert.match(actor, /broadcaster: false/); assert.match(actor, /moderator: false/); assert.match(actor, /subscriber: false/);
+    assert.doesNotMatch(actor, /badges/);
 });
 check('lounge dispatch sits ABOVE the bare !vibe handler', () => {
     const lounge = src.indexOf('0.7. THE CUHZ LAB');
@@ -71,7 +62,7 @@ check('the lounge block keys on room-id from tags, not on the channel login', ()
     const code = block.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
     assert.doesNotMatch(code, /pointsService|\bdb\.|database|mutatePoints|award/);
 });
-check('one GET state route, and the ONLY write route is the gated /intent (changed on purpose 2026-10-10)', () => {
+check('legacy authenticated intent remains guarded; V2 mounts ahead of parsers and legacy routes', () => {
     const gets = (src.match(/app\.get\('\/api\/lounge\/state'/g) || []).length;
     assert.equal(gets, 1);
     // The single permitted write surface: POST /api/lounge/intent, which must
@@ -84,6 +75,12 @@ check('one GET state route, and the ONLY write route is the gated /intent (chang
     assert.match(route, /loungeControl\.applyIntent\(/, 'writes must flow through the same validator as chat');
     assert.match(route, /loungeStateChanged\(roomId\)/, 'applied writes must invalidate the serialized GET payload');
     assert.match(route, /web_floor/, 'the web door needs its own rate floor (operators skip the module limiter)');
+    const mount = src.indexOf('app.use(loungeV2.middleware)');
+    assert.ok(mount > 0 && mount < src.indexOf('const dashboardCors = cors('));
+    assert.ok(mount < src.indexOf('return dashboardCors(req, res, next)'));
+    assert.ok(mount < src.indexOf('app.use(express.json('));
+    assert.ok(mount < src.indexOf("app.use('/api/lounge'"));
+    assert.match(route, /if \(!loungeEnabled\(\)\) return res.status\(503\)/);
 });
 check('the tick clock lives inside app.listen(), not at module level', () => {
     const listenAt = src.indexOf('app.listen(config.port');
@@ -98,6 +95,7 @@ check('complete bot boots in the inert context with the lounge wired (no forbidd
     assert.deepEqual(evidence.forbiddenAttempts, []);
     assert.ok(evidence.requiredModules.includes('./lounge_control'));
     assert.ok(evidence.requiredModules.includes('./lounge_menu'));
+    assert.ok(evidence.requiredModules.includes('./lounge_v2_adapter'));
 });
 const route = evidence.routes.find(r => r.method === 'GET' && r.route === '/api/lounge/state');
 check('GET /api/lounge/state is registered with a route-level CORS layer ahead of the handler', () => {
@@ -119,15 +117,14 @@ function call(query) {
     handler({ query, method: 'GET' }, res);
     return { status, headers, type, json: JSON.parse(body) };
 }
-check('enabled channel returns a v1 state payload with no-store caching', () => {
+check('default-off legacy channel retains safe v1 OBS payload with no-store caching', () => {
     const r = call({ channel: 'cuhz_bot' });
     assert.equal(r.status, 200);
     assert.equal(r.headers['Cache-Control'], 'no-store');
     assert.equal(r.type, 'application/json');
     assert.equal(r.json.version, 1);
     assert.match(r.json.bootId, /^\d+$/);
-    assert.equal(r.json.locked, false,
-        'operators-only ships UNLOCKED at boot (owner 2026-10-10) — only the two named ids steer, and a boot lock left the lounge dead after every deploy');
+    assert.equal(r.json.locked, true, 'starts locked and read-only');
     assert.equal(r.json.cardCount, 5);
     assert.equal(r.json.pollMs, 2000);
     for (const k of ['vibe', 'palette', 'card', 'zoom', 'glow', 'setByLogin', 'seq', 'updatedAtMs']) assert.ok(k in r.json, k);

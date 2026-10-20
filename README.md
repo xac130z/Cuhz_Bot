@@ -468,3 +468,34 @@ window.
 ---
 
 *Built for the CUHZ community. 🌌*
+
+
+## Authenticated Lounge command runtime — October 20, 2026
+
+The existing Express process can now mount the reviewed Lounge server package from `vendor/cuhz-lounge`. `src/lounge_v2_adapter.js` loads it only on explicit startup, preserves raw signed EventSub requests, cookies and SSE, and never converts IRC badges into trusted control events. IRC `!lounge` provides safe guidance; the signed home-channel webhook performs authorized actions. Results are available in the signed-in private inbox at `/api/lounge/v2/chat/inbox`.
+
+All new activation flags default off. When V2 is enabled, old command aliases and the legacy website writer cannot control the old stage, including during a V2 failure. Explicit legacy mode is owner-only and starts locked. Phoenix is a member, with no operator override. Existing `/lounge` and `/lounge/` OBS pages and static assets continue to return HTTP 200. New `/stage` is a separate source; source migration is attended.
+
+### Deploy configuration and preflight
+
+Inject values privately at deploy; never commit credentials. Use the existing Supabase project and Twitch OAuth application. No migration, role, EventSub subscription, provider request or flag is created on import.
+
+- `LOUNGE_V2_ENABLED`: exact `true` to mount; absent/false stays inert.
+- `LOUNGE_PUBLIC_ORIGIN`: canonical HTTPS website origin. `LOUNGE_INGRESS_HOST` may explicitly name the Railway host used by the same-origin proxy. Forwarded host headers grant no trust.
+- `LOUNGE_DATABASE_URL`: existing Lounge/Supabase SQL database, not the bot Points database. Verified TLS is mandatory; weakening URL options are rejected. Pool size is two.
+- `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_PUBLISHABLE_KEY`: existing auth upstream.
+- `LOUNGE_AUTH_SEALING_KEY`: server-only 32-byte key, canonical 43-character base64url.
+- `LOUNGE_EVENTSUB_SECRET`: separate 32–100 character random ASCII secret for the reviewed webhook; optional `LOUNGE_EVENTSUB_SUBSCRIPTION_ID` pins that exact subscription. Callback is `/api/lounge/v2/stage/chat`. Signed challenges and durable revocations are supported; no subscription is registered automatically.
+- `LOUNGE_RULES_VERSION`: exact accepted policy version.
+- `LOUNGE_STAGE_ENABLED`, `LOUNGE_PILOT_ENABLED`, `LOUNGE_PILOT_MANAGEMENT_ENABLED`, `LOUNGE_STAGE_BRIDGE_ENABLED`: explicit booleans, with independent durable SQL flags and actor permissions. Pilot mode does not create a grant, start the two-week pilot, publish an opening or issue a booking.
+- Private artwork serving/import also requires `LOUNGE_STORAGE_BUCKET` and server-only `LOUNGE_STORAGE_SERVICE_KEY`. No public bucket is created.
+
+This host supports reviewed owner/finite-pilot stage wiring. `LOUNGE_GENERATION_CHAT_ENABLED=true` is refused until funded dollar admission/moderation is connected. `LOUNGE_SUBSCRIPTION_ENABLED=true` is refused until the existing P1 broadcaster monitor is explicitly integrated. A deployment must not turn those unfinished paths into an unlimited entitlement. No spoken voice provider is selected or started.
+
+Startup verifies the required schema/RPCs and service authority before serving authenticated traffic. Apply reviewed additive schema separately from the website repository, including `20261020010000_lounge_chat_inbox.sql` and `20261020020000_lounge_eventsub_transport.sql`, after all their predecessors. Do not point new code at an older schema. New migrations enable no roles or flags.
+
+### Verification and release gate
+
+Run `npm run test:lounge-v2` for the HTTP adapter. The existing isolated boot, Lounge control/web/wiring/hosting, readiness, Points and shared-chat suites cover the surrounding bot. `npm run check:lounge-bundle` verifies all 41 copied source/asset files against the canonical website checkout. To regenerate, use `npm run sync:lounge -- /absolute/path/to/website/application`; outside the shared workspace supply that reviewed source checkout explicitly. The bundle includes worker-thread decoder assets and pins `pngjs`7.0.0. It starts no second cloud service.
+
+Live acceptance remains separate: review the exact source/schema release; route website auth/API paths to this process while sending OBS SSE directly to Railway; bind the owner's freshly verified website identity to the approved owner role; verify signed chat, private results, stage changes, reconnect and emergency hold. Protect OBS from the shared20-client SSE pool before public exposure. Keep funded generation off until the reset/window, $8 currency ceiling, moderation and real private-output/reconciliation checks pass. Roll back by disabling V2 and redeploying the previous reviewed image; retain additive data and explicitly review whether legacy mode should resume.

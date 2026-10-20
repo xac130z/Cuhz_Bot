@@ -45,50 +45,25 @@ const keywordReplies = keywordListener.createListener({
 });
 
 // ============================================================================
-// THE CUHZ LAB — chat-controlled lounge (Lane K). Subscribers steer the lounge
-// on stream through CUHZ Bot; operators get a menu. The state machine is
+// Legacy CUHZ Lab compatibility. Explicitly enabled owner-only controls;
+// the V2 signed-event runtime below supersedes its command namespace.
+// The state machine is
 // src/lounge_control.js and the menu is src/lounge_menu.js — both PURE modules
 // with zero requires, which is what makes "this never touches points" provable.
 // This block in bot.js only: reads tags, forwards text, prints replies, serves
 // a read-only JSON route. Nothing here imports the database or points service.
 //
-// Numeric IDs only, hardcoded on purpose: the isolated boot harness freezes
-// process.env to {}, so an env-read operator list would silently become
-// "nobody" under test. A Twitch user id is public, not a secret.
-//
-// Verified against Twitch's public GQL on 2026-09-17:
-//   four_a_reason 952381011 · planetcuhz 1293717308 · cuhz_bot room 175727753
-//
-// PHOENIX IS DELIBERATELY ABSENT until the owner confirms which account is hers.
-// Two accounts exist:  phoenixnyc = 757210754 (created 2021-12, default avatar)
-//                      phoenixpnyc = 823707557 (created 2022-09) — what earlier docs assumed.
-// A wrong guess hands the remote to a stranger or locks out the real person, and
-// an id gate that fails open is worse than one that fails closed. One line to add.
+// This legacy owner list does not seed or bypass V2's durable server roles.
+// Phoenix is a member. Badges, moderator status and usernames grant no control.
 // ============================================================================
 const { createLoungeControl, HOUSE: LOUNGE_HOUSE, PALETTES: LOUNGE_PALETTES } = require('./lounge_control');
 const { parseLab: parseLabCommand, renderMenu: renderLabMenu } = require('./lounge_menu');
+const { createLoungeV2Adapter } = require('./lounge_v2_adapter');
+const loungeV2 = createLoungeV2Adapter({ env: process.env });
 
-// Base list is hardcoded for the reason the K1 spec gives: the isolated boot
-// harness freezes process.env to {}, so an env-ONLY gate silently becomes
-// "nobody" in every test run. Env is therefore ADDITIVE, never the whole list —
-// tests stay deterministic on the base while production can add an operator
-// without a code change or a redeploy of code.
-//
-// To give Phoenix control: have her type `!lounge whoami` in chat, read her
-// numeric id out of the bot's reply, then set on Railway:
-//     LOUNGE_OPERATOR_EXTRA_IDS=<her id>
-// (comma-separated for several). Non-numeric entries are dropped silently.
-// Owner decision 2026-09-18: ONLY planetcuhz and Phoenix. four_a_reason removed
-// from the base (he can be re-added through LOUNGE_OPERATOR_EXTRA_IDS in seconds).
-// Phoenix CONFIRMED by owner 2026-10-06: phoenixpnyc, Twitch id 823707557
-// (never 757210754 — that is a different account). Hardcoded now that the id
-// is locked, so her control no longer waits on a Railway env var.
-const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['1293717308', '823707557']);
-const LOUNGE_OPERATOR_IDS = Object.freeze([
-    ...LOUNGE_OPERATOR_BASE_IDS,
-    ...String(process.env.LOUNGE_OPERATOR_EXTRA_IDS || '')
-        .split(',').map(x => x.trim()).filter(x => /^\d{1,12}$/.test(x)),
-]);
+// Owner-approved legacy identity only; no environment list can add operators.
+const LOUNGE_OPERATOR_BASE_IDS = Object.freeze(['1293717308']);
+const LOUNGE_OPERATOR_IDS = LOUNGE_OPERATOR_BASE_IDS;
 // login -> room-id for the channels where the lounge is on. Identity is the
 // room-id from tags; the login is only the public URL surface of the endpoint.
 const LOUNGE_ROOMS = Object.freeze({ cuhz_bot: '175727753' });
@@ -97,27 +72,26 @@ const LOUNGE_CARD_COUNT = 5;                 // lab.js loads five artworks; the 
 const LOUNGE_REPLY_BUDGET = 4;               // lounge lines per channel per minute, then silent drops
 const LOUNGE_INTENT_RE = /^!(lounge|lab)(\s|$)|^!(vibe|color|zoom|card|glow)\s/;
 
-// Who may steer (declared BEFORE the constructor that reads it — TDZ). Default 'operators' = only the operator list. Set
-// LOUNGE_ACCESS=subscribers on Railway to open the safe subset to subs later.
-// Owner ruling 2026-10-10 replaces 2026-09-18 operators-only: subscribers USE
-// the lounge — but only after linking their Twitch on planetcuhz.com (the
-// webAuthed layer below). Default is therefore subscribers; env can still
-// pull it back to operators-only in one Railway change.
-const LOUNGE_ACCESS = process.env.LOUNGE_ACCESS === 'operators' ? 'operators' : 'subscribers';
-const loungeControl = createLoungeControl({ operatorIds: LOUNGE_OPERATOR_IDS, cardCount: LOUNGE_CARD_COUNT, access: LOUNGE_ACCESS });
-const loungeEnabled = () => process.env.LOUNGE_ENABLED !== 'false';   // kill switch; default on
+const LOUNGE_ACCESS = 'operators';
+const loungeControl = createLoungeControl({
+    operatorIds: LOUNGE_OPERATOR_IDS,
+    cardCount: LOUNGE_CARD_COUNT,
+    access: LOUNGE_ACCESS,
+    initialLocked: true
+});
+const loungeEnabled = () => process.env.LOUNGE_ENABLED === 'true' && !loungeV2.enabled;
 
 const _loungeReplies = new Map();   // channel -> [sentAt] within the last minute
 const _loungeLogins  = new Map();   // login -> user-id, learned from tags this session (for !lab mute <login>)
 const _loungeState   = new Map();   // roomId -> { seq, bootId, json } — serialized once per change, not per poll
 let _loungeHouseJson = null;
 
-// --- Website-link gate for CHAT control (owner 2026-10-10) -----------------
-// "People who have not authenticated or are not subscribed cannot use the
-// lounge." The subscription half comes from Twitch IRC tags (authoritative).
-// This half answers "has this Twitch id signed in on planetcuhz.com?" via the
+// --- Retained legacy website-link adapter ---------------------------------
+// This answers "has this Twitch id signed in on planetcuhz.com?" via the
 // site's lounge-access edge function (service-role lookup; same SITE_API_*
-// pair roster/tier sync already use). Operators never need it. Fail closed:
+// pair roster/tier sync already use). It cannot grant membership or broaden
+// the owner-only policy. V2 authenticates signed events through its own server.
+// Fail closed:
 // no config, non-200, timeout or network error all mean "not linked", and
 // only positive answers cache long (5 min; negatives 60 s so a fresh sign-in
 // unlocks within a minute).
@@ -153,14 +127,12 @@ async function isWebLinked(twitchId) {
 }
 
 function loungeActor(tags) {
-    const badges = (tags && tags.badges) || {};
     return {
         userId: tags && tags['user-id'],
         login: tags && tags.username,
-        broadcaster: Object.hasOwn(badges, 'broadcaster'),
-        moderator: !!(tags && tags.mod) || Object.hasOwn(badges, 'moderator'),
-        // Read live from tags every time; founders are subscribers too.
-        subscriber: !!(tags && tags.subscriber) || Object.hasOwn(badges, 'subscriber') || Object.hasOwn(badges, 'founder'),
+        broadcaster: false,
+        moderator: false,
+        subscriber: false,
     };
 }
 
@@ -264,19 +236,16 @@ function handleLoungeIntent(channel, roomId, actor, message) {
             loungeSay(channel, `🎨 Colors: ${r.palettes.join(' ')} — !lounge color <name>`);
             return true;
         case 'whoami':
-            // Public data (it is in every message tag), and only ever the asker's own.
-            // This is how the owner confirms an operator's real id without guessing
-            // between similar logins.
-            loungeSay(channel, `🪪 @${actor.login} — Twitch id ${r.userId} · role ${r.role}`);
+            loungeSay(channel, 'Cuhz, sign in to CUHZ Lounge to check your identity privately.');
             return true;
         case 'applied':
             loungeStateChanged(roomId);
             // Visual changes are answered by the screen itself (the badge names the
             // setter). Only the lock, which changes nothing visible, gets a line.
             if (r.intent === 'lock')   loungeSay(channel, '🔒 Lounge locked — chat control paused.');
-            if (r.intent === 'unlock') loungeSay(channel, '🔓 Lounge unlocked — subs can steer again.');
-            if (r.intent === 'drive')  loungeSay(channel, `🏁 @${actor.login} has the wheel for ${Math.round((r.seatMs || 0) / 60000)} min — !lounge vibe hype · color mint · card 1-5 · zoom in · glow on · depth 1-8 · !lounge done when you're finished`);
-            if (r.intent === 'done')   loungeSay(channel, `🏁 the wheel is free — next linked sub: !lounge drive`);
+            if (r.intent === 'unlock') loungeSay(channel, '🔓 Legacy Lounge unlocked for the owner.');
+            if (r.intent === 'drive') loungeSay(channel, `🏁 The owner has the legacy remote for ${Math.round((r.seatMs || 0) / 60000)} min.`);
+            if (r.intent === 'done') loungeSay(channel, '🏁 The owner released the legacy remote.');
             return true;
         case 'rejected':
             if (!r.quiet) loungeSay(channel, loungeReason(r, actor));
@@ -316,8 +285,7 @@ function handleLabMenu(channel, roomId, actor, lab) {
             loungeSay(channel, '🧪 House look saved — !lounge reset brings it back.');
             return true;
         case 'ops':
-            loungeSay(channel, `🧪 Access: ${LOUNGE_ACCESS} · Operators: ${LOUNGE_OPERATOR_IDS.join(' ')}`
-                + (LOUNGE_OPERATOR_IDS.length > LOUNGE_OPERATOR_BASE_IDS.length ? ' (incl. LOUNGE_OPERATOR_EXTRA_IDS)' : ''));
+            loungeSay(channel, '🧪 Legacy Lounge: owner-only controls.');
             return true;
         case 'house_show':
             loungeSay(channel, `🧪 On screen now: ${describeLoungeState(loungeControl.readState(roomId))}`);
@@ -1848,7 +1816,7 @@ const CUHZNS = {
     '731191493':  { login: 'ohthatztayy', pool: ['It\u2019s giving 2K legend energy \u2014 ohthatztayy locked in! \u{1F3AE}\u{1F3C0}'],
                     receipt: null },
     // Phoenix: account CONFIRMED by the owner 2026-10-06 as phoenixpnyc
-    // (823707557) — she is a lounge operator now (LOUNGE_OPERATOR_BASE_IDS).
+    // (823707557) — community recognition never grants operator authority.
     // Still no greeting entry here on purpose: her personal line is the
     // owner's words to write, not ours to invent. Add it under '823707557'
     // whenever he supplies one.
@@ -2774,6 +2742,7 @@ async function gracefulShutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info(`👋 ${signal} received — saving state and disconnecting...`);
+    try { await loungeV2.stop(); } catch { logger.error('Lounge shutdown unavailable.'); }
     try { saveStreamStates(); } catch (e) { logger.error(`Shutdown state save failed: ${e.message}`); }
     try { if (client) await client.disconnect(); } catch (e) { /* already down */ }
     try { if (db.pgPool) await db.pgPool.end(); } catch (e) { /* pool already closed */ }
@@ -3013,6 +2982,17 @@ async function handleMessage(channel, tags, message, self) {
     // Before context, memory, points, welcomes, commands, or any async work.
     // tmi's local `self` flag alone does not cover mirrored shared-chat echoes.
     if (!sharedChatGuard.accept(tags, self, config.username, botUserId)) return;
+
+    // IRC is a safe help surface only for V2. Actions enter through the signed
+    // EventSub HTTP route; never convert badges or IRC text into trusted events.
+    const loungeReply = loungeV2.handleIrc({ message, tags, legacyEnabled: loungeEnabled() });
+    if (loungeReply.handled) {
+        if (loungeReply.reply) loungeSay(channel, loungeReply.reply);
+        return;
+    }
+    // V2 owns all legacy Lounge aliases too, even while unavailable. Bare !vibe
+    // remains the existing community response; argument forms cannot steer Lab.
+    if (loungeV2.enabled && LOUNGE_INTENT_RE.test(message.toLowerCase())) return;
 
     // Instrumentation: every command attempt is visible in the logs.
     if (message.startsWith('!')) {
@@ -3617,7 +3597,9 @@ async function handleMessage(channel, tags, message, self) {
                        + (isPP ? ' !addstreamer !removestreamer' : ''),
             pg:        cleanChannel === 'four_a_reason' ? '🏀 Proving Grounds: !pg !top100points !top100ovrrank' : null,
             // Advertised only where it is live (honesty law: no doors that don't open).
-            lounge:    (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
+            lounge:    (loungeV2.enabled && String(tags['room-id'] || '') === '175727753')
+                       ? '🌌 CUHZ Lounge: !lounge for the website and private command inbox. Access and actions are checked on the server.'
+                       : (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')))
                        ? (LOUNGE_ACCESS === 'subscribers'
                            ? '🛋️ Lounge (subs with a Lounge Pass — planetcuhz.com/lounge-pass): !lounge · !lounge drive (take the wheel, 5 min) · vibe chill|hype · color <name> · zoom in|out|reset · card 1-5 · glow on|off · depth 1-8 · thickness 0-10 · reset · !lounge colors · !lounge whoami'
                            : '🛋️ Lounge: !lounge shows what is on screen · !lounge colors · !lounge whoami — steering is operator-only right now')
@@ -4622,6 +4604,9 @@ async function handleMessage(channel, tags, message, self) {
 // --- Express Setup ---
 const cors = require('cors');
 const app = express();
+// Must precede CORS, JSON parsing and the legacy GET-only guard: signed EventSub
+// needs its original bytes; new cookies and SSE use the configured same origin.
+app.use(loungeV2.middleware);
 const allowedOrigins = new Set([config.dashboardUrl, config.apiBase].filter(Boolean).map(url => {
     try { return new URL(url).origin; } catch (_) { return null; }
 }).filter(Boolean));
@@ -4868,9 +4853,9 @@ app.get('/api/rewards', (req, res) => {
 });
 
 // LOUNGE WEB CONTROL — authenticated writes from planetcuhz.com (2026-10-10).
-// The ONLY write surface the lounge has besides Twitch chat. Identity comes
-// from the website's Supabase session, verified ONLINE per request (cached
-// 45s) by lounge_web_gate — and only the two shared controllers pass. The
+// Legacy-only web surface; disabled whenever V2 owns the Lounge. Identity
+// comes from the website's Supabase session, verified ONLINE (cached 45s)
+// by lounge_web_gate — only the owner may control this legacy remote. The
 // verified intent then flows through the SAME loungeControl.applyIntent as
 // chat: identical grammar, bounds, cooldowns, lock, audit. CORS here is the
 // site only; CORS never authenticates, the gate does.
@@ -4976,6 +4961,9 @@ app.get('/', (req, res) => {
 
 app.listen(config.port, () => {
     logger.info(`Bot API listening on port ${config.port}`);
+    loungeV2.start().then(result => {
+        if (loungeV2.enabled) logger.info(result.started ? 'Lounge runtime started; live acceptance still required.' : `Lounge runtime unavailable (${result.code}).`);
+    }).catch(() => logger.error('Lounge runtime unavailable.'));
     // Website → bot: every 5 minutes, join any newly approved channel. Inside
     // listen() so the isolated boot harness (which forbids timers) never sees it.
     if (BOT_SYNC_URL) {

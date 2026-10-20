@@ -48,7 +48,7 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
         './points_service', './raffle_service', './forge_service', './loyalty',
         './mod_intel', './moderation_service', './stream_intel',
     ]);
-    const config = Object.freeze({ port: 0, channels: Object.freeze([]) });
+    const config = Object.freeze({ port: 0, channels: Object.freeze([]), enableGambling: fixtures.enableGambling === true });
     const logger = Object.freeze({ info() {}, warn() {}, error() {}, debug() {} });
     const processStub = Object.freeze({
         env: Object.freeze(Object.create(null)),
@@ -95,6 +95,8 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             // asserts the zero-require property so this line can never become a hole.
             if (name === './lounge_control') return require('../../src/lounge_control');
             if (name === './lounge_menu') return require('../../src/lounge_menu');
+            // Inert factory: the empty env cannot import/start the hosted runtime.
+            if (name === './lounge_v2_adapter') return require('../../src/lounge_v2_adapter');
             // 2026-09-26 commerce merge modules (gap found 2026-10-09 — every
             // evaluateBotBoot suite had been failing on main since that merge).
             // These five are PURE (zero I/O requires; stream_content pulls only
@@ -113,8 +115,8 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             // touches return harmless values; everything network/db-shaped
             // stays forbidden so a test can never hit the outside world.
             if (name === './tier_service') return Object.freeze({
-                getChannelPlan: () => null,
-                getChannelPlanAwait: async () => null,
+                getChannelPlan: () => 'community',
+                getChannelPlanAwait: async () => 'community',
                 init() {},
                 startPurchaseWatcher: forbid('tier_service.startPurchaseWatcher'),
             });
