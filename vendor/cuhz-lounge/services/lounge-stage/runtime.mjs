@@ -4,7 +4,7 @@ import { isTrustedChatEvent,parseStageChat } from './chat.mjs';
 import { publicStage,isPublicAssetHash } from './dto.mjs';
 import { createStageStreams } from './sse.mjs';
 const codeError=(code)=>Object.assign(new Error(code),{code});
-export function createStageRuntime({store,broker,enabled=false,readObject,sendPrivateReply,generationChat,timeoutMs=5000,heartbeatMs=10_000,now=Date.now}={}) {
+export function createStageRuntime({store,broker,enabled=false,readObject,sendPrivateReply,generationChat,obsAccess=null,timeoutMs=5000,heartbeatMs=10_000,now=Date.now}={}) {
   if(!store||!broker||typeof broker.authenticate!=='function'||timeoutMs<1||timeoutMs>12000)throw Error('STAGE_CONFIG_INVALID');
   let active=false,epoch=0,timer=null,polling=false;const limits=new Map();
   const bounded=async(work,code='STAGE_UNAVAILABLE')=>{let t;try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{t=setTimeout(()=>reject(codeError(code)),timeoutMs);})]);}finally{clearTimeout(t);}};
@@ -13,7 +13,8 @@ export function createStageRuntime({store,broker,enabled=false,readObject,sendPr
     const safe=publicStage(result),ending=Date.parse(safe.endsAt),until=Math.min(started+25_000,safe.mode==='live_session'&&Number.isFinite(ending)?ending:Infinity);
     if(until<=now())throw codeError('STAGE_UNAVAILABLE');
     return publicStage({...safe,freshUntil:new Date(until).toISOString()});}
-  const streams=createStageStreams({read,heartbeatMs:Math.min(heartbeatMs,10_000)});
+  if(obsAccess!==null&&typeof obsAccess?.verify!=='function')throw Error('STAGE_OBS_CONFIG_INVALID');
+  const streams=createStageStreams({read,heartbeatMs:Math.min(heartbeatMs,10_000),now});
   async function authenticate(req,mutation=false){requireActive();const run=epoch;const context=await bounded(()=>broker.authenticate(req,{mutation}),'AUTHENTICATION_UNAVAILABLE');
     if(run!==epoch||!active)throw codeError('STAGE_DISABLED');if(!isTrustedAuthContext(context))throw codeError('SIGN_IN_REQUIRED');return context;}
   async function operator(req){const run=epoch,context=await authenticate(req);if(!await bounded(()=>store.operator(context)))throw codeError('OPERATOR_REQUIRED');if(run!==epoch||!active)throw codeError('STAGE_DISABLED');return context;}
@@ -77,5 +78,7 @@ export function createStageRuntime({store,broker,enabled=false,readObject,sendPr
   async function tick(){if(polling||!active)return;const run=epoch;polling=true;try{await bounded(()=>store.tick(),'STAGE_OUTCOME_UNKNOWN');if(run!==epoch||!active)return;await bounded(()=>store.expireChat());if(run!==epoch||!active)return;streams.publish(await read());}catch{/* next poll retries a READ/reconciliation, never a member command */}finally{polling=false;}}
   function start(){if(!enabled)return {started:false};if(active)return {started:true};active=true;epoch++;timer=setInterval(tick,heartbeatMs);timer.unref?.();return {started:true};}
   function stop(){active=false;epoch++;if(timer)clearInterval(timer);timer=null;streams.stop();limits.clear();}
-  return Object.freeze({start,stop,tick,read,authenticate,operator,emergencyConsole,apply,asset,handleChat,stream:signal=>{requireActive();return streams.connect(signal);}});
+  return Object.freeze({start,stop,tick,read,authenticate,operator,emergencyConsole,apply,asset,handleChat,
+    stream:signal=>{requireActive();return streams.connect(signal);},
+    obsStream:(signal,token)=>{requireActive();if(!obsAccess)throw codeError('STAGE_OBS_DISABLED');return streams.connectObs(signal,obsAccess.verify(token));}});
 }

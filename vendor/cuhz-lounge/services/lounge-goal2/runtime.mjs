@@ -17,7 +17,7 @@ import {createStageBridgeHandler} from '../lounge-stage-bridge/http.mjs';
  * cutover. No listener, migration, secret lookup, role grant or timer on import.
  * Every runtime flag defaults false and SQL independently enforces durable flags. */
 export function createLoungeApplication({db,origin,authKey,authUpstream,requiredRulesVersion,
-  flags={},readObject,writeObject,sendPrivateReply,eventSubSecret,heartbeatMs=10_000,getGenerationConfig=()=>({enabled:false})}={}) {
+  flags={},readObject,writeObject,sendPrivateReply,eventSubSecret,obsAccess=null,heartbeatMs=10_000,getGenerationConfig=()=>({enabled:false})}={}) {
   if(!db||typeof db.query!=='function')throw Error('LOUNGE_DATABASE_REQUIRED');
   const allowed=['auth','eligibility','pilot','subscription','pilotManagement','stage','generationChat','stageBridge'];
   if(Object.entries(flags).some(([name,value])=>!allowed.includes(name)||typeof value!=='boolean'))throw Error('LOUNGE_FLAGS_INVALID');
@@ -35,7 +35,7 @@ export function createLoungeApplication({db,origin,authKey,authUpstream,required
     broker:auth,readObject,writeObject,enabled:flags.stageBridge===true});
   const stageBridgeHttp=createStageBridgeHandler({runtime:stageBridge,origin,enabled:flags.stageBridge===true});
   const stage=createStageRuntime({store:createStageStore({query,allowPilot:flags.pilot===true,allowSubscription:flags.subscription===true}),
-    broker:auth,enabled:flags.stage===true,readObject,sendPrivateReply,heartbeatMs,
+    broker:auth,enabled:flags.stage===true,readObject,sendPrivateReply,heartbeatMs,obsAccess,
     generationChat:flags.generationChat===true?event=>generationChat.handleChat(event):undefined});
   const stageHttp=createStageHandler({runtime:stage,eventSubSecret});
   async function handle(request){

@@ -1,5 +1,5 @@
 import {createStagePresenter} from './renderer-model.mjs';
-import {createStageFeed} from './renderer-feed.mjs';
+import {createStageFeed,stageStreamPath} from './renderer-feed.mjs';
 const stage=document.querySelector('#stage-scene'),slot=document.querySelector('#card-art');
 const message=document.querySelector('#stage-message'),detail=document.querySelector('#stage-detail');
 const phase=document.querySelector('#stage-phase'),member=document.querySelector('#stage-member'),steps=[...document.querySelectorAll('.stage-story li')];
@@ -35,6 +35,6 @@ const presenter=createStagePresenter({loadAsset,seenAssets:seen,onChange(state,r
  try{sessionStorage.setItem('cuhz-stage-revealed-assets',JSON.stringify(presenter.seen()));}catch{/* replay suppression still works for this page */}
 }});
 presenter.start();
-const feed=createStageFeed({createSource:()=>new EventSource('/stage/stream'),onSnapshot:snapshot=>presenter.accept(snapshot),onUnavailable:()=>presenter.connectionError()});
+const feed=createStageFeed({createSource:()=>new EventSource(stageStreamPath(window.location)),onSnapshot:snapshot=>presenter.accept(snapshot),onUnavailable:()=>presenter.connectionError()});
 feed.start();
 window.addEventListener('pagehide',()=>{feed.stop();presenter.stop();clearTimeout(revealTimer);media.removeEventListener('change',motion);},{once:true});

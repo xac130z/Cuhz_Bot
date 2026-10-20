@@ -27,6 +27,14 @@ export function hostConfig(env = {}) {
   // Existing P1 membership verification must be mounted explicitly, rather
   // than accepting a badge or stale membership row as an online check.
   if (flag(env, 'LOUNGE_SUBSCRIPTION_ENABLED')) throw Error('LOUNGE_SUBSCRIPTION_MONITOR_REQUIRED');
+  let obsKey = null;
+  if (flag(env, 'LOUNGE_OBS_RESERVED_ENABLED')) {
+    const encoded = required(env, 'LOUNGE_OBS_SIGNING_KEY');
+    if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) fail();
+    obsKey = Buffer.from(encoded, 'base64url');
+    if (obsKey.length !== 32 || obsKey.toString('base64url') !== encoded) fail();
+    if (obsKey.equals(authKey)) fail();
+  }
   const stageBridge = flag(env, 'LOUNGE_STAGE_BRIDGE_ENABLED');
   const bucket = env.LOUNGE_STORAGE_BUCKET || null;
   const storageKey = env.LOUNGE_STORAGE_SERVICE_KEY || null;
@@ -34,7 +42,7 @@ export function hostConfig(env = {}) {
   return Object.freeze({ enabled: true, origin: origin(required(env, 'LOUNGE_PUBLIC_ORIGIN')),
     supabaseUrl: origin(required(env, 'LOUNGE_SUPABASE_URL')),
     publishableKey: required(env, 'LOUNGE_SUPABASE_PUBLISHABLE_KEY'),
-    databaseUrl: env.LOUNGE_DATABASE_URL || null, authKey, eventSubSecret, subscriptionId, rulesVersion,
+    databaseUrl: env.LOUNGE_DATABASE_URL || null, authKey, obsKey, eventSubSecret, subscriptionId, rulesVersion,
     bucket, storageKey, flags: Object.freeze({ auth: true, eligibility: true,
       pilot: flag(env, 'LOUNGE_PILOT_ENABLED'), subscription: false,
       pilotManagement: flag(env, 'LOUNGE_PILOT_MANAGEMENT_ENABLED'),

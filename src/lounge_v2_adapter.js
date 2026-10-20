@@ -73,7 +73,8 @@ function createLoungeV2Adapter({ env = process.env, sendPrivateReply, fetchImpl,
     const extraHost = env.LOUNGE_INGRESS_HOST ? ingressHost(env.LOUNGE_INGRESS_HOST) : null;
     const configured = !!origin && (!env.LOUNGE_INGRESS_HOST || !!extraHost);
     const hosts = new Set([origin?.host, extraHost].filter(Boolean));
-    const publicLink = `${origin?.origin || 'https://planetcuhz.com'}/lounge`;
+    const publicLink = `${origin?.origin || 'https://planetcuhz.com'}/lounge-pass`;
+    const inboxLink = `${origin?.origin || 'https://planetcuhz.com'}/api/lounge/v2/chat/inbox`;
     let runtime = null, state = enabled ? 'not_started' : 'disabled', epoch = 0, starting = null;
     let generationEnabled = false;
     const requests = new Set();
@@ -124,7 +125,7 @@ function createLoungeV2Adapter({ env = process.env, sendPrivateReply, fetchImpl,
         if (state === 'ready') {
             reply = /^!lounge\s+create(?:\s|$)/i.test(message) && !generationEnabled
                 ? `Creation is unavailable right now, cuhz. No image request was started. Check your access and private website inbox at ${publicLink}.`
-                : `Cuhz, open ${publicLink} to sign in and check your access and stage session. Lounge command results appear in your private website inbox.`;
+                : `Cuhz, sign in and check your access at ${publicLink}. Your private website inbox: ${inboxLink}. Live control requires an active stage session.`;
         }
         return { handled: true, reply };
     }

@@ -191,6 +191,8 @@ test('IRC only supplies public help, consumes actions during outage and ignores 
     assert.match(f.adapter.handleIrc(input).reply, /unavailable/);
     await f.adapter.start();
     const reply = f.adapter.handleIrc(input); assert.equal(reply.handled, true); assert.match(reply.reply, /private website inbox/);
+    assert.ok(reply.reply.includes(`${origin}/lounge-pass`), 'help must reach the sign-in page, not the public stage');
+    assert.ok(reply.reply.includes(`${origin}/api/lounge/v2/chat/inbox`), 'private results must have a reachable link');
     assert.match(reply.reply, /Creation is unavailable/); assert.match(reply.reply, /No image request was started/);
     assert.match(f.adapter.handleIrc({ ...input, message: '!lounge status' }).reply, /stage session/);
     assert.doesNotMatch(reply.reply, /queued|success|123/);

@@ -8,14 +8,22 @@ export function createStageBridgeHandler({runtime,origin,enabled=false,timeoutMs
  const response=(body,status=200,type='application/json')=>new Response(type==='application/json'?JSON.stringify(body):body,{status,headers:{...headers,'Content-Type':type}});
  async function body(req){let timer;const reader=req.body?.getReader();if(!reader)throw Object.assign(Error(),{code:'INVALID_REQUEST'});try{return await Promise.race([(async()=>{let bytes=0,text='';const decoder=new TextDecoder('utf-8',{fatal:true});for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>4096)throw Object.assign(Error(),{code:'REQUEST_TOO_LARGE'});text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();try{return JSON.parse(text);}catch{throw Object.assign(Error(),{code:'INVALID_REQUEST'});}})(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(Error(),{code:'REQUEST_TIMEOUT'})),timeoutMs);})]);}finally{clearTimeout(timer);void reader.cancel().catch(()=>{});}}
  return async req=>{if(!enabled)return response({error:'BRIDGE_DISABLED'},503);const url=new URL(req.url),route=url.pathname.slice(base.length);let requestId;
-  if(url.origin!==origin||!(req.headers.get('origin')===origin||(req.method==='GET'&&req.headers.get('origin')===null&&req.headers.get('sec-fetch-site')==='same-origin')))return response({error:'AUTH_ORIGIN_DENIED'},403);
+  const operatorHtml=req.method==='GET'&&url.pathname===base+'/ops'&&!url.search;
+  if(operatorHtml&&/prefetch|prerender/i.test(`${req.headers.get('purpose')||''} ${req.headers.get('sec-purpose')||''}`))return response({error:'AUTH_ORIGIN_DENIED'},403);
+  const navigation=operatorHtml&&req.headers.get('origin')===null&&['none','same-origin'].includes(req.headers.get('sec-fetch-site'))
+   &&req.headers.get('sec-fetch-mode')==='navigate'&&req.headers.get('sec-fetch-dest')==='document';
+  if(url.origin!==origin||!(req.headers.get('origin')===origin||(req.method==='GET'&&req.headers.get('origin')===null&&req.headers.get('sec-fetch-site')==='same-origin')||navigation))return response({error:'AUTH_ORIGIN_DENIED'},403);
   if(!url.pathname.startsWith(base+'/')||url.search)return response({error:'NOT_FOUND'},404);
   try{
    if(req.method==='GET'){
     if(route==='/member')return response(await runtime.member(req));
     if(route==='/reviews')return response(await runtime.reviews(req));
     const match=/^\/reviews\/([a-f0-9-]{36})\/image$/.exec(route);if(match){const image=await runtime.reviewImage(req,match[1]);return response(image.bytes,200,image.contentType);}
-    if(['/ops','/console.js','/console.css'].includes(route)){const context=await runtime.authenticate(req,{operator:true});if(route==='/ops')return response(consoleHtml(context.csrfToken),200,'text/html; charset=utf-8');if(route==='/console.js')return response(consoleScript,200,'text/javascript; charset=utf-8');return response(consoleStyle,200,'text/css; charset=utf-8');}
+    if(['/ops','/console.js','/console.css'].includes(route)){
+     // Only the exact operator HTML navigation receives this normalization.
+     // Online identity and the SQL review permission remain mandatory.
+     let authRequest=req;if(navigation){const requestHeaders=new Headers(req.headers);requestHeaders.set('Origin',origin);authRequest=new Request(req,{headers:requestHeaders});}
+     const context=await runtime.authenticate(authRequest,{operator:true});if(route==='/ops')return response(consoleHtml(context.csrfToken),200,'text/html; charset=utf-8');if(route==='/console.js')return response(consoleScript,200,'text/javascript; charset=utf-8');return response(consoleStyle,200,'text/css; charset=utf-8');}
    }
    if(req.method!=='POST')return response({error:'METHOD_NOT_ALLOWED'},405);const action=routes.get(route);if(!action)return response({error:'NOT_FOUND'},404);
    if(!/^application\/json(?:\s*;|$)/i.test(req.headers.get('content-type')||''))return response({error:'INVALID_REQUEST'},400);

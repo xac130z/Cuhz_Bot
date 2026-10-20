@@ -4,6 +4,7 @@ import { createPrivateChatInbox } from '../lounge-chat-inbox/runtime.mjs';
 import { hostConfig, databaseOptions } from './config.mjs';
 import { createStoragePort } from './storage.mjs';
 import { createEventSubIngress } from './eventsub.mjs';
+import { createObsStreamAccess } from '../lounge-stage/obs-access.mjs';
 
 const unavailable = code => new Response(JSON.stringify({ error: code }), { status: 503,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -68,6 +69,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
     authUpstream: createSupabaseAuthPort({ url: config.supabaseUrl, publishableKey: config.publishableKey, fetchImpl: guardedFetch }),
     requiredRulesVersion: config.rulesVersion, flags: config.flags, ...storage,
     eventSubSecret: config.eventSubSecret, sendPrivateReply: sendPrivateReply ?? inbox.sendPrivateReply,
+    obsAccess: config.obsKey ? createObsStreamAccess({ key: config.obsKey, origin: config.origin }) : null,
     getGenerationConfig: () => ({ enabled: false }) });
   const webhook = createEventSubIngress({ secret: config.eventSubSecret, subscriptionId: config.subscriptionId,
     store: {
