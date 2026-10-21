@@ -124,7 +124,7 @@ function createLoungeV2Adapter({ env = process.env, sendPrivateReply, fetchImpl,
         let reply = `CUHZ Lounge is unavailable right now, cuhz. Check ${publicLink} for updates.`;
         if (state === 'ready') {
             reply = /^!lounge\s+create(?:\s|$)/i.test(message) && !generationEnabled
-                ? `Creation is unavailable right now, cuhz. No image request was started. Check your access and private website inbox at ${publicLink}.`
+                ? `Creation is unavailable right now, cuhz. No image request was started. Check your access at ${publicLink}. Your private website inbox: ${inboxLink}.`
                 : `Cuhz, sign in and check your access at ${publicLink}. Your private website inbox: ${inboxLink}. Live control requires an active stage session.`;
         }
         return { handled: true, reply };
