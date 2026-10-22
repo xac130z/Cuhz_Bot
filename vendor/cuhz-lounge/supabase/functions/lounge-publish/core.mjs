@@ -1,3 +1,5 @@
+import { verifiedTwitchIdentity } from '../../../services/lounge-membership/identity.mjs';
+
 /** Publish inputs are identifiers only. URLs, channels and owners are never client authority. */
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const CHANNEL = /^\d{1,12}$/;
@@ -8,9 +10,10 @@ export class PublishError extends Error {
 }
 export function verifiedChannel(user) {
   if (!UUID.test(user?.id || '')) return null;
-  const identity = (user.identities || []).find(value => value.provider === 'twitch');
-  const id = typeof identity?.identity_data?.sub === 'string' ? identity.identity_data.sub : '';
-  return CHANNEL.test(id) && identity?.id === id ? id : null;
+  const principal = verifiedTwitchIdentity(user);
+  // Keep the legacy registry's channel bound while sharing immutable identity
+  // validation with the broker. A Supabase identity-row UUID is not a Twitch ID.
+  return principal && CHANNEL.test(principal.twitchId) ? principal.twitchId : null;
 }
 export async function readCommand(req) {
   const announced = req.headers.get('content-length');

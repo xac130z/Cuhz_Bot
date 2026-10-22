@@ -46,6 +46,7 @@ export function hostConfig(env = {}) {
     bucket, storageKey, flags: Object.freeze({ auth: true, eligibility: true,
       pilot: flag(env, 'LOUNGE_PILOT_ENABLED'), subscription: false,
       pilotManagement: flag(env, 'LOUNGE_PILOT_MANAGEMENT_ENABLED'),
+      booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),
       stage: flag(env, 'LOUNGE_STAGE_ENABLED'), stageBridge, generationChat: false }) });
 }
 

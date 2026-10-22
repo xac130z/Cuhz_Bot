@@ -98,6 +98,8 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           to_regclass('public.lounge_members') is not null as members_ready,
           to_regclass('public.lounge_chat_inbox') is not null as inbox_ready,
           to_regclass('public.lounge_eventsub_revocations') is not null as eventsub_ready,
+          to_regclass('public.lounge_booking_publications') is not null
+            and to_regprocedure('public.lounge_booking_transport(uuid,integer,timestamp with time zone,text,jsonb,boolean,boolean)') is not null as booking_ready,
           to_regprocedure('public.lounge_chat_inbox_send(text,text,text)') is not null
             and to_regprocedure('public.lounge_chat_inbox_read(uuid,integer,uuid,text)') is not null
             and to_regprocedure('public.lounge_chat_inbox_cleanup(integer)') is not null as inbox_rpc_ready,
@@ -107,6 +109,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           from pg_roles r where r.rolname=current_user`);
         const row = result.rows?.[0];
         if (!row || !['privileged', 'isolation_ok', 'auth_ready', 'stage_ready', 'members_ready', 'inbox_ready', 'eventsub_ready', 'inbox_rpc_ready', 'stage_rpc_ready'].every(key => row[key] === true)) throw Error('LOUNGE_SCHEMA_REVIEW_REQUIRED');
+        if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (stopped || turn !== epoch) return { started: false };
         app.start(); running = true;
         timer = schedule(() => {

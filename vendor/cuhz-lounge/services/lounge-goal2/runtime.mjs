@@ -12,6 +12,8 @@ import {createGenerationChatHandler} from '../lounge-generation-chat/http.mjs';
 import {createStageBridgeStore} from '../lounge-stage-bridge/store.mjs';
 import {createStageBridgeRuntime} from '../lounge-stage-bridge/runtime.mjs';
 import {createStageBridgeHandler} from '../lounge-stage-bridge/http.mjs';
+import {createBookingHandler} from '../lounge-booking/http.mjs';
+import {createBookingTransportStore} from '../lounge-booking/transport-store.mjs';
 
 /** Mountable in the existing bot only after the separately reviewed same-origin
  * cutover. No listener, migration, secret lookup, role grant or timer on import.
@@ -19,7 +21,7 @@ import {createStageBridgeHandler} from '../lounge-stage-bridge/http.mjs';
 export function createLoungeApplication({db,origin,authKey,authUpstream,requiredRulesVersion,
   flags={},readObject,writeObject,sendPrivateReply,eventSubSecret,obsAccess=null,heartbeatMs=10_000,getGenerationConfig=()=>({enabled:false})}={}) {
   if(!db||typeof db.query!=='function')throw Error('LOUNGE_DATABASE_REQUIRED');
-  const allowed=['auth','eligibility','pilot','subscription','pilotManagement','stage','generationChat','stageBridge'];
+  const allowed=['auth','eligibility','pilot','subscription','pilotManagement','stage','generationChat','stageBridge','booking'];
   if(Object.entries(flags).some(([name,value])=>!allowed.includes(name)||typeof value!=='boolean'))throw Error('LOUNGE_FLAGS_INVALID');
   const query=(sql,args)=>db.query(sql,args);
   const auth=createLoungeAuthBroker({origin,key:authKey,store:createAuthStore({query}),upstream:authUpstream,enabled:flags.auth===true});
@@ -28,6 +30,9 @@ export function createLoungeApplication({db,origin,authKey,authUpstream,required
     pilotEnabled:flags.pilot===true,subscriptionEnabled:flags.subscription===true,managementEnabled:flags.pilotManagement===true});
   const eligibilityHttp=createLoungeEligibilityHandler({broker:auth,store:eligibilityStore,service:eligibility,
     origin,requiredRulesVersion,enabled:flags.eligibility===true});
+  const booking=createBookingHandler({broker:auth,origin,enabled:flags.booking===true,
+    store:createBookingTransportStore({query,requiredRulesVersion,
+      allowPilot:flags.pilot===true,allowSubscription:flags.subscription===true})});
   const generationChat=createGenerationChatRuntime({store:createGenerationChatStore({query}),
     getConfig:getGenerationConfig,sendPrivateReply,enabled:flags.generationChat===true});
   const generationChatHttp=createGenerationChatHandler({broker:auth,runtime:generationChat,origin,enabled:flags.generationChat===true});
@@ -42,11 +47,12 @@ export function createLoungeApplication({db,origin,authKey,authUpstream,required
     const path=new URL(request.url).pathname;
     if(path.startsWith('/api/lounge/auth/'))return auth.handle(request);
     if(path==='/api/lounge/v2/eligibility'||path.startsWith('/api/lounge/v2/eligibility/'))return eligibilityHttp.handle(request);
+    if(path==='/api/lounge/v2/bookings'||path==='/api/lounge/v2/bookings/openings/publish')return booking.handle(request);
     if(path==='/api/lounge/v2/generation-chat/prepare')return generationChatHttp.handle(request);
     if(path==='/api/lounge/v2/stage-bridge'||path.startsWith('/api/lounge/v2/stage-bridge/'))return stageBridgeHttp(request);
     if(path==='/stage'||path.startsWith('/stage/')||path==='/api/lounge/v2/stage'||path.startsWith('/api/lounge/v2/stage/'))return stageHttp(request);
     return new Response(JSON.stringify({error:'NOT_FOUND'}),{status:404,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
   }
-  return Object.freeze({handle,start:()=>{generationChat.start();return stage.start();},
-    stop:()=>{stage.stop();generationChat.stop();return stageBridge.stop();},auth,eligibility,stage,generationChat,stageBridge});
+  return Object.freeze({handle,start:()=>{booking.start();generationChat.start();return stage.start();},
+    stop:()=>{booking.stop();stage.stop();generationChat.stop();return stageBridge.stop();},auth,eligibility,booking,stage,generationChat,stageBridge});
 }
