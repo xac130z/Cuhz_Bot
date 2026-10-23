@@ -1,0 +1,5 @@
+.ops #confirm-action{width:24px;height:24px;min-height:24px;flex:0 0 24px;accent-color:var(--cyan);padding:0}
+.ops label:has(#confirm-action){display:flex;align-items:flex-start;gap:var(--sp-3)}
+.ops #opening{width:100%}
+.ops #opening-detail,.ops #policy{color:var(--text-mid)}
+.ops #withdraw{border-color:var(--error)}

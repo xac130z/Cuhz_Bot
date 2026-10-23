@@ -15,7 +15,7 @@
     "lint": "eslint src/**/*.js",
     "sync:lounge": "node scripts/sync-lounge-runtime.mjs",
     "check:lounge-bundle": "node scripts/sync-lounge-runtime.mjs --check",
-    "test:lounge-v2": "node --test tests/test_lounge_v2_adapter.js"
+    "test:lounge-v2": "node --test tests/test_lounge_v2_adapter.js tests/test_lounge_legacy_mirror.js"
   },
   "keywords": [],
   "author": "",

@@ -19,6 +19,8 @@ async function fixture(t, { runtime = defaultRuntime(), env = baseEnv, adapterOp
     app.use(adapter.middleware);
     app.use(express.json());
     app.get('/api/lounge/state', (_req, res) => res.json({ legacy: true }));
+    app.get(['/lounge', '/lounge/'], (_req, res) => res.send('legacy OBS'));
+    app.get('/lounge/scene.js', (_req, res) => res.send('legacy asset'));
     app.use('/api/lounge', (_req, res) => res.status(405).json({ legacyGuard: true }));
     app.get('/health', (_req, res) => res.json({ ok: true }));
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -41,8 +43,25 @@ test('default off imports nothing and preserves old OBS GET and unrelated health
     assert.equal(f.loads(), 0);
     assert.equal((await f.request()).status, 503);
     assert.equal((await f.request({ path: '/stage' })).status, 503);
+    assert.equal((await f.request({ path: '/lounge/delivery' })).status, 503);
     assert.deepEqual(JSON.parse((await f.request({ path: '/api/lounge/state' })).body), { legacy: true });
     assert.equal((await f.request({ path: '/health' })).status, 200);
+});
+
+test('exact private delivery page reaches V2 without taking over existing Lounge OBS paths', async t => {
+    const seen = [];
+    const f = await fixture(t, { runtime: defaultRuntime({ handle: async request => {
+        seen.push(new URL(request.url).pathname);
+        return new Response('<main>Private delivery</main>', { headers: { 'Content-Type': 'text/html' } });
+    } }) });
+    await f.adapter.start();
+    const page = await f.request({ path: '/lounge/delivery' });
+    assert.equal(page.status, 200);
+    assert.match(page.headers['content-type'], /text\/html/);
+    assert.equal(page.body, '<main>Private delivery</main>');
+    for (const path of ['/lounge', '/lounge/']) assert.equal((await f.request({ path })).body, 'legacy OBS');
+    assert.equal((await f.request({ path: '/lounge/scene.js' })).body, 'legacy asset');
+    assert.deepEqual(seen, ['/lounge/delivery']);
 });
 
 test('invalid config and loader failure return sanitized unavailable without legacy fallthrough', async t => {
@@ -194,7 +213,7 @@ test('IRC only supplies public help, consumes actions during outage and ignores 
     assert.ok(reply.reply.includes(`${origin}/lounge-pass`), 'help must reach the sign-in page, not the public stage');
     assert.ok(reply.reply.includes(`${origin}/api/lounge/v2/chat/inbox`), 'private results must have a reachable link');
     assert.match(reply.reply, /Creation is unavailable/); assert.match(reply.reply, /No image request was started/);
-    assert.match(f.adapter.handleIrc({ ...input, message: '!lounge status' }).reply, /stage session/);
+    assert.match(f.adapter.handleIrc({ ...input, message: '!lounge status' }).reply, /controlled only by Planet CUHZ/);
     assert.doesNotMatch(reply.reply, /queued|success|123/);
     assert.deepEqual(f.adapter.handleIrc({ ...input, tags: { 'room-id': '777' } }), { handled: true });
     assert.deepEqual(f.adapter.handleIrc({ ...input, tags: { 'room-id': '175727753', 'source-room-id': '777' } }), { handled: true });

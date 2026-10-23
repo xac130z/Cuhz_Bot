@@ -35,18 +35,30 @@ export function hostConfig(env = {}) {
     if (obsKey.length !== 32 || obsKey.toString('base64url') !== encoded) fail();
     if (obsKey.equals(authKey)) fail();
   }
+  if (flag(env, 'LOUNGE_PILOT_ENABLED')) throw Error('LOUNGE_OWNER_ONLY_PILOT_DISABLED');
+  if (flag(env, 'LOUNGE_PILOT_MANAGEMENT_ENABLED')) throw Error('LOUNGE_OWNER_ONLY_MANAGEMENT_DISABLED');
+  const delivery = flag(env, 'LOUNGE_DELIVERY_ENABLED');
+  const deliveryFrom = delivery ? required(env, 'LOUNGE_DELIVERY_FROM') : null;
+  const resendKey = delivery ? required(env, 'LOUNGE_RESEND_API_KEY') : null;
+  if (delivery && (!/^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+){2,}$/.test(deliveryFrom) || deliveryFrom.length > 254)) fail();
+  // First rehearsal is bound to exactly one verified owner. This config only
+  // restricts authority; database roles, fresh auth and leases still apply.
+  const ownerEnabled = flag(env, 'LOUNGE_OWNER_CONTROL_ENABLED');
+  const ownerId = ownerEnabled ? required(env, 'LOUNGE_OWNER_TWITCH_ID') : null;
+  if (ownerEnabled && !/^[1-9][0-9]{0,19}$/.test(ownerId)) fail();
+  const ownerControl = Object.freeze({ enabled: ownerEnabled, twitchId: ownerId });
   const stageBridge = flag(env, 'LOUNGE_STAGE_BRIDGE_ENABLED');
   const bucket = env.LOUNGE_STORAGE_BUCKET || null;
   const storageKey = env.LOUNGE_STORAGE_SERVICE_KEY || null;
-  if ((bucket !== null && !/^[A-Za-z0-9_-]{1,100}$/.test(bucket)) || (stageBridge && (!bucket || !storageKey))) fail();
+  if ((bucket !== null && !/^[A-Za-z0-9_-]{1,100}$/.test(bucket)) || ((stageBridge || delivery) && (!bucket || !storageKey))) fail();
   return Object.freeze({ enabled: true, origin: origin(required(env, 'LOUNGE_PUBLIC_ORIGIN')),
     supabaseUrl: origin(required(env, 'LOUNGE_SUPABASE_URL')),
     publishableKey: required(env, 'LOUNGE_SUPABASE_PUBLISHABLE_KEY'),
-    databaseUrl: env.LOUNGE_DATABASE_URL || null, authKey, obsKey, eventSubSecret, subscriptionId, rulesVersion,
-    bucket, storageKey, flags: Object.freeze({ auth: true, eligibility: true,
-      pilot: flag(env, 'LOUNGE_PILOT_ENABLED'), subscription: false,
-      pilotManagement: flag(env, 'LOUNGE_PILOT_MANAGEMENT_ENABLED'),
-      booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),
+    databaseUrl: env.LOUNGE_DATABASE_URL || null, ownerControl, authKey, obsKey, eventSubSecret, subscriptionId, rulesVersion,
+    bucket, storageKey, deliveryFrom, resendKey, flags: Object.freeze({ auth: true, eligibility: true,
+      pilot: false, subscription: false,
+      pilotManagement: false,
+      delivery, booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),
       stage: flag(env, 'LOUNGE_STAGE_ENABLED'), stageBridge, generationChat: false }) });
 }
 

@@ -1,3 +1,4 @@
+import { createResendSender } from '../lounge-delivery/resend.mjs';
 import { createLoungeApplication } from '../lounge-goal2/runtime.mjs';
 import { createSupabaseAuthPort } from '../lounge-auth/supabase.mjs';
 import { createPrivateChatInbox } from '../lounge-chat-inbox/runtime.mjs';
@@ -5,6 +6,8 @@ import { hostConfig, databaseOptions } from './config.mjs';
 import { createStoragePort } from './storage.mjs';
 import { createEventSubIngress } from './eventsub.mjs';
 import { createObsStreamAccess } from '../lounge-stage/obs-access.mjs';
+import { createBookingHousekeeping } from '../lounge-booking/housekeeping.mjs';
+import { createBookingNotices } from '../lounge-booking/notices.mjs';
 
 const unavailable = code => new Response(JSON.stringify({ error: code }), { status: 503,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -36,6 +39,9 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
     return result;
   };
   const upstreams = new Set();
+  const bookingCleanup = createBookingHousekeeping({ query, enabled: config.flags.booking === true,
+    allowSubscription: config.flags.subscription, allowPilot: config.flags.pilot });
+  const bookingNotices = createBookingNotices({ query, enabled: config.flags.booking === true });
   const guardedFetch = async (url, options = {}) => {
     if (stopped || options.signal?.aborted) throw Error('LOUNGE_UNAVAILABLE');
     const controller = new AbortController(), abort = () => controller.abort();
@@ -62,12 +68,15 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   };
   let app;
   const inbox = createPrivateChatInbox({ query, origin: config.origin, enabled: true,
+    bookingNoticesEnabled: config.flags.booking === true,
     authenticate: request => app.auth.authenticate(request) });
   const storage = config.bucket && config.storageKey
     ? createStoragePort({ url: config.supabaseUrl, bucket: config.bucket, serviceKey: config.storageKey, fetchImpl: guardedFetch }) : {};
   app = createLoungeApplication({ db: { query }, origin: config.origin, authKey: config.authKey,
     authUpstream: createSupabaseAuthPort({ url: config.supabaseUrl, publishableKey: config.publishableKey, fetchImpl: guardedFetch }),
-    requiredRulesVersion: config.rulesVersion, flags: config.flags, ...storage,
+    requiredRulesVersion: config.rulesVersion, flags: config.flags, ownerControl: config.ownerControl, ...storage,
+    deliveryConfig: config.flags.delivery ? { from: config.deliveryFrom, send: createResendSender({ apiKey: config.resendKey, fetchImpl: guardedFetch }),
+      signDownload: storage.signDownload, storageOrigin: config.supabaseUrl } : null,
     eventSubSecret: config.eventSubSecret, sendPrivateReply: sendPrivateReply ?? inbox.sendPrivateReply,
     obsAccess: config.obsKey ? createObsStreamAccess({ key: config.obsKey, origin: config.origin }) : null,
     getGenerationConfig: () => ({ enabled: false }) });
@@ -98,8 +107,14 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           to_regclass('public.lounge_members') is not null as members_ready,
           to_regclass('public.lounge_chat_inbox') is not null as inbox_ready,
           to_regclass('public.lounge_eventsub_revocations') is not null as eventsub_ready,
+          to_regprocedure('public.lounge_delivery_command(uuid,integer,timestamp with time zone,text,jsonb,text,jsonb)') is not null
+            and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null as delivery_ready,
           to_regclass('public.lounge_booking_publications') is not null
-            and to_regprocedure('public.lounge_booking_transport(uuid,integer,timestamp with time zone,text,jsonb,boolean,boolean)') is not null as booking_ready,
+            and to_regprocedure('public.lounge_booking_transport(uuid,integer,timestamp with time zone,text,jsonb,boolean,boolean)') is not null
+            and to_regprocedure('public.lounge_booking_openings(uuid,integer,timestamp with time zone,text,jsonb)') is not null
+            and to_regprocedure('public.lounge_booking_housekeep(uuid,integer,boolean,boolean)') is not null
+            and to_regprocedure('public.lounge_booking_notices_dispatch(uuid,integer)') is not null
+            and to_regprocedure('public.lounge_private_inbox_read(uuid,integer,uuid,text)') is not null as booking_ready,
           to_regprocedure('public.lounge_chat_inbox_send(text,text,text)') is not null
             and to_regprocedure('public.lounge_chat_inbox_read(uuid,integer,uuid,text)') is not null
             and to_regprocedure('public.lounge_chat_inbox_cleanup(integer)') is not null as inbox_rpc_ready,
@@ -109,13 +124,18 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           from pg_roles r where r.rolname=current_user`);
         const row = result.rows?.[0];
         if (!row || !['privileged', 'isolation_ok', 'auth_ready', 'stage_ready', 'members_ready', 'inbox_ready', 'eventsub_ready', 'inbox_rpc_ready', 'stage_rpc_ready'].every(key => row[key] === true)) throw Error('LOUNGE_SCHEMA_REVIEW_REQUIRED');
+        if (config.flags.delivery && row.delivery_ready !== true) throw Error('LOUNGE_DELIVERY_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (stopped || turn !== epoch) return { started: false };
-        app.start(); running = true;
+        app.start(); bookingCleanup.start(); bookingNotices.start(); running = true;
         timer = schedule(() => {
           if (!running || stopped || turn !== epoch) return;
           // Bounded SQL routines own cleanup; this never retries a paid job.
-          void Promise.allSettled([app.auth.cleanup(), inbox.cleanup()]);
+          return Promise.allSettled([app.auth.cleanup(), inbox.cleanup(), app.deliveryMail?.run(),
+            // Finish any due booking transitions before publishing reminders.
+            // A failed cleanup cannot make a notice assert live authority: the
+            // notice transaction independently checks state/time/publication.
+            bookingCleanup.run().then(() => bookingNotices.run())]);
         }, 60000);
         timer?.unref?.();
         return { started: true, generationEnabled: false };
@@ -127,6 +147,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   async function stop() {
     if (stopped) return;
     stopped = true; running = false; epoch++;
+    bookingCleanup.stop(); bookingNotices.stop();
     if (timer !== undefined) cancel(timer);
     for (const controller of upstreams) controller.abort();
     await app.stop();

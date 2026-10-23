@@ -6,7 +6,7 @@ const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
 const PREFIXES = ['/api/lounge/auth/', '/api/lounge/v2/'];
-const exactPaths = new Set(['/api/lounge/auth', '/api/lounge/v2', '/stage']);
+const exactPaths = new Set(['/api/lounge/auth', '/api/lounge/v2', '/stage', '/lounge/delivery']);
 const matchesPath = path => exactPaths.has(path) || PREFIXES.some(prefix => path.startsWith(prefix)) || path.startsWith('/stage/');
 const fault = code => Object.assign(new Error(code), { code });
 const json = (res, status, code) => {
@@ -125,7 +125,7 @@ function createLoungeV2Adapter({ env = process.env, sendPrivateReply, fetchImpl,
         if (state === 'ready') {
             reply = /^!lounge\s+create(?:\s|$)/i.test(message) && !generationEnabled
                 ? `Creation is unavailable right now, cuhz. No image request was started. Check your access at ${publicLink}. Your private website inbox: ${inboxLink}.`
-                : `Cuhz, sign in and check your access at ${publicLink}. Your private website inbox: ${inboxLink}. Live control requires an active stage session.`;
+                : `Cuhz, sign in and check your access at ${publicLink}. Your private website inbox: ${inboxLink}. The first live test is controlled only by Planet CUHZ; other accounts cannot control the stage.`;
         }
         return { handled: true, reply };
     }

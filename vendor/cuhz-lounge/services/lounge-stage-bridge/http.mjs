@@ -1,7 +1,7 @@
 import {consoleHtml,consoleScript,consoleStyle} from './console.mjs';
 const base='/api/lounge/v2/stage-bridge';
 const routes=new Map([['/activity','activity'],['/activity/revoke','activity_revoke'],['/import','import'],['/review','review'],['/review/decide','decide'],['/publication/revoke','revoke']]);
-const safe=new Set(['BRIDGE_DISABLED','BRIDGE_BUSY','OUTPUT_VERIFICATION_UNAVAILABLE','BRIDGE_UNAVAILABLE','BRIDGE_OUTCOME_UNKNOWN','AUTH_REQUIRED','AUTH_UNAVAILABLE','AUTH_DISABLED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','AUTH_REFRESH_PENDING','INVALID_REQUEST','REQUEST_TOO_LARGE','REQUEST_TIMEOUT','SESSION_RECHECK_REQUIRED','SIGN_IN_REQUIRED','OPERATOR_REQUIRED','LIBRARY_BRIDGE_DISABLED','OUTPUT_NOT_VERIFIED','ASSET_UNAVAILABLE']);
+const safe=new Set(['STAGE_CONTROL_DISABLED','STAGE_OWNER_UNCONFIGURED','STAGE_OWNER_REQUIRED','BRIDGE_DISABLED','BRIDGE_BUSY','OUTPUT_VERIFICATION_UNAVAILABLE','BRIDGE_UNAVAILABLE','BRIDGE_OUTCOME_UNKNOWN','AUTH_REQUIRED','AUTH_UNAVAILABLE','AUTH_DISABLED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','AUTH_REFRESH_PENDING','INVALID_REQUEST','REQUEST_TOO_LARGE','REQUEST_TIMEOUT','SESSION_RECHECK_REQUIRED','SIGN_IN_REQUIRED','OPERATOR_REQUIRED','STAGE_OWNER_REQUIRED','LIBRARY_BRIDGE_DISABLED','OUTPUT_NOT_VERIFIED','ASSET_UNAVAILABLE']);
 export function createStageBridgeHandler({runtime,origin,enabled=false,timeoutMs=5000}={}){
  if(!runtime||new URL(origin).origin!==origin||!origin.startsWith('https://')||timeoutMs<1||timeoutMs>12000)throw Error('BRIDGE_CONFIG_INVALID');
  const headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"};
@@ -28,6 +28,6 @@ export function createStageBridgeHandler({runtime,origin,enabled=false,timeoutMs
    if(req.method!=='POST')return response({error:'METHOD_NOT_ALLOWED'},405);const action=routes.get(route);if(!action)return response({error:'NOT_FOUND'},404);
    if(!/^application\/json(?:\s*;|$)/i.test(req.headers.get('content-type')||''))return response({error:'INVALID_REQUEST'},400);
    const input=await body(req);requestId=input?.requestId;const result=await runtime.command(req,action,input);return response(result,result?.ok?200:409);
-  }catch(error){const code=safe.has(error?.code)?error.code:'BRIDGE_UNAVAILABLE';return response({error:code,...(code==='BRIDGE_OUTCOME_UNKNOWN'&&typeof requestId==='string'?{requestId}:{})},['AUTH_REQUIRED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','OPERATOR_REQUIRED','SIGN_IN_REQUIRED'].includes(code)?403:['INVALID_REQUEST','REQUEST_TOO_LARGE','OUTPUT_NOT_VERIFIED'].includes(code)?400:503);}
+  }catch(error){const code=safe.has(error?.code)?error.code:'BRIDGE_UNAVAILABLE';return response({error:code,...(code==='BRIDGE_OUTCOME_UNKNOWN'&&typeof requestId==='string'?{requestId}:{})},['AUTH_REQUIRED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','OPERATOR_REQUIRED','SIGN_IN_REQUIRED','STAGE_OWNER_REQUIRED'].includes(code)?403:['INVALID_REQUEST','REQUEST_TOO_LARGE','OUTPUT_NOT_VERIFIED'].includes(code)?400:503);}
  };
 }

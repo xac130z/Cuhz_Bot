@@ -1,8 +1,9 @@
 import { isTrustedAuthContext } from '../lounge-auth/runtime.mjs';
+import { createOwnerControlGate } from '../lounge-stage/owner-control.mjs';
 
 const BASE = '/api/lounge/v2/bookings';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ACTIONS = new Set(['hold', 'confirm', 'cancel', 'check_in', 'end']);
+const ACTIONS = new Set(['hold', 'reschedule', 'confirm', 'cancel', 'check_in', 'end']);
 const AUTH_ERRORS = new Set(['AUTH_DISABLED','AUTH_REQUIRED','AUTH_ORIGIN_DENIED','AUTH_CSRF_DENIED',
   'AUTH_IDENTITY_CHANGED','AUTH_UNAVAILABLE','AUTH_REFRESH_PENDING']);
 const SQL_ERRORS = new Set(['ISOLATION_UNSUPPORTED','INVALID_REQUEST','SESSION_RECHECK_REQUIRED','CONNECTION_CHANGED',
@@ -11,18 +12,20 @@ const SQL_ERRORS = new Set(['ISOLATION_UNSUPPORTED','INVALID_REQUEST','SESSION_R
   'WEEKLY_BOOKING_LIMIT','BOOKING_COOLDOWN','SLOT_UNAVAILABLE','BOOKING_NOT_FOUND','REVISION_CONFLICT','REVISION_LIMIT',
   'HOLD_NOT_CURRENT','BOOKING_NOT_CHECKIN_READY','SESSION_NOT_STARTED','BOOKING_ALREADY_ENDED','STAGE_DISABLED',
   'STAGE_ON_HOLD','CHECKIN_CLOSED','STAGE_OCCUPIED','LEASE_REVOKED','SESSION_INVALID','VERSION_CONFLICT',
-  'LEASE_SESSION_MISMATCH','RESOURCE_MISMATCH','BOOKING_REQUIRED','SESSION_NOT_ACTIVE','LEASE_UNAVAILABLE']);
+  'LEASE_SESSION_MISMATCH','RESOURCE_MISMATCH','BOOKING_REQUIRED','SESSION_NOT_ACTIVE','LEASE_UNAVAILABLE',
+  'BOOKING_NOT_RESCHEDULABLE','RESCHEDULE_CLOSED','SLOT_UNCHANGED']);
 const failure = (code, status = 400) => Object.assign(Error(code), { code, status });
 
 /** No listener/timer on import. Mount handle only at BASE and its publish child.
  * stop fences unfinished authentication/body reads; an already-started SQL write
  * may still commit and is reported unknown with its original request ID. */
-export function createBookingHandler({ broker, store, origin, enabled = false, timeoutMs = 5_000, now = Date.now } = {}) {
+export function createBookingHandler({ broker, store, origin, enabled = false, ownerControl, timeoutMs = 5_000, now = Date.now } = {}) {
   if (!broker?.authenticate || !store?.read || !store?.write || new URL(origin).origin !== origin
     || !origin.startsWith('https://') || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
     throw Error('BOOKING_HTTP_CONFIG_INVALID');
   }
   let active = enabled === true, epoch = 0;
+  const ownerGate = createOwnerControlGate(ownerControl);
   const reply = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: {
     'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" } });
@@ -54,15 +57,15 @@ export function createBookingHandler({ broker, store, origin, enabled = false, t
   }
   function command(input, publish) {
     const allowed = publish ? ['requestId','windowId','policyVersion'] : ['action','requestId','bookingId','expectedRevision',
-      ...(input.action === 'hold' ? ['windowId','startsAt','policyVersion'] : [])];
+      ...(['hold','reschedule'].includes(input.action) ? ['windowId','startsAt','policyVersion'] : [])];
     if (Object.keys(input).some(key => !allowed.includes(key)) || !UUID.test(input.requestId || '')) throw failure('INVALID_REQUEST');
     if (!publish && (!ACTIONS.has(input.action) || !UUID.test(input.bookingId || '') || !Number.isInteger(input.expectedRevision)
       || input.expectedRevision < (input.action === 'hold' ? 0 : 1) || input.expectedRevision > 99
       || (input.action === 'hold' && input.expectedRevision !== 0))) throw failure('INVALID_REQUEST');
-    if (publish || input.action === 'hold') {
+    if (publish || ['hold','reschedule'].includes(input.action)) {
       if (!UUID.test(input.windowId || '') || !Number.isInteger(input.policyVersion) || input.policyVersion < 1 || input.policyVersion > 999999999) throw failure('INVALID_REQUEST');
     }
-    if (input.action === 'hold' && (typeof input.startsAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(input.startsAt)
+    if (['hold','reschedule'].includes(input.action) && (typeof input.startsAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(input.startsAt)
       || !Number.isFinite(Date.parse(input.startsAt)))) throw failure('INVALID_REQUEST');
     return publish ? { action: 'publish', ...input } : input;
   }
@@ -85,6 +88,10 @@ export function createBookingHandler({ broker, store, origin, enabled = false, t
         if (!isTrustedAuthContext(context)) throw failure('AUTH_REQUIRED', 401);
         const input = req.method === 'POST' ? command(await body(req), publish) : null;
         requestId = input?.requestId;
+        if (publish || input?.action === 'check_in') {
+          const code = ownerGate.check(context.twitchId);
+          if (code) throw failure(code, code === 'STAGE_OWNER_REQUIRED' ? 403 : 503);
+        }
         if (!active || run !== epoch || req.signal.aborted) throw failure('BOOKING_DISABLED', 503);
         if (context.verifiedAt > now() || context.verifiedAt <= now() - 60_000) throw failure('SESSION_RECHECK_REQUIRED', 401);
         const result = await bounded(() => {
@@ -101,7 +108,7 @@ export function createBookingHandler({ broker, store, origin, enabled = false, t
         }
         return reply(result);
       } catch (error) {
-        const local = new Set(['INVALID_REQUEST','REQUEST_TOO_LARGE','REQUEST_TIMEOUT','BOOKING_DISABLED','SESSION_RECHECK_REQUIRED']);
+        const local = new Set(['STAGE_CONTROL_DISABLED','STAGE_OWNER_UNCONFIGURED','STAGE_OWNER_REQUIRED','INVALID_REQUEST','REQUEST_TOO_LARGE','REQUEST_TIMEOUT','BOOKING_DISABLED','SESSION_RECHECK_REQUIRED']);
         const code = AUTH_ERRORS.has(error?.code) || local.has(error?.code) ? error.code
           : startedWrite ? 'BOOKING_OUTCOME_UNKNOWN' : 'BOOKING_UNAVAILABLE';
         return reply({ error: code, ...(code === 'BOOKING_OUTCOME_UNKNOWN' && UUID.test(requestId || '') ? { requestId } : {}) }, error?.status || 503);

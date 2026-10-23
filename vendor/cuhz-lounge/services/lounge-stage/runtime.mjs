@@ -3,10 +3,13 @@ import { isTrustedAuthContext,isTrustedEmergencyContext } from '../lounge-auth/r
 import { isTrustedChatEvent,parseStageChat } from './chat.mjs';
 import { publicStage,isPublicAssetHash } from './dto.mjs';
 import { createStageStreams } from './sse.mjs';
+import { createOwnerControlGate } from './owner-control.mjs';
 const codeError=(code)=>Object.assign(new Error(code),{code});
-export function createStageRuntime({store,broker,enabled=false,readObject,sendPrivateReply,generationChat,obsAccess=null,timeoutMs=5000,heartbeatMs=10_000,now=Date.now}={}) {
+export function createStageRuntime({store,broker,enabled=false,ownerControl,readObject,sendPrivateReply,generationChat,obsAccess=null,timeoutMs=5000,heartbeatMs=10_000,now=Date.now}={}) {
   if(!store||!broker||typeof broker.authenticate!=='function'||timeoutMs<1||timeoutMs>12000)throw Error('STAGE_CONFIG_INVALID');
   let active=false,epoch=0,timer=null,polling=false;const limits=new Map();
+  const ownerGate=createOwnerControlGate(ownerControl);
+  const requireOwner=context=>{const code=ownerGate.check(context?.twitchId);if(code)throw codeError(code);};
   const bounded=async(work,code='STAGE_UNAVAILABLE')=>{let t;try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{t=setTimeout(()=>reject(codeError(code)),timeoutMs);})]);}finally{clearTimeout(t);}};
   const requireActive=()=>{if(!enabled||!active)throw codeError('STAGE_DISABLED');};
   async function read(){requireActive();const run=epoch,started=now();const result=await bounded(()=>store.read());if(run!==epoch||!active)throw codeError('STAGE_DISABLED');
@@ -17,18 +20,21 @@ export function createStageRuntime({store,broker,enabled=false,readObject,sendPr
   const streams=createStageStreams({read,heartbeatMs:Math.min(heartbeatMs,10_000),now});
   async function authenticate(req,mutation=false){requireActive();const run=epoch;const context=await bounded(()=>broker.authenticate(req,{mutation}),'AUTHENTICATION_UNAVAILABLE');
     if(run!==epoch||!active)throw codeError('STAGE_DISABLED');if(!isTrustedAuthContext(context))throw codeError('SIGN_IN_REQUIRED');return context;}
-  async function operator(req){const run=epoch,context=await authenticate(req);if(!await bounded(()=>store.operator(context)))throw codeError('OPERATOR_REQUIRED');if(run!==epoch||!active)throw codeError('STAGE_DISABLED');return context;}
+  async function operator(req){const run=epoch,context=await authenticate(req);requireOwner(context);if(!await bounded(()=>store.operator(context)))throw codeError('OPERATOR_REQUIRED');if(run!==epoch||!active)throw codeError('STAGE_DISABLED');return context;}
   async function emergencyConsole(req){requireActive();const run=epoch;
     if(typeof broker.emergencyBootstrap!=='function')throw codeError('AUTHENTICATION_UNAVAILABLE');
     const context=await bounded(()=>broker.emergencyBootstrap(req),'AUTHENTICATION_UNAVAILABLE');
     if(run!==epoch||!active)throw codeError('STAGE_DISABLED');
-    if(!isTrustedEmergencyContext(context)||!await bounded(()=>store.emergency(context)))throw codeError('OPERATOR_REQUIRED');
+    if(!isTrustedEmergencyContext(context))throw codeError('OPERATOR_REQUIRED');
+    requireOwner(context);
+    if(!await bounded(()=>store.emergency(context)))throw codeError('OPERATOR_REQUIRED');
     if(run!==epoch||!active)throw codeError('STAGE_DISABLED');return context;
   }
   async function apply(req,command){requireActive();const run=epoch;let context;
     if(command?.action==='hold'){if(typeof broker.authenticateEmergency!=='function')throw codeError('AUTHENTICATION_UNAVAILABLE');context=await bounded(()=>broker.authenticateEmergency(req),'AUTHENTICATION_UNAVAILABLE');if(!isTrustedEmergencyContext(context))throw codeError('SIGN_IN_REQUIRED');}
     else context=await authenticate(req,true);
     if(run!==epoch||!active)throw codeError('STAGE_DISABLED');
+    requireOwner(context);
     const connectionRevision=await bounded(()=>store.connection(context.userId));
     if(run!==epoch||!active)throw codeError('STAGE_DISABLED');
     const result=await bounded(()=>store.apply({...context,connectionRevision},command),'STAGE_OUTCOME_UNKNOWN');
@@ -55,15 +61,18 @@ export function createStageRuntime({store,broker,enabled=false,readObject,sendPr
     if(parsed.kind==='generation')return typeof generationChat==='function'
       ? bounded(()=>generationChat(event),'CHAT_GENERATION_UNKNOWN') : {ok:false,code:'CHAT_GENERATION_DISABLED'};
     requireActive();
-    if(typeof sendPrivateReply!=='function')return {ok:false,code:'PRIVATE_REPLY_UNAVAILABLE'};
+    const ownerDenied=parsed.kind==='command'?ownerGate.check(event.twitchId):null;
+    if(typeof sendPrivateReply!=='function')return {ok:false,code:ownerDenied||'PRIVATE_REPLY_UNAVAILABLE'};
     const now=Date.now();for(const [key,times] of limits)if(now-times.at(-1)>=10_000)limits.delete(key);
     const recent=(limits.get(event.twitchId)||[]).filter(at=>now-at<10_000);
-    if(recent.length>=4)return {ok:false,code:'RATE_LIMITED'};
-    if(limits.size>=1000&&!limits.has(event.twitchId))return {ok:false,code:'RATE_LIMITED'};
+    if(recent.length>=4)return {ok:false,code:ownerDenied||'RATE_LIMITED'};
+    if(limits.size>=1000&&!limits.has(event.twitchId))return {ok:false,code:ownerDenied||'RATE_LIMITED'};
     limits.set(event.twitchId,[...recent,now]);
     const run=epoch;
     let result;
-    if(parsed.kind==='whoami')result={ok:true,code:'IDENTITY',privateText:`Your Twitch ID is ${event.twitchId}.`};
+    // Keep denial receipts inside the existing runtime and database vocabulary.
+    if(ownerDenied)result={ok:false,code:ownerDenied};
+    else if(parsed.kind==='whoami')result={ok:true,code:'IDENTITY',privateText:`Your Twitch ID is ${event.twitchId}.`};
     else if(parsed.kind!=='command')result={ok:true,code:'HELP',privateText:'Open CUHZ Lounge to check your session. Stage commands: !lounge show <item>, end, hold, resume, next, clear.'};
     else {const prepared=await bounded(()=>store.prepareChat(event,parsed.command));if(!prepared?.ok)return {ok:false,code:prepared?.code||'WEBSITE_SESSION_REQUIRED'};
       const {context,command}=prepared;if(context?.twitchId!==event.twitchId)return {ok:false,code:'WEBSITE_SESSION_REQUIRED'};if(run!==epoch||!active)return {ok:false,code:'STAGE_DISABLED'};

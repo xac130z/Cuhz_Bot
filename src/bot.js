@@ -3278,7 +3278,7 @@ async function handleMessage(channel, tags, message, self) {
     // not and keeps its existing reply. Only allowlisted room-ids ever reach the
     // state machine; every other channel falls through this block untouched.
     // No points, no database, no network in here.
-    if (loungeEnabled() && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')) && LOUNGE_INTENT_RE.test(msg)) {
+    if (loungeEnabled() && !tags['source-room-id'] && LOUNGE_ROOM_IDS.has(String(tags['room-id'] || '')) && LOUNGE_INTENT_RE.test(msg)) {
         const roomId = String(tags['room-id']);
         const actor = loungeActor(tags);
         // Website-link layer (owner 2026-10-10): resolved here because the

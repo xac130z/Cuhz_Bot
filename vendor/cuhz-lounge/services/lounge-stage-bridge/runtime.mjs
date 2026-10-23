@@ -1,20 +1,24 @@
 import {isTrustedAuthContext} from '../lounge-auth/runtime.mjs';
 import {hash} from './image.mjs';
+import {createOwnerControlGate} from '../lounge-stage/owner-control.mjs';
 import {createImageVerifier} from './image-verifier.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const failure=code=>Object.assign(Error(code),{code});
 const keys=(value,allowed)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));
 const text=(v,n)=>typeof v==='string'&&v.length>0&&v.length<=n&&!/[\u0000-\u001f\u007f]/.test(v);
-export function createStageBridgeRuntime({store,broker,readObject,writeObject,enabled=false,timeoutMs=5000}={}){
+export function createStageBridgeRuntime({store,broker,readObject,writeObject,ownerControl,enabled=false,timeoutMs=5000}={}){
  if(!store||!broker?.authenticate||!Number.isFinite(timeoutMs)||timeoutMs<1||timeoutMs>12000)throw Error('BRIDGE_CONFIG_INVALID');
  const verifier=enabled?createImageVerifier({timeoutMs:5000,maxQueued:2}):null;
  let stopped=false,epoch=0,imports=0;
+ const ownerGate=createOwnerControlGate(ownerControl);
+ const requireOwner=c=>{const code=ownerGate.check(c?.twitchId);if(code)throw failure(code);};
  const active=()=>{if(!enabled||stopped)throw failure('BRIDGE_DISABLED');};
  const bound=async(work,code='BRIDGE_UNAVAILABLE')=>{let timer;try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{timer=setTimeout(()=>reject(failure(code)),timeoutMs);})]);}finally{clearTimeout(timer);}};
  const uncertain=async work=>{try{return await bound(work,'BRIDGE_OUTCOME_UNKNOWN');}catch{throw failure('BRIDGE_OUTCOME_UNKNOWN');}};
  const fence=run=>{active();if(run!==epoch)throw failure('BRIDGE_DISABLED');};
  async function authenticate(req,{mutation=false,operator=false}={}){active();const run=epoch,c=await bound(()=>broker.authenticate(req,{mutation}),'AUTH_UNAVAILABLE');fence(run);
   if(!isTrustedAuthContext(c)||Date.now()-c.verifiedAt>60000||c.verifiedAt>Date.now())throw failure('AUTH_REQUIRED');
+  if(operator)requireOwner(c);
   const a=await bound(()=>store.actor(c,operator?'review:decide':null));fence(run);if(!a?.ok||a.user_id!==c.userId)throw failure(a?.code||'AUTH_REQUIRED');return c;
  }
  async function checked(c,run,operator=false){fence(run);if(Date.now()-c.verifiedAt>60000||c.verifiedAt>Date.now())throw failure('AUTH_REQUIRED');const a=await bound(()=>store.actor(c,operator?'review:decide':null));fence(run);if(!a?.ok||a.user_id!==c.userId)throw failure(a?.code||'AUTH_REQUIRED');}
@@ -29,6 +33,7 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,en
  }
  async function execute(req,action,input){active();if(!uuid.test(input?.requestId||''))throw failure('INVALID_REQUEST');const run=epoch,c=await authenticate(req,{mutation:true,operator:action==='decide'});let payload;
   if(action==='activity'||action==='activity_revoke'){
+   requireOwner(c);
    if(!keys(input,action==='activity'?['requestId','batchId','displayName','consent','expectedVersion']:['requestId','expectedVersion'])||!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<0
     ||(action==='activity'&&(!uuid.test(input.batchId||'')||input.consent!==true||(input.displayName!==null&&!text(input.displayName,40)))))throw failure('INVALID_REQUEST');
    const connectionRevision=await bound(()=>store.connection(c));fence(run);

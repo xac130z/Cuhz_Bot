@@ -503,3 +503,15 @@ Live acceptance remains separate: review the exact source/schema release; route 
 
 
 2026-10-20 cutover hardening: valid owner bookmarks/reloads now reach both operator consoles through exact read-only HTML bootstrap. Neighboring APIs, assets and mutations retain Origin/CSRF checks. Combined website suite444/444, bot adapter15/15 and local HTTP/SQL/SSE/private-inbox rehearsal pass. Hosted read-only preflight still reports required V2 tables/RPCs absent; no production activation has occurred.
+
+
+## Owner-only recovery release — October 23, 2026
+
+The first live test permits only the owner's freshly verified Planet CUHZ Twitch identity. Previous Phoenix/member/team pilot permissions are suspended until explicit new approval. This release introduces an additional single-identity denial gate shared by web controls, signed chat, emergency controls, stage review/activity and booking check-in. Existing server authentication, SQL roles, consent, leases, revisions and replay rules still apply; the setting does not grant a role.
+
+- `LOUNGE_OWNER_CONTROL_ENABLED=true` and `LOUNGE_OWNER_TWITCH_ID=<freshly verified numeric ID>` are required for control. Missing/false binding denies control. Malformed IDs fail startup; names, CSV lists, badges and broadcaster role cannot substitute. Historical source identifies `planetcuhz` as `1293717308`; verify the current signed identity before configuring it. `175727753` is the CUHZ Bot home channel, not the owner.
+- `LOUNGE_PILOT_ENABLED=true` and `LOUNGE_PILOT_MANAGEMENT_ENABLED=true` are rejected during this release. There is no switch to open team control. Keep booking, pilot, stage bridge, delivery, subscriptions and paid generation disabled unless their exact owner-only acceptance step is deliberately configured.
+- The canonical `/stage` presentation now includes bundled existing world/host artwork. `/stage/obs` retains the reserved signed read-only transport. Canonical website proxies `/stage` and `/stage/*` to the same bot; legacy `/lounge` paths remain. No OBS scene has been changed by source integration.
+- `npm run sync:lounge` copies the exact transitive runtime closure plus two fixed WebP assets; `npm run check:lounge-bundle` verifies source bytes and manifest. This is a local source package until deployment and real-account/OBS evidence are recorded in the ecosystem recovery report.
+
+For the initial stage-only rehearsal, signed owner commands `!lounge hold`, `!lounge resume`, and `!lounge next` use the existing operator role. `!lounge show <item>` still requires ordinary eligibility and a current booked lease. Reveal requires an existing consented, published, verified public library derivative and configured storage ports; the bundled brand background does not create a library approval. The exact `/lounge/delivery` page is routed to V2 while legacy `/lounge` sources remain intact; delivery stays disabled.

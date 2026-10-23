@@ -11,9 +11,10 @@ const sourceRoot = await realpath(positional[0] || resolve(botRoot, '../website/
 const destination = resolve(botRoot, 'vendor/cuhz-lounge');
 const entries = ['services/lounge-host/runtime.mjs', 'services/lounge-stage/renderer.mjs',
   'services/lounge-stage/renderer-model.mjs', 'services/lounge-stage/renderer-feed.mjs',
-  'services/lounge-stage/renderer.css', 'src/styles/tokens.css'];
+  'services/lounge-stage/renderer.css', 'src/styles/tokens.css',
+  'services/lounge-stage/assets/world.webp', 'services/lounge-stage/assets/host.webp'];
 const files = new Map(), external = new Set();
-const safe = path => { const rel = relative(sourceRoot, path); if (rel.startsWith('..') || !rel || rel.includes('node_modules') || !['.mjs', '.css'].includes(extname(path))) throw Error('LOUNGE_BUNDLE_PATH_INVALID'); return rel.split('\\').join('/'); };
+const safe = path => { const rel = relative(sourceRoot, path); if (rel.startsWith('..') || !rel || rel.includes('node_modules') || !(['.mjs', '.css'].includes(extname(path)) || ['services/lounge-stage/assets/world.webp', 'services/lounge-stage/assets/host.webp'].includes(rel.split('\\').join('/')))) throw Error('LOUNGE_BUNDLE_PATH_INVALID'); return rel.split('\\').join('/'); };
 async function collect(path) {
   const name = safe(path); if (files.has(name)) return;
   if (await realpath(path) !== path) throw Error('LOUNGE_BUNDLE_SYMLINK_DENIED');
