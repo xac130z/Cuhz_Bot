@@ -48,6 +48,8 @@ export function hostConfig(env = {}) {
   if (ownerEnabled && !/^[1-9][0-9]{0,19}$/.test(ownerId)) fail();
   const ownerControl = Object.freeze({ enabled: ownerEnabled, twitchId: ownerId });
   const stageBridge = flag(env, 'LOUNGE_STAGE_BRIDGE_ENABLED');
+  const ownerCurated = flag(env, 'LOUNGE_OWNER_CURATED_ENABLED');
+  if (ownerCurated && (!ownerEnabled || !stageBridge)) fail();
   const bucket = env.LOUNGE_STORAGE_BUCKET || null;
   const storageKey = env.LOUNGE_STORAGE_SERVICE_KEY || null;
   if ((bucket !== null && !/^[A-Za-z0-9_-]{1,100}$/.test(bucket)) || ((stageBridge || delivery) && (!bucket || !storageKey))) fail();
@@ -59,7 +61,7 @@ export function hostConfig(env = {}) {
       pilot: false, subscription: false,
       pilotManagement: false,
       delivery, booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),
-      stage: flag(env, 'LOUNGE_STAGE_ENABLED'), stageBridge, generationChat: false }) });
+      stage: flag(env, 'LOUNGE_STAGE_ENABLED'), stageBridge, ownerCurated, generationChat: false }) });
 }
 
 export function databaseOptions(value) {

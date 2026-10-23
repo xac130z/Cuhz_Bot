@@ -1,5 +1,8 @@
 const modes = new Set(['idle','showcase','live_session','results','hold']);
 const phases = new Set(['queued','creating','review','unavailable']);
+const labels = new Map([['ai','Made with AI in CUHZ Lounge'],['Made with AI in CUHZ Lounge','Made with AI in CUHZ Lounge'],
+  ['member_made','Member-made in Chain Studio'],['Member-made in Chain Studio','Member-made in Chain Studio'],
+  ['owner_curated','Owner-curated artwork'],['Owner-curated artwork','Owner-curated artwork']]);
 const clean = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && ![...value].some(char => char.charCodeAt(0)<32 || char.charCodeAt(0)===127);
 export const isPublicAssetHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 /** Build, never spread. Only independently approved presentation fields enter. */
@@ -8,9 +11,9 @@ export function publicStage(value) {
   const mode = modes.has(value?.mode) ? value.mode : 'hold';
   const item = value?.artwork;
   const artwork = ['showcase','live_session','results'].includes(mode) && item && isPublicAssetHash(item.asset)
-    && clean(item.title,100) && clean(item.creator,40) && ['ai','member_made','Made with AI in CUHZ Lounge','Member-made in Chain Studio'].includes(item.label)
+    && clean(item.title,100) && clean(item.creator,40) && labels.has(item.label)
     ? Object.freeze({ asset:item.asset,title:item.title,creator:item.creator,
-      label:['ai','Made with AI in CUHZ Lounge'].includes(item.label) ? 'Made with AI in CUHZ Lounge' : 'Member-made in Chain Studio' }) : null;
+      label:labels.get(item.label) }) : null;
   const end = typeof value?.endsAt === 'string' ? Date.parse(value.endsAt) : NaN;
   const fresh = typeof value?.freshUntil === 'string' ? Date.parse(value.freshUntil) : NaN;
   const source = value?.activity;

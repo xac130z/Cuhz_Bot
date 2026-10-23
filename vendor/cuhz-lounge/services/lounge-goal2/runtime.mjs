@@ -27,7 +27,7 @@ import {createOpeningsStore} from '../lounge-booking/openings-store.mjs';
 export function createLoungeApplication({db,origin,authKey,authUpstream,requiredRulesVersion,
   flags={},ownerControl,deliveryConfig=null,readObject,writeObject,sendPrivateReply,eventSubSecret,obsAccess=null,heartbeatMs=10_000,getGenerationConfig=()=>({enabled:false})}={}) {
   if(!db||typeof db.query!=='function')throw Error('LOUNGE_DATABASE_REQUIRED');
-  const allowed=['auth','eligibility','pilot','subscription','pilotManagement','stage','generationChat','stageBridge','booking','delivery'];
+  const allowed=['auth','eligibility','pilot','subscription','pilotManagement','stage','generationChat','stageBridge','ownerCurated','booking','delivery'];
   if(Object.entries(flags).some(([name,value])=>!allowed.includes(name)||typeof value!=='boolean'))throw Error('LOUNGE_FLAGS_INVALID');
   const query=(sql,args)=>db.query(sql,args);
   const auth=createLoungeAuthBroker({origin,key:authKey,store:createAuthStore({query}),upstream:authUpstream,enabled:flags.auth===true});
@@ -45,8 +45,8 @@ export function createLoungeApplication({db,origin,authKey,authUpstream,required
     getConfig:getGenerationConfig,sendPrivateReply,enabled:flags.generationChat===true});
   const generationChatHttp=createGenerationChatHandler({broker:auth,runtime:generationChat,origin,enabled:flags.generationChat===true});
   const stageBridge=createStageBridgeRuntime({store:createStageBridgeStore({query,allowPilot:flags.pilot===true,allowSubscription:flags.subscription===true}),
-    broker:auth,readObject,writeObject,ownerControl,enabled:flags.stageBridge===true});
-  const stageBridgeHttp=createStageBridgeHandler({runtime:stageBridge,origin,enabled:flags.stageBridge===true});
+    broker:auth,readObject,writeObject,ownerControl,requiredRulesVersion,curatedEnabled:flags.ownerCurated===true,enabled:flags.stageBridge===true});
+  const stageBridgeHttp=createStageBridgeHandler({runtime:stageBridge,origin,enabled:flags.stageBridge===true,curatedEnabled:flags.ownerCurated===true});
   const stage=createStageRuntime({store:createStageStore({query,allowPilot:flags.pilot===true,allowSubscription:flags.subscription===true}),
     broker:auth,enabled:flags.stage===true,ownerControl,readObject,sendPrivateReply,heartbeatMs,obsAccess,
     generationChat:flags.generationChat===true?event=>generationChat.handleChat(event):undefined});

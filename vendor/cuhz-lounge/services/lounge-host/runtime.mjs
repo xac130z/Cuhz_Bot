@@ -109,6 +109,10 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           to_regclass('public.lounge_eventsub_revocations') is not null as eventsub_ready,
           to_regprocedure('public.lounge_delivery_command(uuid,integer,timestamp with time zone,text,jsonb,text,jsonb)') is not null
             and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null as delivery_ready,
+          to_regclass('public.lounge_owner_curated_items') is not null
+            and to_regclass('public.lounge_owner_curated_consents') is not null
+            and to_regprocedure('public.lounge_owner_curated_actor(uuid,integer,integer,text,text)') is not null
+            and to_regprocedure('public.lounge_owner_curated_write(uuid,integer,integer,text,text,uuid,text,jsonb)') is not null as curated_ready,
           to_regclass('public.lounge_booking_publications') is not null
             and to_regprocedure('public.lounge_booking_transport(uuid,integer,timestamp with time zone,text,jsonb,boolean,boolean)') is not null
             and to_regprocedure('public.lounge_booking_openings(uuid,integer,timestamp with time zone,text,jsonb)') is not null
@@ -126,6 +130,14 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         if (!row || !['privileged', 'isolation_ok', 'auth_ready', 'stage_ready', 'members_ready', 'inbox_ready', 'eventsub_ready', 'inbox_rpc_ready', 'stage_rpc_ready'].every(key => row[key] === true)) throw Error('LOUNGE_SCHEMA_REVIEW_REQUIRED');
         if (config.flags.delivery && row.delivery_ready !== true) throw Error('LOUNGE_DELIVERY_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
+        if (config.flags.ownerCurated && row.curated_ready !== true) throw Error('LOUNGE_CURATED_SCHEMA_REQUIRED');
+        if (config.flags.ownerCurated) {
+          // Canonical originals precede publication consent. A syntactically
+          // valid bucket name is insufficient: require verified private storage
+          // before any application startup or scheduled work can begin.
+          const bucket = (await query('select id, public from storage.buckets where id=$1', [config.bucket])).rows?.[0];
+          if (bucket?.id !== config.bucket || bucket.public !== false) throw Error('LOUNGE_PRIVATE_STORAGE_REQUIRED');
+        }
         if (stopped || turn !== epoch) return { started: false };
         app.start(); bookingCleanup.start(); bookingNotices.start(); running = true;
         timer = schedule(() => {

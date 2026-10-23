@@ -30,7 +30,7 @@ const publicCopy={
  queued:['An idea is in orbit.','The request is queued and waiting for its turn.'],
  creating:['Imagination at work.','CUHZ Bot is creating. Settle in with the family.'],
  review:['One final check.','The creation stays private while it is reviewed.'],
- waiting:['The moment is coming.','Loading the approved creation.'],
+ waiting:['The moment is coming.','Loading the approved artwork.'],
  ready:['Made here. Shared here.','A creation from the CUHZ community.'],
  hold:['A moment of calm.','The stage is paused. We will be right here.'],
  error:['Finding our connection.','The world stays here. Artwork returns after a verified update.'],
@@ -56,15 +56,17 @@ function loadAsset(hash,{signal}){return new Promise((resolve,reject)=>{
 const presenter=createStagePresenter({loadAsset,seenAssets:seen,onChange(state,resource){
  const sameReady=state.view==='ready'&&currentResource===resource;
  if(!sameReady){clearTimeout(revealTimer);stage.dataset.reveal='still';}stage.dataset.view=state.view;
- const copy=publicCopy[state.view];
- if(viewerSummary)viewerSummary.textContent=state.view==='ready'?`${state.artwork.title} · Created by ${state.artwork.creator} · ${state.artwork.label}`:`${copy?.[0]||state.message} ${copy?.[1]||state.detail}${state.displayName?(state.phase==='reveal'?' Created by ':' Creating for ')+state.displayName:''}`;
+ const curated=state.artwork?.label==='Owner-curated artwork';
+ const credit=curated||state.view==='waiting'?'Presented by':'Created by';
+ const copy=state.view==='ready'&&curated?['Selected for the family.','Owner-curated artwork from Planet CUHZ.']:publicCopy[state.view];
+ if(viewerSummary)viewerSummary.textContent=state.view==='ready'?`${state.artwork.title} · ${credit} ${state.artwork.creator} · ${state.artwork.label}`:`${copy?.[0]||state.message} ${copy?.[1]||state.detail}${state.displayName?(state.phase==='reveal'?' '+credit+' ':' Creating for ')+state.displayName:''}`;
  message.textContent=copy?.[0]||state.message;detail.textContent=copy?.[1]||state.detail;stage.setAttribute('aria-busy',String(['waiting','queued','creating','connecting'].includes(state.view)));
  phase.textContent=({queued:'IN THE QUEUE',creating:'CREATING NOW',review:'REVIEW BEFORE REVEAL',unavailable:'CREATION PAUSED',reveal:'APPROVED ARTWORK'})[state.phase]||'CUHZ LOUNGE';
- member.hidden=!state.displayName;member.textContent=state.displayName?`${state.phase==='reveal'?'Created by':'Creating for'} ${state.displayName}`:'';
+ member.hidden=!state.displayName;member.textContent=state.displayName?`${state.phase==='reveal'?credit:'Creating for'} ${state.displayName}`:'';
  for(const step of steps){step.dataset.active=String(step.dataset.phase===state.phase);step.setAttribute('aria-current',step.dataset.phase===state.phase?'step':'false');}
  if(state.view!=='ready'){slot.replaceChildren();currentResource=null;title.textContent='';creator.textContent='';label.textContent='';return;}
  if(currentResource!==resource){slot.replaceChildren(resource);currentResource=resource;}
- resource.alt=state.artwork.title;title.textContent=state.artwork.title;creator.textContent='Created by '+state.artwork.creator;label.textContent=state.artwork.label;
+ resource.alt=state.artwork.title;title.textContent=state.artwork.title;creator.textContent=credit+' '+state.artwork.creator;label.textContent=state.artwork.label;
  if(state.reveal&&!paused&&!media.matches){stage.dataset.reveal='opening';revealTimer=setTimeout(()=>{stage.dataset.reveal='still';},1200);}
  try{sessionStorage.setItem('cuhz-stage-revealed-assets',JSON.stringify(presenter.seen()));}catch{/* replay suppression still works for this page */}
 }});

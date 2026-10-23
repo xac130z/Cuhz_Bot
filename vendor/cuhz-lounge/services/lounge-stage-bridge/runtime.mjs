@@ -2,13 +2,16 @@ import {isTrustedAuthContext} from '../lounge-auth/runtime.mjs';
 import {hash} from './image.mjs';
 import {createOwnerControlGate} from '../lounge-stage/owner-control.mjs';
 import {createImageVerifier} from './image-verifier.mjs';
+import {createOwnerCuratedRuntime} from './curated.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const failure=code=>Object.assign(Error(code),{code});
 const keys=(value,allowed)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));
 const text=(v,n)=>typeof v==='string'&&v.length>0&&v.length<=n&&!/[\u0000-\u001f\u007f]/.test(v);
-export function createStageBridgeRuntime({store,broker,readObject,writeObject,ownerControl,enabled=false,timeoutMs=5000}={}){
+export function createStageBridgeRuntime({store,broker,readObject,writeObject,ownerControl,requiredRulesVersion,curatedEnabled=false,enabled=false,timeoutMs=5000}={}){
  if(!store||!broker?.authenticate||!Number.isFinite(timeoutMs)||timeoutMs<1||timeoutMs>12000)throw Error('BRIDGE_CONFIG_INVALID');
  const verifier=enabled?createImageVerifier({timeoutMs:5000,maxQueued:2}):null;
+ if(curatedEnabled&&!enabled)throw Error('CURATED_CONFIG_INVALID');
+ const curated=createOwnerCuratedRuntime({store,broker,readObject,writeObject,ownerControl,requiredRulesVersion,verifier,enabled:curatedEnabled,timeoutMs});
  let stopped=false,epoch=0,imports=0;
  const ownerGate=createOwnerControlGate(ownerControl);
  const requireOwner=c=>{const code=ownerGate.check(c?.twitchId);if(code)throw failure(code);};
@@ -67,6 +70,7 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,ow
   await checked(c,run,action==='decide');
   const result=await uncertain(()=>store.write(c,input.requestId,action,payload));if(stopped||run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');return result;
  }
- async function command(req,action,input){active();if(action!=='import')return execute(req,action,input);if(imports>=3)throw failure('BRIDGE_BUSY');imports++;try{return await execute(req,action,input);}finally{imports--;}}
- return Object.freeze({member,reviews,reviewImage,command,authenticate,stop(){stopped=true;epoch++;return verifier?.stop();}});
+ async function command(req,action,input){active();const run=()=>action.startsWith('curated_')?curated.command(req,action.slice(8),input):execute(req,action,input);
+  if(!['import','curated_import'].includes(action))return run();if(imports>=3)throw failure('BRIDGE_BUSY');imports++;try{return await run();}finally{imports--;}}
+ return Object.freeze({member,reviews,reviewImage,command,authenticate,curated,stop(){stopped=true;epoch++;curated.stop();return verifier?.stop();}});
 }
