@@ -8,7 +8,8 @@ const codeError=(code)=>Object.assign(new Error(code),{code});
 export function createStageRuntime({store,broker,enabled=false,ownerControl,readObject,sendPrivateReply,generationChat,obsAccess=null,timeoutMs=5000,heartbeatMs=10_000,now=Date.now}={}) {
   if(!store||!broker||typeof broker.authenticate!=='function'||timeoutMs<1||timeoutMs>12000)throw Error('STAGE_CONFIG_INVALID');
   let active=false,epoch=0,timer=null,polling=false;const limits=new Map();
-  const ownerGate=createOwnerControlGate(ownerControl);
+  const ownerBinding=Object.freeze({enabled:ownerControl?.enabled===true,twitchId:typeof ownerControl?.twitchId==='string'&&/^[1-9][0-9]{0,19}$/.test(ownerControl.twitchId)?ownerControl.twitchId:null});
+  const ownerGate=createOwnerControlGate(ownerBinding);
   const requireOwner=context=>{const code=ownerGate.check(context?.twitchId);if(code)throw codeError(code);};
   const bounded=async(work,code='STAGE_UNAVAILABLE')=>{let t;try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{t=setTimeout(()=>reject(codeError(code)),timeoutMs);})]);}finally{clearTimeout(t);}};
   const requireActive=()=>{if(!enabled||!active)throw codeError('STAGE_DISABLED');};
@@ -62,23 +63,27 @@ export function createStageRuntime({store,broker,enabled=false,ownerControl,read
       ? bounded(()=>generationChat(event),'CHAT_GENERATION_UNKNOWN') : {ok:false,code:'CHAT_GENERATION_DISABLED'};
     requireActive();
     const ownerDenied=parsed.kind==='command'?ownerGate.check(event.twitchId):null;
-    if(typeof sendPrivateReply!=='function')return {ok:false,code:ownerDenied||'PRIVATE_REPLY_UNAVAILABLE'};
+    if(parsed.kind!=='command'&&typeof sendPrivateReply!=='function')return {ok:false,code:'PRIVATE_REPLY_UNAVAILABLE'};
     const now=Date.now();for(const [key,times] of limits)if(now-times.at(-1)>=10_000)limits.delete(key);
     const recent=(limits.get(event.twitchId)||[]).filter(at=>now-at<10_000);
     if(recent.length>=4)return {ok:false,code:ownerDenied||'RATE_LIMITED'};
     if(limits.size>=1000&&!limits.has(event.twitchId))return {ok:false,code:ownerDenied||'RATE_LIMITED'};
     limits.set(event.twitchId,[...recent,now]);
     const run=epoch;
-    let result;
-    // Keep denial receipts inside the existing runtime and database vocabulary.
-    if(ownerDenied)result={ok:false,code:ownerDenied};
-    else if(parsed.kind==='whoami')result={ok:true,code:'IDENTITY',privateText:`Your Twitch ID is ${event.twitchId}.`};
-    else if(parsed.kind!=='command')result={ok:true,code:'HELP',privateText:'Open CUHZ Lounge to check your session. Stage commands: !lounge show <item>, end, hold, resume, next, clear.'};
-    else {const prepared=await bounded(()=>store.prepareChat(event,parsed.command));if(!prepared?.ok)return {ok:false,code:prepared?.code||'WEBSITE_SESSION_REQUIRED'};
-      const {context,command}=prepared;if(context?.twitchId!==event.twitchId)return {ok:false,code:'WEBSITE_SESSION_REQUIRED'};if(run!==epoch||!active)return {ok:false,code:'STAGE_DISABLED'};
-      result=await bounded(()=>store.apply(context,command),'STAGE_OUTCOME_UNKNOWN');
-      if(result?.ok){try{streams.publish(await read());}catch{/* committed receipt remains */}}
+    if(parsed.kind==='command'){
+      // One transaction owns admission, terminal outcome, stage effect and its
+      // private receipt. No prepare/apply split or separately sent denial.
+      const result=await bounded(()=>{if(run!==epoch||!active)throw codeError('STAGE_DISABLED');
+        return store.executeChat(event,parsed.command,ownerBinding);},'STAGE_OUTCOME_UNKNOWN');
+      if(run!==epoch||!active)throw codeError('STAGE_OUTCOME_UNKNOWN');
+      if(typeof result?.ok!=='boolean')throw codeError('STAGE_OUTCOME_UNKNOWN');
+      if(result.ok){try{streams.publish(await read());}catch{/* committed receipt remains */}}
+      return {ok:result.ok,code:result.code||'APPLIED',...(result.request_id?{request_id:result.request_id}:{}),
+        replayed:result.replayed===true,privateReplyDelivered:result.privateReplyDelivered===true};
     }
+    const result=parsed.kind==='whoami'
+      ?{ok:true,code:'IDENTITY',privateText:`Your Twitch ID is ${event.twitchId}.`}
+      :{ok:true,code:'HELP',privateText:'Open CUHZ Lounge to check your session. Stage commands: !lounge show <item>, end, hold, resume, next, clear.'};
     if(run!==epoch||!active)return {ok:false,code:'STAGE_OUTCOME_UNKNOWN'};
     await bounded(()=>sendPrivateReply({twitchId:event.twitchId,operationKey:event.operationKey,text:result.privateText||(result.ok?'Stage action recorded.':`Stage action unavailable (${result.code||'UNAVAILABLE'}).`)}));
     // Never return the private ID text to a public chat caller or logger.

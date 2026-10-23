@@ -474,7 +474,7 @@ window.
 
 The existing Express process can now mount the reviewed Lounge server package from `vendor/cuhz-lounge`. `src/lounge_v2_adapter.js` loads it only on explicit startup, preserves raw signed EventSub requests, cookies and SSE, and never converts IRC badges into trusted control events. IRC `!lounge` provides safe guidance; the signed home-channel webhook performs authorized actions. Results are available in the signed-in private inbox at `/api/lounge/v2/chat/inbox`.
 
-All new activation flags default off. When V2 is enabled, old command aliases and the legacy website writer cannot control the old stage, including during a V2 failure. Explicit legacy mode is owner-only and starts locked. Phoenix is a member, with no operator override. Existing `/lounge` and `/lounge/` OBS pages and static assets continue to return HTTP 200. New `/stage` is a separate source; source migration is attended.
+All new activation flags default off. When V2 is enabled, old command aliases and the legacy website writer cannot control the old stage, including during a V2 failure. Explicit legacy mode is owner-only and starts locked. The owner-only first-test policy below supersedes earlier member rollout plans. Existing `/lounge` and `/lounge/` OBS pages and static assets continue to return HTTP 200. New `/stage` is a separate source; source migration is attended.
 
 ### Deploy configuration and preflight
 
@@ -564,3 +564,34 @@ member access stays closed. Role changes revoke existing sessions and require
 a fresh sign-in. Keep reserved OBS disabled during bootstrap unless its distinct
 signing key is already configured, and verify the real signed EventSub chat
 subscription before the attended rehearsal; startup creates neither.
+
+
+### Terminal Twitch command receipts
+
+Stage activation now requires the separately reviewed website migration
+`20261023060000_lounge_stage_chat_terminal.sql`. Authentication-only bootstrap
+still supports the existing eleven-migration schema. Apply only the selected
+reviewed migration, with stage held and old stage processes disabled; then deploy
+the matching package before enabling stage. The migration deliberately retires
+legacy split command preparation and separately sent stage acknowledgements,
+including old calls already executing during cutover. It grants no authority.
+
+Each admitted signed stage command has one atomic result, stage effect and private
+receipt. A command refused for missing website sign-in stays refused after login;
+send a new command in CUHZ Bot chat. A lost response recovers the original result.
+Inbox capacity can delay its delivery without re-executing the command. Invalid,
+stale, rate-limited or capacity-refused requests are not durable admissions.
+
+Identifiable results expire after30days. Disconnect synchronously deletes their
+recipient associations. Bounded maintenance purges expired rows and retries only
+saved private delivery, including while the hosted stage process flag is off.
+A complete hosting outage delays physical cleanup until maintenance resumes.
+Only unlinked security digests remain, with a hard1,000,000-key cap; no user,
+command, result or timestamp columns remain in that set. At capacity, unseen
+commands fail closed. Never delete or rotate those digests to restore capacity.
+
+Rollback: hold first, then disable stage/owner/OBS process gates and preserve
+additive schema plus replay protection. Rolling back to an older package does
+not restore its retired chat protocol. Never restore legacy prepare or erase
+security digests as a compatibility workaround. Verify hosted denial, fresh
+command, duplicate, disconnect and attended Twitch-to-OBS outcomes separately.

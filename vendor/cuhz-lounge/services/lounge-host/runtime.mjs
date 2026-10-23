@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createResendSender } from '../lounge-delivery/resend.mjs';
 import { createLoungeApplication } from '../lounge-goal2/runtime.mjs';
 import { createSupabaseAuthPort } from '../lounge-auth/supabase.mjs';
@@ -88,8 +89,10 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         return value;
       },
       async revoke({ id, status, messageId, occurredAt }) {
+        // The signed envelope ID is opaque. Store only its fixed digest so the
+        // predecessor revocation schema accepts it; subscription ID is the key.
         await query(`insert into public.lounge_eventsub_revocations(subscription_id,status,message_id,occurred_at)
-          values($1,$2,$3,$4) on conflict(subscription_id) do nothing`, [id, status, messageId, occurredAt]);
+          values($1,$2,$3,$4) on conflict(subscription_id) do nothing`, [id, status, createHash('sha256').update(messageId).digest('hex'), occurredAt]);
       },
     },
     handleNotification: request => app.handle(request) });
@@ -122,12 +125,15 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           to_regprocedure('public.lounge_chat_inbox_send(text,text,text)') is not null
             and to_regprocedure('public.lounge_chat_inbox_read(uuid,integer,uuid,text)') is not null
             and to_regprocedure('public.lounge_chat_inbox_cleanup(integer)') is not null as inbox_rpc_ready,
+          to_regprocedure('public.lounge_stage_chat_execute(text,text,timestamp with time zone,text,jsonb,boolean,text,boolean,boolean)') is not null
+            and to_regprocedure('public.lounge_stage_chat_maintain(integer)') is not null as stage_chat_ready,
           to_regprocedure('public.lounge_stage_apply(uuid,integer,integer,jsonb,boolean,boolean)') is not null
             and to_regprocedure('public.lounge_stage_chat_prepare(text,text,jsonb)') is not null
             and to_regprocedure('public.lounge_stage_public(boolean,boolean)') is not null as stage_rpc_ready
           from pg_roles r where r.rolname=current_user`);
         const row = result.rows?.[0];
         if (!row || !['privileged', 'isolation_ok', 'auth_ready', 'stage_ready', 'members_ready', 'inbox_ready', 'eventsub_ready', 'inbox_rpc_ready', 'stage_rpc_ready'].every(key => row[key] === true)) throw Error('LOUNGE_SCHEMA_REVIEW_REQUIRED');
+        if (config.flags.stage && row.stage_chat_ready !== true) throw Error('LOUNGE_STAGE_CHAT_SCHEMA_REQUIRED');
         if (config.flags.delivery && row.delivery_ready !== true) throw Error('LOUNGE_DELIVERY_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated && row.curated_ready !== true) throw Error('LOUNGE_CURATED_SCHEMA_REQUIRED');
@@ -144,6 +150,10 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           if (!running || stopped || turn !== epoch) return;
           // Bounded SQL routines own cleanup; this never retries a paid job.
           return Promise.allSettled([app.auth.cleanup(), inbox.cleanup(), app.deliveryMail?.run(),
+            // Keep private receipt expiry/delivery maintained during stage-off
+            // authentication operation, without replaying any stage command.
+            !config.flags.stage && row.stage_chat_ready === true
+              ? query('select public.lounge_stage_chat_maintain() result') : undefined,
             // Finish any due booking transitions before publishing reminders.
             // A failed cleanup cannot make a notice assert live authority: the
             // notice transaction independently checks state/time/publication.

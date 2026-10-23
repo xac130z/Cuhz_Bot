@@ -12,9 +12,12 @@ export function createStageStore({query,allowSubscription=false,allowPilot=false
     emergency:async context=>(await one('select public.lounge_stage_emergency($1,$2) allowed',[context.sessionId,context.sessionRevision]))?.allowed===true,
     tick:()=>apply(null,{action:'tick',request_id:`tick:${randomUUID()}`}),
     async read(){return (await one('select public.lounge_stage_public($1,$2) state',[allowSubscription===true,allowPilot===true]))?.state;},
-    async prepareChat(event,command){const {request_id:_messageKey,...payload}=command;void _messageKey;
-      return (await one('select public.lounge_stage_chat_prepare($1,$2,$3::jsonb) result',[event.twitchId,event.operationKey,JSON.stringify(payload)]))?.result;},
-    expireChat:async()=>one('select public.lounge_stage_chat_expire() removed'),
+    async executeChat(event,command,ownerControl){const {request_id:_messageKey,...payload}=command;void _messageKey;
+      return (await one('select public.lounge_stage_chat_execute($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9) result',
+        [event.twitchId,event.operationKey,new Date(event.occurredAt).toISOString(),event.homeBroadcasterId,
+          JSON.stringify(payload),ownerControl?.enabled===true,ownerControl?.twitchId??null,allowSubscription===true,allowPilot===true]))?.result;},
+    // Delivery/expiry only: maintenance never replays a stage command.
+    expireChat:async()=>one('select public.lounge_stage_chat_maintain() result'),
     async asset(hash){return one(`select v.public_path as storage_path_canonical,v.public_sha256 as sha256 from public.lounge_library_items i
       join public.lounge_library_verifications v on v.item_id=i.id and v.canonical_sha256=i.sha256
       where v.public_sha256=$1 and i.status='approved' and i.publish_consent_at is not null and i.published_at is not null

@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { isEventSubEnvelopeId } from '../lounge-stage/chat.mjs';
 const broadcasterId = '175727753';
 const reply = (value, status = 403, type = 'application/json') => new Response(type === 'application/json' ? JSON.stringify(value) : value,
   { status, headers: { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
@@ -29,7 +30,7 @@ export function createEventSubIngress({ secret, subscriptionId = null, handleNot
     finally { clearTimeout(timer); void reader?.cancel().catch(() => {}); }
     const id = request.headers.get('twitch-eventsub-message-id'), stamp = request.headers.get('twitch-eventsub-message-timestamp');
     const signature = request.headers.get('twitch-eventsub-message-signature') || '', time = Date.parse(stamp), current = now();
-    if (!/^[A-Za-z0-9_-]{1,100}$/.test(id || '') || !Number.isFinite(time) || time > current + 30000 || current - time > 600000 || !/^sha256=[a-f0-9]{64}$/.test(signature)) return reply({ error: 'UNTRUSTED_CHAT' });
+    if (!isEventSubEnvelopeId(id) || !Number.isFinite(time) || time > current + 30000 || current - time > 600000 || !/^sha256=[a-f0-9]{64}$/.test(signature)) return reply({ error: 'UNTRUSTED_CHAT' });
     const expected = 'sha256=' + createHmac('sha256', secret).update(id + stamp).update(bytes).digest('hex');
     if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return reply({ error: 'UNTRUSTED_CHAT' });
     let body; try { body = JSON.parse(bytes.toString('utf8')); } catch { return reply({ error: 'INVALID_REQUEST' }, 400); }
