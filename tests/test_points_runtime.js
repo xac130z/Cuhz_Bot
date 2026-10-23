@@ -119,6 +119,7 @@ function fixture(options = {}) {
     const logger = { ...quietLogger, error: (...args) => errors.push(args.join(' ')) };
     const pointsService = serviceFor(adapter, logger);
     const evidence = evaluateBotBoot(readBotSource(), {
+        enableGambling: options.enableGambling === true,
         './database': adapter,
         './points_service': pointsService,
         './logger': logger,
@@ -282,11 +283,16 @@ async function getPoints(f, username) {
         assert.match(f.messages[0].text, /you got 100 CUHZ Points/);
         assert.equal(f.user().messages_sent, 8);
     }, { activityReadFails: true });
+    await isolated('gamble remains unavailable by default and never performs a wager', async f => {
+        await f.message('!gamble 10');
+        assert.match(f.messages.at(-1).text, /points games are unavailable/);
+        assert.deepEqual(f.ledger().map(row => row.reason), ['opening', 'chat_message']);
+    }, { channel: '#planetcuhz' });
     await isolated('gamble never coerces unavailable balance to zero or performs a wager', async f => {
         await f.message('!gamble 10');
         assert.match(f.messages.at(-1).text, /balance is unavailable/);
         assert.deepEqual(f.ledger().map(row => row.reason), ['opening', 'chat_message']);
-    }, { channel: '#planetcuhz', balanceReadFails: true });
+    }, { channel: '#planetcuhz', balanceReadFails: true, enableGambling: true });
     for (const command of ['!ask fixture question', '!code fixture question']) {
         await isolated(`${command.split(' ')[0]} failure does not display an unavailable balance`, async f => {
             await f.message(command);
@@ -326,14 +332,14 @@ async function getPoints(f, username) {
             assert.equal(f.user().points, 100);
             assert.match(f.messages.at(-1).text, /gamble points result could not be confirmed/);
             assert.doesNotMatch(f.messages.at(-1).text, /WINNER|you lost|doubled up/);
-        }, { channel: '#planetcuhz', rejectAwards: true });
+        }, { channel: '#planetcuhz', rejectAwards: true, enableGambling: true });
         await isolated(`confirmed gamble ${win ? 'credit' : 'debit'} reports only the settled amount`, async f => {
             f.evidence.runtime.gambleFixture(win);
             await f.message('!gamble 10');
             assert.equal(f.user().points, win ? 111 : 91);
             assert.match(f.messages.at(-1).text, win ? /won 10 CUHZ Points/ : /lost 10 points/);
             assert.equal(f.ledger().at(-1).amount, win ? 10 : -10);
-        }, { channel: '#planetcuhz' });
+        }, { channel: '#planetcuhz', enableGambling: true });
     }
     await isolated('failed moderator grant does not announce success', async f => {
         await f.message('!give @alice 10');

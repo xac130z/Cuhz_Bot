@@ -29,6 +29,17 @@ const mod = (id = '500') => ({ userId: id, login: 'modperson', moderator: true }
 const advance = ms => { T += ms; };
 const turn = () => advance(11000);
 
+check('explicit initialLocked applies to every room without changing driver-seat rules', () => {
+    const l = make({ initialLocked: true });
+    assert.equal(l.readState(ROOM).locked, true);
+    assert.equal(l.readState('999').locked, true);
+    assert.equal(l.applyIntent(ROOM, sub('8'), '!lounge color mint').reason, 'locked');
+    assert.equal(l.applyIntent(ROOM, op(), '!lounge unlock').status, 'applied');
+    assert.equal(l.readState(ROOM).locked, false);
+    assert.equal(l.readState('999').locked, true);
+    assert.throws(() => make({ initialLocked: 'false' }), /initialLocked/);
+});
+
 check('a non-lounge message is ignored entirely (falls through to the bot)', () => {
     const l = make();
     assert.equal(l.applyIntent(ROOM, sub('1'), 'hello chat'), null);

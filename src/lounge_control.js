@@ -222,8 +222,9 @@ const INTENTS = table([
 //                 Phoenix, everyone else blocked".
 //   'subscribers' the original wider ladder (subs steer the safe subset).
 // Fail closed: an unknown value is treated as 'operators'.
-function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, limits = {}, access = 'operators' } = {}) {
+function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, limits = {}, access = 'operators', initialLocked = false } = {}) {
     if (typeof now !== 'function') throw new TypeError('now must be a function');
+    if (typeof initialLocked !== 'boolean') throw new TypeError('initialLocked must be a boolean');
     const operatorsOnly = access !== 'subscribers';
     const L = Object.freeze({ ...LIMITS, ...limits });
     const operators = new Set(
@@ -240,14 +241,9 @@ function createLoungeControl({ now = Date.now, operatorIds = [], cardCount = 5, 
         if (!r) {
             r = {
                 seq: 0, state: { ...HOUSE }, setBy: null, setAtMs: 0,
-                // Boots UNLOCKED in both modes (owner, 2026-10-10). The old
-                // restart-implies-locked rule left the lounge dead after every
-                // deploy until someone typed !lounge unlock — observed for
-                // weeks in production. Steering is already double-gated
-                // (operators, or sub + website link) plus per-user cooldowns
-                // and mute; !lounge lock remains a live incident brake, it
-                // just doesn't re-arm itself on restart.
-                locked: false, lockedBy: null,
+                // Preserve existing factory callers; bot.js explicitly opts
+                // into the current owner-only, locked legacy policy.
+                locked: initialLocked, lockedBy: null,
                 lastApplyMs: 0, lastGlowMs: 0, lastTurboMs: 0,
                 burst: [], coolingUntilMs: 0, badge: true,
                 users: new Map(), muted: new Set(), audit: [],

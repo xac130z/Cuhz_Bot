@@ -71,8 +71,11 @@ check('PNG caching is bounded and HTML revalidates (deploys land on the next OBS
     assert.match(botSrc, /'no-cache'/);
 });
 
-check('Phoenix is a BASE operator by her locked id — and the wrong id is nowhere', () => {
-    assert.match(botSrc, /LOUNGE_OPERATOR_BASE_IDS = Object\.freeze\(\['1293717308', '823707557'\]\)/);
+check('legacy controller is owner-only, explicitly enabled and initially locked', () => {
+    assert.match(botSrc, /LOUNGE_OPERATOR_BASE_IDS = Object\.freeze\(\['1293717308'\]\)/);
+    assert.match(botSrc, /const LOUNGE_ACCESS = 'operators';/);
+    assert.match(botSrc, /initialLocked: true/);
+    assert.match(botSrc, /process\.env\.LOUNGE_ENABLED === 'true' && !loungeV2\.enabled/);
     // The wrong id may appear in explanatory comments, never in code.
     const codeOnly = botSrc.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n');
     assert.ok(!codeOnly.includes('757210754'), 'the wrong Phoenix id must never appear outside comments');

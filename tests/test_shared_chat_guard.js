@@ -61,6 +61,9 @@ async function integration() {
     let effects = { points: 0, memory: 0, ai: 0, sends: [] };
     const sandbox = {
         sharedChatGuard: createSharedChatGuard(),
+        // V2 remains inert in this existing shared-chat regression fixture.
+        loungeV2: { enabled: false, handleIrc: () => ({ handled: false }) },
+        loungeEnabled: () => false,
         config: { username: 'cuhz_bot', enableContextAware: true }, botUserId: '42',
         logger: { info() {}, error(message) { throw Error(message); } },
         userMemory: { recordMessage() { effects.memory++; }, async getProfile() { return {}; } },

@@ -1,0 +1,282 @@
+/* =============================================================================
+   Planet Cuhz — Canonical Design Tokens (single source of truth)
+   Plan §4.2. Every brand hex lives HERE and nowhere else.
+   - Named vars (--cyan …) are for direct CSS use.
+   - RGB channel triplets (--cyan-rgb …) power Tailwind alpha utilities via
+     rgb(var(--cyan-rgb) / <alpha-value>). Surfaces AND accents both expose one.
+
+   SPECTRUM v2 (brand-world upgrade) — the signature gradient now runs the
+   reference poster's cosmic sequence, green → blue → violet → orchid:
+
+     #00F875 → #00B8FF → #3164FF → #7935FF → #C62EFF
+
+   Same token, same concept, same law (MAX ONE Chain Spectrum per viewport), new
+   stops — so every existing paint site inherits v2 without a component edit.
+   --gold is SACRED and leaves the spectrum's last stop on purpose: it is the
+   jewelry/chain accent only, never gradient duty.
+
+   THREE-ZONE RULE — the whole site is lit like the poster:
+     LEFT   green  (--green, --nebula-green-a)   — lower-left nebula
+     CENTRE blue   (--blue,  --nebula-blue-a)    — electric energy core
+     RIGHT  purple (--purple, --nebula-purple-a) — violet/orchid falloff
+   70–80%+ of any screen stays near-black (--void). Neon illuminates; it never
+   floods. AtmosphereStage is the one component that paints these zones.
+   ========================================================================== */
+
+:root {
+  /* ---- Surfaces ---------------------------------------------------------- */
+  --void: #000014;   /* page root / hero space  */
+  --space: #0A0E27;  /* primary section surface */
+  --panel: #0F1730;  /* solid card / panel fill */
+  --ridge: #1B2350;  /* elevated surface        */
+
+  --void-rgb: 0 0 20;
+  --space-rgb: 10 14 39;
+  --panel-rgb: 15 23 48;
+  --ridge-rgb: 27 35 80;
+
+  /* Hairlines default to white @ 8–12% (plan §4.2) */
+  --white-rgb: 255 255 255;
+  --hairline: rgb(255 255 255 / 0.08);
+  --hairline-strong: rgb(255 255 255 / 0.12);
+
+  /* ---- Accents ----------------------------------------------------------- */
+  --cyan: #00EAFF;     /* PRIMARY interactive            */
+  --blue: #00B8FF;     /* CENTRE zone energy + spectrum stop; text-safe   */
+  --purple: #B24BF3;   /* SECONDARY glows / active       */
+  --magenta: #FF1493;  /* energy accent / RIGHT-zone orchid falloff       */
+  --gold: #FFC42A;     /* SACRED chain gold — jewelry only, no gradients  */
+  --green: #00F875;    /* LEFT zone + success / online (was #43FFAF)      */
+  --red: #FF3B5C;      /* errors / destructive           */
+  --orange: #FF6600;   /* warnings only, sparing         */
+  --twitch: #9146FF;   /* Twitch OAuth + live-stream layer (flat)       */
+
+  --cyan-rgb: 0 234 255;
+  --blue-rgb: 0 184 255;
+  --purple-rgb: 178 75 243;
+  --magenta-rgb: 255 20 147;
+  --gold-rgb: 255 196 42;
+  --green-rgb: 0 248 117;
+  --red-rgb: 255 59 92;
+  --orange-rgb: 255 102 0;
+  --twitch-rgb: 145 70 255;
+
+  /* ---- Spectrum v2 interior stops — GRADIENT DUTY ONLY -------------------
+     These three exist so the Chain Spectrum can run the poster's exact
+     sequence without inventing new UI hues. They are never text, never a
+     border, never a fill on their own — only stops inside --chain-spectrum*.
+     None is text-safe (2.7–5.2:1 on --ridge), which is why they have no
+     -rgb triplet and no Tailwind utility. */
+  --spectrum-azure: #3164FF;
+  --spectrum-violet: #7935FF;
+  --spectrum-orchid: #C62EFF;
+
+  /* ---- Aurora accent — ATMOSPHERE ONLY (sky sweeps, ambient tints; never
+     text or interactive surfaces) -------------------------------------------- */
+  --aurora: #5B8CFF;
+  --aurora-rgb: 91 140 255;
+
+  /* ---- Atmosphere intensity knobs (consumed by AtmosphereStage) ----------
+     Raise/lower these to tune how alive the sky feels, site-wide. Ordered by
+     the THREE-ZONE rule: LEFT green · CENTRE blue · RIGHT purple/orchid.
+     Sum kept low on purpose — measured, 95%+ of the field stays darker than
+     --ridge at 375 / 768 / 1440, which is the "neon illuminates, never
+     floods" law expressed as a number. */
+  --nebula-green-a: 0.24;   /* ZONE 1 — lower-LEFT green nebula   */
+  --nebula-blue-a: 0.18;    /* ZONE 2 — CENTRE electric-blue body */
+  --nebula-cyan-a: 0.1;     /* ZONE 2b — the hot core inside it   */
+  --nebula-purple-a: 0.3;   /* ZONE 3 — RIGHT violet mass         */
+  --nebula-magenta-a: 0.15; /* ZONE 3b — orchid falloff, far right */
+  --stars-a: 0.85;
+  --aurora-a: 0.8;
+  /* --nebula-gold-a retired in v2: gold leaves atmosphere duty exactly as it
+     leaves the spectrum's last stop. It is jewelry light, not weather. */
+
+  /* ---- Text -------------------------------------------------------------- */
+  /* Contrast is measured against --ridge (#1B2350), the LIGHTEST surface any
+     of these ever sits on. Passing there means passing on --panel, --space and
+     --void too. Audit B §2 "Cross-page / global → Contrast (accessibility)"
+     and "/tools → Monospace micro-copy" are fixed HERE, at the token, so no
+     usage site has to change. */
+  --text-high: #F4F6FF;   /* headings — 14.9:1 on --ridge  */
+  --text-mid: #A9B2D6;    /* body     —  6.9:1 on --ridge  */
+  --text-faint: #8B93B8;  /* captions —  4.96:1 on --ridge (AA at any size).
+                             WAS #6E77A3 = 3.44:1 on --ridge / 4.38:1 on
+                             --space → failed AA. Do not darken it back. */
+  --text-micro: #9BA4CC;  /* MONO micro-copy only — 6.1:1 on --ridge.
+                             Required for anything at --fs-mono-micro (11px):
+                             eyebrows, "For:" lines, fine print, code chips. */
+
+  --text-high-rgb: 244 246 255;
+  --text-mid-rgb: 169 178 214;
+  --text-faint-rgb: 139 147 184;
+  --text-micro-rgb: 155 164 204;
+
+  /* ---- Semantic status mapping (no new hues — reuses the accents above) --- */
+  --success: var(--green);
+  --warning: var(--orange);
+  --error: var(--red);
+  --info: var(--cyan);
+
+  --success-rgb: var(--green-rgb);
+  --warning-rgb: var(--orange-rgb);
+  --error-rgb: var(--red-rgb);
+  --info-rgb: var(--cyan-rgb);
+
+  /* ---- Signature gradient — "Chain Spectrum" v2 (MAX ONE per viewport) ----
+     Resolves to, verbatim:
+       linear-gradient(90deg, #00F875 0%, #00B8FF 35%, #3164FF 55%,
+                              #7935FF 75%, #C62EFF 100%)
+     Written through the tokens so the palette stays single-source. */
+  --chain-spectrum: linear-gradient(
+    90deg,
+    var(--green) 0%,
+    var(--blue) 35%,
+    var(--spectrum-azure) 55%,
+    var(--spectrum-violet) 75%,
+    var(--spectrum-orchid) 100%
+  );
+  /* Conic variant — reserved for blurred halos / CompatibilityRings only.
+     Same stops around the circle, closing back on green for a seamless loop. */
+  --chain-spectrum-conic: conic-gradient(
+    from 180deg,
+    var(--green),
+    var(--blue),
+    var(--spectrum-azure),
+    var(--spectrum-violet),
+    var(--spectrum-orchid),
+    var(--green)
+  );
+
+  /* ---- Radii (plan §4.2) ------------------------------------------------- */
+  --r-sm: 8px;      /* chips, console inputs        */
+  --r-md: 12px;     /* buttons / inputs (rounded-xl) */
+  --r-lg: 16px;     /* cards (rounded-2xl)          */
+  --r-xl: 24px;     /* hero panels, preview frames  */
+  --r-scene: 32px;  /* overlapping scroll scenes    */
+  --r-full: 9999px; /* pills, badges, rings         */
+
+  /* ---- Motion (plan §4.2) ------------------------------------------------ */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-micro: 180ms;      /* color/border/opacity, 150–200ms */
+  --motion-entrance: 500ms;   /* entrances, 400–600ms            */
+  --motion-scene: 750ms;      /* scene/chain transitions, 600–900ms */
+
+  /* ---- Type families ----------------------------------------------------- */
+  --font-display: "Orbitron", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", "Menlo",
+    monospace;
+
+  /* ==========================================================================
+     TYPE SCALE — three tiers, three jobs. Audit B flagged Orbitron being used
+     "at too many sizes (giant heroes down to card labels)" and mono micro-
+     labels dropping "sub-11px at low contrast". The two guardrails below are
+     the law; every --fs-* token obeys them.
+       --fs-display-min  : Orbitron is DISPLAY ONLY and never renders below it.
+       --fs-mono-floor   : JetBrains Mono never renders below it.
+     Anything smaller than the display floor is Inter. Anything smaller than
+     the mono floor does not ship.
+     ======================================================================== */
+  --fs-display-min: 24px; /* GUARDRAIL — Orbitron floor */
+  --fs-mono-floor: 11px;  /* GUARDRAIL — JetBrains Mono floor */
+
+  /* Display tier — Orbitron 700/900, all-caps, tight leading. 4 steps only. */
+  --fs-display-hero: clamp(40px, 7.5vw, 84px); /* one per page: the hero      */
+  --fs-display-1: clamp(32px, 5vw, 56px);      /* page H1                     */
+  --fs-display-2: clamp(28px, 3.2vw, 40px);    /* section H2                  */
+  --fs-display-3: 24px;                        /* smallest legal Orbitron     */
+
+  /* Body tier — Inter. Everything the display tier is too loud for, which is
+     most of the site: card titles, labels, nav links, paragraphs. */
+  --fs-title: 20px;     /* card / panel titles (Inter 600)       */
+  --fs-body-lg: 18px;   /* lead paragraphs, hero subline         */
+  --fs-body: 16px;      /* default body                          */
+  --fs-body-sm: 14px;   /* dense UI, secondary copy, nav links   */
+  --fs-caption: 13px;   /* Inter caption floor                   */
+
+  /* Mono tier — JetBrains Mono. Codes, eyebrows, stat readouts, fine print.
+     Pair EVERY size at or below --fs-mono-sm with --text-micro, never
+     --text-faint, and never a raw gray. */
+  --fs-mono: 13px;
+  --fs-mono-sm: 12px;
+  --fs-mono-micro: 11px; /* == --fs-mono-floor; the smallest type on the site */
+
+  /* Leading + tracking */
+  --lh-display: 1.05;
+  --lh-heading: 1.2;
+  --lh-title: 1.3;
+  --lh-body: 1.6;
+  --lh-mono: 1.45;
+
+  --tracking-display: 0.02em; /* Orbitron caps breathe slightly */
+  --tracking-title: 0;
+  --tracking-body: 0;
+  --tracking-mono: 0.08em;    /* the site's micro-label look    */
+
+  /* Weights actually used (Google Fonts link ships only these) */
+  --fw-display: 700;
+  --fw-display-black: 900;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* ==========================================================================
+     SPACING SCALE — 4px base unit. Step number == step / 4, so --sp-6 is 24px
+     and maps 1:1 onto the Tailwind number (p-6). Use these, not arbitrary px.
+     Named --sp-* rather than --space-* because --space is the navy surface
+     colour token and must not be shadowed.
+     ======================================================================== */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+  --sp-32: 128px;
+
+  /* ==========================================================================
+     SECTION RHYTHM — kills the "dead zones of 300–500px between sections"
+     (audit B §2 Home → Section spacing rhythm). Every top-level <section>
+     takes its vertical padding from one of these three tokens and nothing
+     else. The largest possible gap between two sections is now
+     2 × 160px = 320px at the widest viewport, and that only where two
+     --section-gap-lg bands meet.
+     ======================================================================== */
+  --section-gap: clamp(64px, 8vw, 112px);     /* DEFAULT — use this          */
+  --section-gap-sm: clamp(48px, 5vw, 72px);   /* tight pairs, trust bars     */
+  --section-gap-lg: clamp(88px, 11vw, 160px); /* hero + final CTA band only  */
+  --section-pad-x: clamp(16px, 5vw, 40px);    /* section gutter              */
+
+  --block-gap: var(--sp-12); /* between blocks inside one section      */
+  --grid-gap: var(--sp-6);   /* card grids                             */
+  --stack-gap: var(--sp-4);  /* between stacked text elements          */
+  --inline-gap: var(--sp-2); /* icon↔label, chip internals             */
+
+  --content-max: 1400px; /* matches tailwind container 2xl */
+  --measure: 68ch;       /* max line length for body copy  */
+
+  /* ==========================================================================
+     ELEVATION — 5 levels, all shadows tinted with --void so they read as
+     depth in space rather than gray haze.
+     ======================================================================== */
+  --elev-0: none;
+  --elev-1: 0 1px 2px rgb(0 0 20 / 0.4), 0 2px 8px rgb(0 0 20 / 0.24);
+  --elev-2: 0 4px 16px rgb(0 0 20 / 0.38), 0 2px 6px rgb(0 0 20 / 0.28);
+  --elev-3: 0 12px 32px rgb(0 0 20 / 0.46), 0 6px 16px rgb(0 0 20 / 0.32);
+  --elev-4: 0 24px 64px rgb(0 0 20 / 0.55), 0 10px 24px rgb(0 0 20 / 0.38);
+
+  /* Focus ring — one definition, used by every interactive surface */
+  --focus-ring: 0 0 0 2px var(--void), 0 0 0 4px rgb(var(--cyan-rgb) / 0.9);
+
+  /* Minimum touch target (method A3) */
+  --tap-min: 44px;
+}

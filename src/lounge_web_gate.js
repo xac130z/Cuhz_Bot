@@ -2,9 +2,9 @@
 // ============================================================================
 // LOUNGE WEB GATE — website sign-in becomes stream control (2026-10-10).
 //
-// Owner directive: Phoenix signs in with Twitch ON planetcuhz.com, and only
-// then may she steer the lounge from the web. This module turns a website
-// session token into a VERIFIED Twitch id, or nothing.
+// Legacy owner-only remote. Phoenix is a member, not an operator. This module
+// turns an online website session into the verified owner's Twitch id, or
+// nothing. bot.js disables this entire legacy route whenever V2 is enabled.
 //
 // Identity law (research 2026-10-10, applies to every decision below):
 //   - The ONLY trustworthy Twitch id is in `identities[]` from Supabase's
@@ -19,12 +19,8 @@
 //     which also catches sign-out (session_not_found) within one call.
 //
 // Authority law:
-//   - Web writes are allowed for EXACTLY the two shared controllers:
-//     planetcuhz 1293717308 and phoenixpnyc 823707557 (owner-locked
-//     2026-10-06). This set is hardcoded and SEPARATE from
-//     LOUNGE_OPERATOR_IDS on purpose — that list is env-extensible
-//     (LOUNGE_OPERATOR_EXTRA_IDS), and an env var must never be able to
-//     widen WEBSITE control of the stream.
+//   - Web writes are allowed only for the owner, planetcuhz 1293717308.
+//     No username, subscriber badge or environment variable expands this set.
 //   - The gate only identifies. Every mutation still flows through
 //     loungeControl.applyIntent, so rate limits, bounds, lock, mute and the
 //     audit log apply to web exactly as they do to chat.
@@ -34,7 +30,7 @@
 // the gate inert-proof without new Railway configuration; env still wins.
 // ============================================================================
 
-const WEB_CONTROLLER_IDS = Object.freeze(new Set(['1293717308', '823707557']));
+const WEB_CONTROLLER_IDS = Object.freeze(new Set(['1293717308']));
 
 const DEFAULT_SUPABASE_URL = 'https://wjebryxdefcgsxsqomac.supabase.co';
 // The site's PUBLISHABLE anon key — shipped verbatim to every browser in the
@@ -44,7 +40,7 @@ const DEFAULT_SUPABASE_ANON_KEY =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqZWJyeXhkZWZjZ3N4c3FvbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAwMTAyMTIsImV4cCI6MjA2NTU4NjIxMn0.o4e8h0oIHqMtVBBhEU3KQMRRvwCc2PpbjSbvqvGm1_o';
 
 const TOKEN_CACHE_TTL_MS = 45 * 1000;   // re-verify at most every 45s per token
-const TOKEN_CACHE_MAX = 64;             // two operators; anything more is noise
+const TOKEN_CACHE_MAX = 64;
 
 /**
  * createWebGate({ supabaseUrl, anonKey, httpGet, now }) -> { verify, stats }
@@ -100,21 +96,26 @@ function createWebGate({ supabaseUrl, anonKey, httpGet, now = Date.now } = {}) {
         if (!res || res.status !== 200 || !res.data || typeof res.data !== 'object') {
             result = { ok: false, reason: 'not_signed_in' };
         } else {
-            const identities = Array.isArray(res.data.identities) ? res.data.identities : [];
-            const tw = identities.find(i => i && i.provider === 'twitch');
-            // Require the two provider-id fields to agree — both come from the
-            // OAuth exchange, and a mismatch means something is off. Fail closed.
-            const idA = tw && tw.identity_data ? String(tw.identity_data.sub || '') : '';
-            const idB = tw ? String(tw.id || '') : '';
-            if (!tw || !idA || idA !== idB) {
+            // Reuse the exact canonical identity reader after this online
+            // verification. UUID identity rows use provider_id; numeric legacy
+            // rows remain supported. Editable metadata is never authority.
+            let identity;
+            try {
+                const { verifiedTwitchIdentity } = await import('../vendor/cuhz-lounge/services/lounge-membership/identity.mjs');
+                identity = verifiedTwitchIdentity(res.data);
+            } catch {
+                return { ok: false, reason: 'auth_unreachable' };
+            }
+            if (!identity) {
                 result = { ok: false, reason: 'no_twitch_identity' };
-            } else if (!WEB_CONTROLLER_IDS.has(idA)) {
+            } else if (identity.twitchId !== '1293717308') {
                 result = { ok: false, reason: 'not_a_controller' };
             } else {
+                const tw = res.data.identities.find(i => i.provider === 'twitch');
                 const login = tw.identity_data && typeof tw.identity_data.preferred_username === 'string'
                     ? tw.identity_data.preferred_username.toLowerCase()
-                    : (idA === '823707557' ? 'phoenixpnyc' : 'planetcuhz');
-                result = { ok: true, twitchId: idA, login };
+                    : 'planetcuhz';
+                result = { ok: true, twitchId: identity.twitchId, login };
             }
         }
 

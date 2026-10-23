@@ -468,3 +468,130 @@ window.
 ---
 
 *Built for the CUHZ community. 🌌*
+
+
+## Authenticated Lounge command runtime — October 20, 2026
+
+The existing Express process can now mount the reviewed Lounge server package from `vendor/cuhz-lounge`. `src/lounge_v2_adapter.js` loads it only on explicit startup, preserves raw signed EventSub requests, cookies and SSE, and never converts IRC badges into trusted control events. IRC `!lounge` provides safe guidance; the signed home-channel webhook performs authorized actions. Results are available in the signed-in private inbox at `/api/lounge/v2/chat/inbox`.
+
+All new activation flags default off. When V2 is enabled, old command aliases and the legacy website writer cannot control the old stage, including during a V2 failure. Explicit legacy mode is owner-only and starts locked. The owner-only first-test policy below supersedes earlier member rollout plans. Existing `/lounge` and `/lounge/` OBS pages and static assets continue to return HTTP 200. New `/stage` is a separate source; source migration is attended.
+
+### Deploy configuration and preflight
+
+Inject values privately at deploy; never commit credentials. Use the existing Supabase project and Twitch OAuth application. No migration, role, EventSub subscription, provider request or flag is created on import.
+
+- `LOUNGE_V2_ENABLED`: exact `true` to mount; absent/false stays inert.
+- `LOUNGE_PUBLIC_ORIGIN`: canonical HTTPS website origin. `LOUNGE_INGRESS_HOST` may explicitly name the Railway host used by the same-origin proxy. Forwarded host headers grant no trust.
+- `LOUNGE_DATABASE_URL`: existing Lounge/Supabase SQL database, not the bot Points database. Verified TLS is mandatory; weakening URL options are rejected. Pool size is two.
+- `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_PUBLISHABLE_KEY`: existing auth upstream.
+- `LOUNGE_AUTH_SEALING_KEY`: server-only 32-byte key, canonical 43-character base64url.
+- `LOUNGE_EVENTSUB_SECRET`: separate 32–100 character random ASCII secret for the reviewed webhook; optional `LOUNGE_EVENTSUB_SUBSCRIPTION_ID` pins that exact subscription. Callback is `/api/lounge/v2/stage/chat`. Signed challenges and durable revocations are supported; no subscription is registered automatically.
+- `LOUNGE_RULES_VERSION`: exact accepted policy version.
+- `LOUNGE_OBS_RESERVED_ENABLED=true` enables two protected read-only OBS stream slots, separate from the20 public slots. It requires `LOUNGE_OBS_SIGNING_KEY`, a separate32-byte base64url key (43characters), distinct from the auth sealing key. No token is issued on startup; private coordinator helper `createObsStreamAccess({key,origin}).mint()` returns an audience-bound capability, default14hours/max16hours. Pass it only in the trusted source fragment `/stage/obs#token=<capability>`. The renderer sends it to the dedicated same-origin stream; redact that query in ingress/access logs. Rotate the dedicated key to invalidate capabilities, and issue a fresh capability deliberately for a later show; no automatic renewal. It cannot control the stage, read member data or start generation.
+- `LOUNGE_STAGE_ENABLED`, `LOUNGE_PILOT_ENABLED`, `LOUNGE_PILOT_MANAGEMENT_ENABLED`, `LOUNGE_STAGE_BRIDGE_ENABLED`: explicit booleans, with independent durable SQL flags and actor permissions. Pilot mode does not create a grant, start the two-week pilot, publish an opening or issue a booking.
+- Private artwork serving/import also requires `LOUNGE_STORAGE_BUCKET` and server-only `LOUNGE_STORAGE_SERVICE_KEY`. No public bucket is created.
+
+This host supports reviewed owner/finite-pilot stage wiring. `LOUNGE_GENERATION_CHAT_ENABLED=true` is refused until funded dollar admission/moderation is connected. `LOUNGE_SUBSCRIPTION_ENABLED=true` is refused until the existing P1 broadcaster monitor is explicitly integrated. A deployment must not turn those unfinished paths into an unlimited entitlement. No spoken voice provider is selected or started.
+
+Startup verifies the required schema/RPCs and service authority before serving authenticated traffic. Apply reviewed additive schema separately from the website repository, including `20261020010000_lounge_chat_inbox.sql` and `20261020020000_lounge_eventsub_transport.sql`, after all their predecessors. Do not point new code at an older schema. New migrations enable no roles or flags.
+
+### Verification and release gate
+
+Run `npm run test:lounge-v2` for the HTTP adapter. The existing isolated boot, Lounge control/web/wiring/hosting, readiness, Points and shared-chat suites cover the surrounding bot. `npm run check:lounge-bundle` verifies every manifest-listed source/asset file against the canonical website checkout. To regenerate, use `npm run sync:lounge -- /absolute/path/to/website/application`; outside the shared workspace supply that reviewed source checkout explicitly. The bundle includes worker-thread decoder assets and pins `pngjs`7.0.0. It starts no second cloud service.
+
+Live acceptance remains separate: review the exact source/schema release; route website auth/API paths to this process while sending OBS SSE directly to Railway; bind the owner's freshly verified website identity to the approved owner role; verify signed chat, private results, stage changes, reconnect and emergency hold. Enable and rehearse the separate signed OBS lane before public exposure;20 public connections cannot consume its two slots. Pending admissions share one read, and stop/restart cannot publish an old epoch. Verify ingress query redaction and actual OBS/resource behavior. Keep funded generation off until the reset/window, $8 currency ceiling, moderation and real private-output/reconciliation checks pass. Roll back by disabling V2 and redeploying the previous reviewed image; retain additive data and explicitly review whether legacy mode should resume.
+
+
+2026-10-20 cutover hardening: valid owner bookmarks/reloads now reach both operator consoles through exact read-only HTML bootstrap. Neighboring APIs, assets and mutations retain Origin/CSRF checks. Combined website suite444/444, bot adapter15/15 and local HTTP/SQL/SSE/private-inbox rehearsal pass. Hosted read-only preflight still reports required V2 tables/RPCs absent; no production activation has occurred.
+
+
+## Owner-only recovery release — October 23, 2026
+
+The first live test permits only the owner's freshly verified Planet CUHZ Twitch identity. Previous Phoenix/member/team pilot permissions are suspended until explicit new approval. This release introduces an additional single-identity denial gate shared by web controls, signed chat, emergency controls, stage review/activity and booking check-in. Existing server authentication, SQL roles, consent, leases, revisions and replay rules still apply; the setting does not grant a role.
+
+- `LOUNGE_OWNER_CONTROL_ENABLED=true` and `LOUNGE_OWNER_TWITCH_ID=<freshly verified numeric ID>` are required for control. Missing/false binding denies control. Malformed IDs fail startup; names, CSV lists, badges and broadcaster role cannot substitute. Historical source identifies `planetcuhz` as `1293717308`; verify the current signed identity before configuring it. `175727753` is the CUHZ Bot home channel, not the owner.
+- `LOUNGE_PILOT_ENABLED=true` and `LOUNGE_PILOT_MANAGEMENT_ENABLED=true` are rejected during this release. There is no switch to open team control. Keep booking, pilot, stage bridge, delivery, subscriptions and paid generation disabled unless their exact owner-only acceptance step is deliberately configured.
+- The canonical `/stage` presentation now includes bundled existing world/host artwork. `/stage/obs` retains the reserved signed read-only transport. Canonical website proxies `/stage` and `/stage/*` to the same bot; legacy `/lounge` paths remain. No OBS scene has been changed by source integration.
+- `npm run sync:lounge` copies the exact transitive runtime closure plus two fixed WebP scene assets and the single pinned owner catalog PNG; `npm run check:lounge-bundle` verifies source bytes and manifest. This is a local source package until deployment and real-account/OBS evidence are recorded in the ecosystem recovery report.
+
+For the initial stage-only rehearsal, signed owner commands `!lounge hold`, `!lounge resume`, and `!lounge next` use the existing operator role. `!lounge show <item>` still requires ordinary eligibility and a current booked lease. Reveal requires an existing consented, published, verified public library derivative and configured storage ports; the bundled brand background does not create a library approval. The exact `/lounge/delivery` page is routed to V2 while legacy `/lounge` sources remain intact; delivery stays disabled.
+
+### Preparing the first owner artwork
+
+`LOUNGE_OWNER_CURATED_ENABLED` defaults to false. Enabling it requires the exact
+owner binding, `LOUNGE_STAGE_BRIDGE_ENABLED`, existing private storage, and the
+separately reviewed additive migration
+`20261023050000_lounge_owner_curated_artwork.sql`. Startup checks the new tables
+and RPCs, then verifies that the configured existing storage bucket is private
+before starting timers. The durable `library.curated.enabled` and `library.review.enabled`
+flags also remain independently required. The feature grants no role or consent.
+
+The protected `/api/lounge/v2/stage-bridge/curated/ops` page prepares one pinned
+existing Planet CUHZ logo. Import preserves the original privately, verifies
+the decoded PNG, strips metadata from the presentation derivative, and checks
+both stored hashes. It creates no generated job, quota usage, membership, lease,
+Points transaction or provider request. The server requires stage hold for a
+fresh import, review submission and approval. Keep it held until the attended
+reveal; recovering a completed receipt does not repeat publication.
+
+The freshly authenticated owner needs the scoped durable `review:decide`
+permission as well as the immutable owner binding. Image-specific adult,
+rights and publication consent are explicit; import and consent do not approve
+or display the image. Approval is a separate action in the existing review queue.
+The public credit says “Owner-curated artwork” and “Presented by”, without
+claiming the logo was generated in the Lounge or made in Chain Studio.
+
+If a response is lost, use the saved request ID to recover the same operation.
+The console preserves an unresolved receipt across same-owner sign-in and does
+not submit automatically. A historical receipt does not restore revoked
+publication. After approval, the attended owner can resume/select the image
+through the existing signed Twitch controls. To withdraw, hold the stage first,
+then use the native owner console's withdrawal button to revoke publication
+and verify that the public feed and
+asset are removed before disabling bridge, auth or owner controls. Disabling
+the curated workflow flag does not withdraw already-approved artwork. No live
+image or permission is provisioned by copying this source package.
+
+Authentication bootstrap also requires the website build gates
+`VITE_LOUNGE_AUTH_BROKER_ENABLED=true` and `VITE_LOUNGE_ELIGIBILITY_ENABLED=true`,
+with durable `auth.broker_enabled`; stage control separately needs durable
+`stage.enabled`. These switches do not enable pilot or subscription access.
+The freshly signed-in owner must explicitly accept the same rules version used
+by the host and durable stage policy. The hosted read-only preflight on October
+23 verified `lounge-v2` and the private `lounge-assets` bucket; recheck both at
+cutover. A rules-connected owner may correctly see `ELIGIBILITY_DISABLED` while
+member access stays closed. Role changes revoke existing sessions and require
+a fresh sign-in. Keep reserved OBS disabled during bootstrap unless its distinct
+signing key is already configured, and verify the real signed EventSub chat
+subscription before the attended rehearsal; startup creates neither.
+
+
+### Terminal Twitch command receipts
+
+Stage activation now requires the separately reviewed website migration
+`20261023060000_lounge_stage_chat_terminal.sql`. Authentication-only bootstrap
+still supports the existing eleven-migration schema. Apply only the selected
+reviewed migration, with stage held and old stage processes disabled; then deploy
+the matching package before enabling stage. The migration deliberately retires
+legacy split command preparation and separately sent stage acknowledgements,
+including old calls already executing during cutover. It grants no authority.
+
+Each admitted signed stage command has one atomic result, stage effect and private
+receipt. A command refused for missing website sign-in stays refused after login;
+send a new command in CUHZ Bot chat. A lost response recovers the original result.
+Inbox capacity can delay its delivery without re-executing the command. Invalid,
+stale, rate-limited or capacity-refused requests are not durable admissions.
+
+Identifiable results expire after30days. Disconnect synchronously deletes their
+recipient associations. Bounded maintenance purges expired rows and retries only
+saved private delivery, including while the hosted stage process flag is off.
+A complete hosting outage delays physical cleanup until maintenance resumes.
+Only unlinked security digests remain, with a hard1,000,000-key cap; no user,
+command, result or timestamp columns remain in that set. At capacity, unseen
+commands fail closed. Never delete or rotate those digests to restore capacity.
+
+Rollback: hold first, then disable stage/owner/OBS process gates and preserve
+additive schema plus replay protection. Rolling back to an older package does
+not restore its retired chat protocol. Never restore legacy prepare or erase
+security digests as a compatibility workaround. Verify hosted denial, fresh
+command, duplicate, disconnect and attended Twitch-to-OBS outcomes separately.
