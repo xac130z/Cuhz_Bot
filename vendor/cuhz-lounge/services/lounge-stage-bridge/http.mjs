@@ -1,8 +1,9 @@
 import {consoleHtml,consoleScript,consoleStyle} from './console.mjs';
 import {curatedConsoleHtml,curatedConsoleScript,curatedConsoleStyle} from './owner-curated-console.mjs';
+import {nativeSignInRecovery} from '../lounge-auth/native-recovery.mjs';
 const base='/api/lounge/v2/stage-bridge';
 const routes=new Map([['/activity','activity'],['/activity/revoke','activity_revoke'],['/import','import'],['/review','review'],['/review/decide','decide'],['/publication/revoke','revoke'],['/curated/import','curated_import'],['/curated/review','curated_review']]);
-const safe=new Set(['STAGE_CONTROL_DISABLED','STAGE_OWNER_UNCONFIGURED','STAGE_OWNER_REQUIRED','BRIDGE_DISABLED','BRIDGE_BUSY','OUTPUT_VERIFICATION_UNAVAILABLE','BRIDGE_UNAVAILABLE','BRIDGE_OUTCOME_UNKNOWN','AUTH_REQUIRED','AUTH_UNAVAILABLE','AUTH_DISABLED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','AUTH_REFRESH_PENDING','INVALID_REQUEST','REQUEST_TOO_LARGE','REQUEST_TIMEOUT','SESSION_RECHECK_REQUIRED','SIGN_IN_REQUIRED','OPERATOR_REQUIRED','STAGE_OWNER_REQUIRED','LIBRARY_BRIDGE_DISABLED','OUTPUT_NOT_VERIFIED','ASSET_UNAVAILABLE']);
+const safe=new Set(['STAGE_CONTROL_DISABLED','STAGE_OWNER_UNCONFIGURED','STAGE_OWNER_REQUIRED','BRIDGE_DISABLED','BRIDGE_BUSY','OUTPUT_VERIFICATION_UNAVAILABLE','BRIDGE_UNAVAILABLE','BRIDGE_OUTCOME_UNKNOWN','AUTH_REQUIRED','AUTH_IDENTITY_CHANGED','AUTH_UNAVAILABLE','AUTH_DISABLED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','AUTH_REFRESH_PENDING','INVALID_REQUEST','REQUEST_TOO_LARGE','REQUEST_TIMEOUT','SESSION_RECHECK_REQUIRED','SIGN_IN_REQUIRED','OPERATOR_REQUIRED','STAGE_OWNER_REQUIRED','LIBRARY_BRIDGE_DISABLED','OUTPUT_NOT_VERIFIED','ASSET_UNAVAILABLE']);
 for(const code of ['CURATED_DISABLED','CURATED_SOURCE_UNAVAILABLE','CURATED_ITEM_UNAVAILABLE','CURATED_ITEM_CHANGED','STAGE_HOLD_REQUIRED','OWNER_REQUIRED','OWNER_BINDING_REQUIRED','CONNECTION_CHANGED','RULES_REQUIRED'])safe.add(code);
 export function createStageBridgeHandler({runtime,origin,enabled=false,curatedEnabled=false,timeoutMs=5000}={}){
  if(!runtime||new URL(origin).origin!==origin||!origin.startsWith('https://')||timeoutMs<1||timeoutMs>12000)throw Error('BRIDGE_CONFIG_INVALID');
@@ -33,11 +34,13 @@ export function createStageBridgeHandler({runtime,origin,enabled=false,curatedEn
      // Only the exact operator HTML navigation receives this normalization.
      // Online identity and the SQL review permission remain mandatory.
      let authRequest=req;if(navigation){const requestHeaders=new Headers(req.headers);requestHeaders.set('Origin',origin);authRequest=new Request(req,{headers:requestHeaders});}
-     const context=await runtime.authenticate(authRequest,{operator:true});if(route==='/ops')return response(consoleHtml(context.csrfToken,{curatedEnabled:curatedEnabled===true}),200,'text/html; charset=utf-8');if(route==='/console.js')return response(consoleScript,200,'text/javascript; charset=utf-8');return response(consoleStyle,200,'text/css; charset=utf-8');}
+     const context=await runtime.consoleContext(authRequest);if(route==='/ops')return response(consoleHtml(context.csrfToken,{curatedEnabled:curatedEnabled===true,ownerKey:context.ownerKey,sessionKey:context.sessionKey}),200,'text/html; charset=utf-8');if(route==='/console.js')return response(consoleScript,200,'text/javascript; charset=utf-8');return response(consoleStyle,200,'text/css; charset=utf-8');}
    }
    if(req.method!=='POST')return response({error:'METHOD_NOT_ALLOWED'},405);const action=routes.get(route);if(!action)return response({error:'NOT_FOUND'},404);
    if(!/^application\/json(?:\s*;|$)/i.test(req.headers.get('content-type')||''))return response({error:'INVALID_REQUEST'},400);
    const input=await body(req);requestId=input?.requestId;const result=await runtime.command(req,action,input);return response(result,result?.ok?200:409);
-  }catch(error){const code=safe.has(error?.code)?error.code:'BRIDGE_UNAVAILABLE';return response({error:code,...(code==='BRIDGE_OUTCOME_UNKNOWN'&&typeof requestId==='string'?{requestId}:{})},['AUTH_REQUIRED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','OPERATOR_REQUIRED','SIGN_IN_REQUIRED','STAGE_OWNER_REQUIRED','OWNER_REQUIRED','OWNER_BINDING_REQUIRED','SESSION_RECHECK_REQUIRED','CONNECTION_CHANGED','RULES_REQUIRED'].includes(code)?403:['INVALID_REQUEST','REQUEST_TOO_LARGE','OUTPUT_NOT_VERIFIED'].includes(code)?400:['STAGE_HOLD_REQUIRED','CURATED_ITEM_CHANGED'].includes(code)?409:503);}
+  }catch(error){const code=safe.has(error?.code)?error.code:'BRIDGE_UNAVAILABLE',status=['AUTH_REQUIRED','AUTH_IDENTITY_CHANGED','AUTH_CSRF_DENIED','AUTH_ORIGIN_DENIED','OPERATOR_REQUIRED','SIGN_IN_REQUIRED','STAGE_OWNER_REQUIRED','OWNER_REQUIRED','OWNER_BINDING_REQUIRED','SESSION_RECHECK_REQUIRED','CONNECTION_CHANGED','RULES_REQUIRED'].includes(code)?403:['INVALID_REQUEST','REQUEST_TOO_LARGE','OUTPUT_NOT_VERIFIED'].includes(code)?400:['STAGE_HOLD_REQUIRED','CURATED_ITEM_CHANGED'].includes(code)?409:503;
+   const recovery=nativeSignInRecovery(req,code);if(recovery)return response(recovery,status,'text/html; charset=utf-8');
+   return response({error:code,...(code==='BRIDGE_OUTCOME_UNKNOWN'&&typeof requestId==='string'?{requestId}:{})},status);}
  };
 }

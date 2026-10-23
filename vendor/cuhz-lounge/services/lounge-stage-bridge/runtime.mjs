@@ -27,7 +27,9 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,ow
  async function checked(c,run,operator=false){fence(run);if(Date.now()-c.verifiedAt>60000||c.verifiedAt>Date.now())throw failure('AUTH_REQUIRED');const a=await bound(()=>store.actor(c,operator?'review:decide':null));fence(run);if(!a?.ok||a.user_id!==c.userId)throw failure(a?.code||'AUTH_REQUIRED');}
  async function enabledNow(run){fence(run);if(!await bound(()=>store.enabled()))throw failure('LIBRARY_BRIDGE_DISABLED');fence(run);}
  async function member(req){const run=epoch,c=await authenticate(req),r=await bound(()=>store.member(c));await checked(c,run);return r;}
- async function reviews(req){const run=epoch,c=await authenticate(req,{operator:true});if(!await bound(()=>store.enabled()))throw failure('LIBRARY_BRIDGE_DISABLED');const rows=await bound(()=>store.reviews());await checked(c,run,true);return {reviews:rows.map(r=>({...r,imageUrl:`/api/lounge/v2/stage-bridge/reviews/${r.id}/image`}))};}
+ const reviewIdentity=c=>({ownerKey:hash(Buffer.from(`artwork-review-identity-v1|${c.userId}|${c.twitchId}`)),sessionKey:hash(Buffer.from(`artwork-review-session-v1|${c.userId}|${c.sessionId}|${c.sessionRevision}`))});
+ async function consoleContext(req){const c=await authenticate(req,{operator:true});return {csrfToken:c.csrfToken,...reviewIdentity(c)};}
+ async function reviews(req){const run=epoch,c=await authenticate(req,{operator:true});if(!await bound(()=>store.enabled()))throw failure('LIBRARY_BRIDGE_DISABLED');const rows=await bound(()=>store.reviews());await checked(c,run,true);return {...reviewIdentity(c),reviews:rows.map(r=>({...r,imageUrl:`/api/lounge/v2/stage-bridge/reviews/${r.id}/image`}))};}
  async function reviewImage(req,id){if(!uuid.test(id))throw failure('INVALID_REQUEST');const run=epoch,c=await authenticate(req,{operator:true});if(typeof readObject!=='function')throw failure('ASSET_UNAVAILABLE');
   const record=await bound(()=>store.reviewAsset(id));fence(run);if(!record)throw failure('ASSET_UNAVAILABLE');const controller=new AbortController();let object;
   try{object=await bound(()=>readObject(record.path,{signal:controller.signal,maxBytes:10*1024*1024}),'ASSET_UNAVAILABLE');}finally{controller.abort();}
@@ -72,5 +74,5 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,ow
  }
  async function command(req,action,input){active();const run=()=>action.startsWith('curated_')?curated.command(req,action.slice(8),input):execute(req,action,input);
   if(!['import','curated_import'].includes(action))return run();if(imports>=3)throw failure('BRIDGE_BUSY');imports++;try{return await run();}finally{imports--;}}
- return Object.freeze({member,reviews,reviewImage,command,authenticate,curated,stop(){stopped=true;epoch++;curated.stop();return verifier?.stop();}});
+ return Object.freeze({member,reviews,reviewImage,command,authenticate,consoleContext,curated,stop(){stopped=true;epoch++;curated.stop();return verifier?.stop();}});
 }

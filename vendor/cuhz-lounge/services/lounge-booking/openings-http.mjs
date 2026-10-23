@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {isTrustedAuthContext} from '../lounge-auth/runtime.mjs';
 import {createOwnerControlGate} from '../lounge-stage/owner-control.mjs';
 import {validOpeningCommand} from './openings-client.mjs';
+import {nativeSignInRecovery} from '../lounge-auth/native-recovery.mjs';
 const BASE='/api/lounge/v2/bookings';
 const script=readFileSync(new URL('./openings-console.mjs',import.meta.url),'utf8');
 const client=readFileSync(new URL('./openings-client.mjs',import.meta.url),'utf8');
@@ -62,12 +63,15 @@ export function createOpeningsHandler({broker,store,origin,enabled=false,ownerCo
    },req.signal,command?'OPENINGS_OUTCOME_UNKNOWN':'OPENINGS_UNAVAILABLE');
    if(!active||run!==epoch)throw failure(startedWrite?'OPENINGS_OUTCOME_UNKNOWN':'BOOKING_DISABLED');
    if(result?.ok!==true){const code=allowed.has(result?.code)?result.code:startedWrite?'OPENINGS_OUTCOME_UNKNOWN':'OPENINGS_UNAVAILABLE';
-    return reply({error:code,...(code==='OPENINGS_OUTCOME_UNKNOWN'?{requestId}:{})},code==='OWNER_ROLE_REQUIRED'?403:code.includes('UNAVAILABLE')||code.includes('UNKNOWN')||code==='BOOKING_DISABLED'?503:409);}
+    const status=code==='OWNER_ROLE_REQUIRED'?403:code.includes('UNAVAILABLE')||code.includes('UNKNOWN')||code==='BOOKING_DISABLED'?503:409;
+    const recovery=nativeSignInRecovery(req,code);if(recovery)return reply(recovery,status,'text/html; charset=utf-8');
+    return reply({error:code,...(code==='OPENINGS_OUTCOME_UNKNOWN'?{requestId}:{})},status);}
    if(html)return reply(renderOpeningsConsole(context),200,'text/html; charset=utf-8');
    if(url.pathname.endsWith('/openings.css'))return reply(styles,200,'text/css; charset=utf-8');
    if(!api)return reply(url.pathname.endsWith('openings-console.mjs')?script:client,200,'text/javascript; charset=utf-8');
    return reply(result);
   }catch(error){const code=allowed.has(error?.code)?error.code:startedWrite?'OPENINGS_OUTCOME_UNKNOWN':'OPENINGS_UNAVAILABLE';
+   const recovery=nativeSignInRecovery(req,code);if(recovery)return reply(recovery,error?.status||503,'text/html; charset=utf-8');
    return reply({error:code,...(code==='OPENINGS_OUTCOME_UNKNOWN'&&requestId?{requestId}:{})},error?.status||503);}
  }
  return Object.freeze({handle,start(){if(enabled===true&&!active){active=true;epoch++;}},stop(){active=false;epoch++;}});
