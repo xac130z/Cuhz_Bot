@@ -595,3 +595,37 @@ additive schema plus replay protection. Rolling back to an older package does
 not restore its retired chat protocol. Never restore legacy prepare or erase
 security digests as a compatibility workaround. Verify hosted denial, fresh
 command, duplicate, disconnect and attended Twitch-to-OBS outcomes separately.
+
+### Chain binary upload gateway — isolated C08 branch
+
+This source checkpoint adds the exact `PUT /api/lounge/v2/chain/assets/<sha256>`
+route for private photo originals. `LOUNGE_CHAIN_PROJECTS_ENABLED` defaults off.
+The ordinary JSON/signed EventSub body limit stays32KiB. The binary route is
+limited to15MiB, two in-flight gateway requests and the host's two physical
+upload slots. It passes a paused zero-buffer Web stream to the existing host;
+the broker authenticates and checks CSRF before application body reads begin.
+Host/SQL owner, rules, recorded age-attestation and session checks still apply.
+The adapter supplies the internal `chainBinaryTransport: true` capability; no
+environment value can stand in for that implementation.
+
+Body pulls consume available partial chunks with backpressure. Timeout, client
+disconnect and process stop cancel them. Unread refused bodies close their
+connection; Node may discard a socket chunk after the response is final, but
+those bytes never reach the authenticated application reader or storage port.
+A client still writing after refusal can observe a closed socket. A dispatched
+upload with unknown outcome retains its original digest for explicit recovery;
+the gateway never retries a write. Other routes cannot obtain the larger limit,
+including normalized aliases or query variants. Earlier body parsing fails closed.
+
+The companion website branch provides the69-file runtime closure, canonical
+broker, private scene/assets, explicit session links and bounded cleanup. The
+new schema `20261024010000_lounge_chain_projects.sql` remains source-only and
+enables no flags or roles. `npm run test:lounge-v2` includes real Express binary
+boundary tests. The ecosystem recovery folder contains a separate packaged
+Express + actual broker + actual SQL rehearsal with synthetic identities and
+PNG data; it is not production or independent native PostgreSQL evidence.
+
+This C08 branch is separate from the reviewed owner-stage release. Frontend
+cloud synchronization, age-attestation UI, HTTPS proxy/body-limit acceptance,
+capacity/backup review, native contention and independent review remain required
+before C08 rollout. The owner-only first-test restriction is unchanged.

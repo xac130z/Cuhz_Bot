@@ -9,6 +9,7 @@ import { createEventSubIngress } from './eventsub.mjs';
 import { createObsStreamAccess } from '../lounge-stage/obs-access.mjs';
 import { createBookingHousekeeping } from '../lounge-booking/housekeeping.mjs';
 import { createBookingNotices } from '../lounge-booking/notices.mjs';
+import { createChainCleanup } from '../lounge-chain/cleanup.mjs';
 
 const unavailable = code => new Response(JSON.stringify({ error: code }), { status: 503,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -17,10 +18,14 @@ const unavailable = code => new Response(JSON.stringify({ error: code }), { stat
  * Import/factory construction never migrates, changes a flag, grants a role,
  * starts generation, registers EventSub, or speaks on stream. */
 export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetchImpl = globalThis.fetch,
-  schedule = setInterval, cancel = clearInterval } = {}) {
+  schedule = setInterval, cancel = clearInterval, chainBinaryTransport = false } = {}) {
   const config = hostConfig(env);
   if (!config.enabled) return Object.freeze({ start: async () => ({ started: false }), stop: async () => {},
     handle: async () => unavailable('LOUNGE_DISABLED') });
+  // Existing packaged bot ingress caps raw bodies at32KiB. Only an adapter
+  // implementing authenticated, bounded binary streaming may opt into C08.
+  // Environment configuration alone cannot assert this transport capability.
+  if (config.flags.chainProjects && chainBinaryTransport !== true) throw Error('LOUNGE_CHAIN_BINARY_TRANSPORT_REQUIRED');
   let pool, stopped = false, running = false, epoch = 0, pending, timer;
   if (!db) {
     const connection = databaseOptions(config.databaseUrl);
@@ -43,6 +48,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   const bookingCleanup = createBookingHousekeeping({ query, enabled: config.flags.booking === true,
     allowSubscription: config.flags.subscription, allowPilot: config.flags.pilot });
   const bookingNotices = createBookingNotices({ query, enabled: config.flags.booking === true });
+  const chainCleanup = createChainCleanup({query});
   const guardedFetch = async (url, options = {}) => {
     if (stopped || options.signal?.aborted) throw Error('LOUNGE_UNAVAILABLE');
     const controller = new AbortController(), abort = () => controller.abort();
@@ -110,6 +116,12 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           to_regclass('public.lounge_members') is not null as members_ready,
           to_regclass('public.lounge_chat_inbox') is not null as inbox_ready,
           to_regclass('public.lounge_eventsub_revocations') is not null as eventsub_ready,
+          to_regclass('public.lounge_chain_projects') is not null
+            and to_regclass('public.lounge_chain_session_saves') is not null
+            and to_regprocedure('public.lounge_chain_command(uuid,integer,timestamp with time zone,text,text,jsonb)') is not null
+            and to_regprocedure('public.lounge_chain_asset_put(uuid,integer,timestamp with time zone,text,text,jsonb,bytea)') is not null
+            and to_regprocedure('public.lounge_chain_asset_read(uuid,integer,timestamp with time zone,text)') is not null
+            and to_regprocedure('public.lounge_chain_cleanup(integer)') is not null as chain_ready,
           to_regprocedure('public.lounge_delivery_command(uuid,integer,timestamp with time zone,text,jsonb,text,jsonb)') is not null
             and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null as delivery_ready,
           to_regclass('public.lounge_owner_curated_items') is not null
@@ -137,6 +149,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         if (config.flags.delivery && row.delivery_ready !== true) throw Error('LOUNGE_DELIVERY_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated && row.curated_ready !== true) throw Error('LOUNGE_CURATED_SCHEMA_REQUIRED');
+        if (config.flags.chainProjects && row.chain_ready !== true) throw Error('LOUNGE_CHAIN_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated) {
           // Canonical originals precede publication consent. A syntactically
           // valid bucket name is insufficient: require verified private storage
@@ -145,7 +158,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           if (bucket?.id !== config.bucket || bucket.public !== false) throw Error('LOUNGE_PRIVATE_STORAGE_REQUIRED');
         }
         if (stopped || turn !== epoch) return { started: false };
-        app.start(); bookingCleanup.start(); bookingNotices.start(); running = true;
+        app.start(); bookingCleanup.start(); bookingNotices.start(); chainCleanup.start(row.chain_ready===true); running = true;
         timer = schedule(() => {
           if (!running || stopped || turn !== epoch) return;
           // Bounded SQL routines own cleanup; this never retries a paid job.
@@ -157,7 +170,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
             // Finish any due booking transitions before publishing reminders.
             // A failed cleanup cannot make a notice assert live authority: the
             // notice transaction independently checks state/time/publication.
-            bookingCleanup.run().then(() => bookingNotices.run())]);
+            bookingCleanup.run().then(() => bookingNotices.run()),chainCleanup.run()]);
         }, 60000);
         timer?.unref?.();
         return { started: true, generationEnabled: false };
@@ -169,7 +182,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   async function stop() {
     if (stopped) return;
     stopped = true; running = false; epoch++;
-    bookingCleanup.stop(); bookingNotices.stop();
+    bookingCleanup.stop(); bookingNotices.stop(); chainCleanup.stop();
     if (timer !== undefined) cancel(timer);
     for (const controller of upstreams) controller.abort();
     await app.stop();
