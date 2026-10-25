@@ -28,6 +28,14 @@ are outside this claim-only protocol. Stable custody, spend/fulfillment
 receipts, all-writer fencing and reconciliation remain separate release gates.
 No new migration, live wallet change, reward, role, grant or activation follows.
 
+## Static checks
+
+`npm run lint` checks every `src/**/*.js` file with the installed ESLint9
+CommonJS/Node configuration. Recommended correctness rules remain errors.
+Existing unused bindings and unnecessary regex escapes remain visible warnings;
+they are cleanup work, not a zero-warning claim. The deliberate C0/DEL text
+sanitizer has one explained rule exception. No application source is ignored.
+
 ## 📖 Overview
 
 The **Antigravity Agent** is a Twitch bot fully integrated with the Planet CUHZ ecosystem. It serves as a community engagement tool, automated marketing assistant, and bridge to the Anything.com dashboard.

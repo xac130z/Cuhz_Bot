@@ -13,7 +13,7 @@
     "test:grouch": "node tests/test_grouch_command.js",
     "test:shared-chat": "node tests/test_shared_chat_guard.js && node tests/test_context_concurrency.js",
     "test:points:safety": "node tests/test_points_integrity.js && node tests/test_points_runtime.js && node tests/test_points_legacy_retirement.js && node tests/test_points_copy.js",
-    "lint": "eslint src/**/*.js",
+    "lint": "eslint \"src/**/*.js\"",
     "sync:lounge": "node scripts/sync-lounge-runtime.mjs",
     "check:lounge-bundle": "node scripts/sync-lounge-runtime.mjs --check",
     "test:lounge-v2": "node --test tests/test_lounge_v2_adapter.js tests/test_lounge_legacy_mirror.js tests/test_lounge_chain_gateway.js"
@@ -30,13 +30,15 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "pg": "^8.18.0",
-    "tmi.js": "^1.8.5",
-    "pngjs": "7.0.0"
+    "pngjs": "7.0.0",
+    "tmi.js": "^1.8.5"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.2",
     "@railway/cli": "^4.29.0",
     "concurrently": "^9.2.1",
-    "eslint": "^9.39.2"
+    "eslint": "^9.39.2",
+    "globals": "14.0.0"
   },
   "optionalDependencies": {
     "better-sqlite3": "^11.10.0"

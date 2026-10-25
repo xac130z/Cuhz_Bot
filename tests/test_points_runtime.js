@@ -106,10 +106,15 @@ function fixture(options = {}) {
             BEGIN SELECT RAISE(ABORT, 'injected spend failure'); END;`);
     }
     const sqlEvents = [];
+    const watchQueries = [];
     const originalPrepare = adapter.prepare.bind(adapter);
     adapter.prepare = sql => {
         const compact = sql.trim().replace(/\s+/g, ' ');
         sqlEvents.push(compact);
+        if (compact.startsWith('SELECT MIN(created_at) AS first_at FROM chat_log')) {
+            const statement = originalPrepare(sql);
+            return { async get(...args) { watchQueries.push(args); return statement.get(...args); } };
+        }
         if ((options.balanceReadFails && compact.startsWith('SELECT points FROM users')) ||
             (options.activityReadFails && compact.startsWith('SELECT last_seen, last_paycheck'))) {
             return { async get() { throw new Error('injected read failure'); } };
@@ -125,9 +130,11 @@ function fixture(options = {}) {
         enableGambling: options.enableGambling === true,
         './database': adapter,
         './points_service': pointsService,
+        './duration': require('../src/duration'),
         './logger': logger,
         './user_memory': {
             recordMessage() {},
+            async getProfile() { return { total_watch_minutes: 360 }; },
             async addWatchMinutes(username, minutes) { watchMinutes.push({ username, minutes }); },
         },
         './loyalty': { async checkAchievements() { return []; } },
@@ -136,7 +143,7 @@ function fixture(options = {}) {
     evidence.runtime.configure(channel, { commands: {}, settings: { auto_welcome: false } },
         (target, message) => { messages.push({ channel: target, text: message }); });
     return {
-        evidence, messages, watchMinutes, errors, sqlEvents, pointsService,
+        evidence, messages, watchMinutes, errors, sqlEvents, watchQueries, pointsService,
         async message(text = '!ping', username = 'alice', self = false) {
             await evidence.runtime.handleMessage(channel, { username, badges: {}, mod: options.mod || false }, text, self);
             assert.deepEqual(evidence.forbiddenAttempts, [], 'no forbidden runtime side effects');
@@ -382,6 +389,18 @@ async function getPoints(f, username) {
     await test('all six current balance-read call sites are covered by this suite', async () => {
         assert.equal((readBotSource().match(/await pointsService\.getBalance\(/g) || []).length, 6);
     });
+    for (const alias of ['!watchtime', '!session', '!here', '!howlong']) {
+        await isolated(`${alias} replies while live and scopes its first-message query to normalized identity`, async f => {
+            f.evidence.runtime.watchStreamFixture('#fixture_channel', Date.now() - 2 * 3600000);
+            await f.message(alias, 'ALIce');
+            assert.equal(f.errors.length, 0);
+            assert.equal(f.watchQueries.length, 1);
+            assert.equal(f.watchQueries[0][1], 'alice');
+            assert.match(f.messages.at(-1).text, /in this stream:/);
+            assert.match(f.messages.at(-1).text, /all-time across the fam: 6h 0m/);
+            assert.doesNotMatch(f.messages.at(-1).text, /since you (arrived|joined)/i);
+        });
+    }
     console.log(`✅ test_points_runtime: ${checks} checks passed (actual handlers/services; isolated SQLite fixtures)`);
 })().catch(error => {
     console.error(error);

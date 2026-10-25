@@ -4158,7 +4158,7 @@ async function handleMessage(channel, tags, message, self) {
             const live = !!(state && state.isLive && state.startedAt);
             const [profile, firstSeenMs] = await Promise.all([
                 userMemory.getProfile(tags.username),
-                live ? sessionFirstSeen(channel, usernameL, state.startedAt) : Promise.resolve(null),
+                live ? sessionFirstSeen(channel, tags.username.toLowerCase(), state.startedAt) : Promise.resolve(null),
             ]);
             sendMessage(channel, formatWatchLine(tags.username, {
                 live, firstSeenMs, totalMinutes: profile ? profile.total_watch_minutes : 0,
