@@ -656,3 +656,27 @@ This candidate remains separate from the frozen approved first-stream release.
 Only freshly authenticated `planetcuhz` may control that first test; no additional
 controller, member, pilot, mail, provider or financial activation follows from
 this source increment.
+
+
+### Private delivery review candidate — October 24, 2026
+
+The existing stage operator console can link to
+`/api/lounge/v2/deliveries/ops` when the independent
+`LOUNGE_DELIVERY_OPERATIONS_ENABLED` gate is enabled. It requires the configured
+owner binding and the additive operations schema, whose durable
+`delivery.operations.enabled` flag installs off. Both gates stay off here.
+Every resource and data request uses fresh online owner authentication plus
+SQL checks after lock waits. No extra controller or role is granted.
+
+This read-only administrative view shows bounded metadata for unresolved or
+recent mail attempts and verified acceptance records. It can run with sending
+and webhooks disabled, without sending, webhook or storage keys. It exposes no
+recipient, subject, text, token, private path, account identity or raw evidence
+payload. Unknown outcomes remain unresolved until original-attempt evidence
+settles them. There are no send, retry, settlement or provider actions.
+
+Each page holds at most 25 attempts; precise timestamp/UUID pagination replaces
+the page. Private DOM clears on hiding, exit, expired authentication, failed
+reads and explicit clear. The source checkpoint records actual browser/native
+proof and the exact runtime closure. Hosted acceptance and the approved
+planetcuhz-only first-stream release remain separate.

@@ -1,3 +1,5 @@
+import {createDeliveryOperationsStore} from '../lounge-delivery/operations-store.mjs';
+import {createDeliveryOperationsHandler,DELIVERY_OPERATIONS_BASE} from '../lounge-delivery/operations-http.mjs';
 import {deliveryPage} from '../lounge-delivery/page.mjs';
 import {createDeliveryStore} from '../lounge-delivery/store.mjs';
 import {createDeliveryHandler} from '../lounge-delivery/http.mjs';
@@ -29,7 +31,7 @@ import {createChainHandler} from '../lounge-chain/http.mjs';
 export function createLoungeApplication({db,origin,authKey,authUpstream,requiredRulesVersion,
   flags={},ownerControl,deliveryConfig=null,readObject,writeObject,sendPrivateReply,eventSubSecret,obsAccess=null,heartbeatMs=10_000,getGenerationConfig=()=>({enabled:false})}={}) {
   if(!db||typeof db.query!=='function')throw Error('LOUNGE_DATABASE_REQUIRED');
-  const allowed=['auth','eligibility','pilot','subscription','pilotManagement','stage','generationChat','stageBridge','ownerCurated','booking','delivery','chainProjects'];
+  const allowed=['auth','eligibility','pilot','subscription','pilotManagement','stage','generationChat','stageBridge','ownerCurated','booking','delivery','deliveryOperations','chainProjects'];
   if(Object.entries(flags).some(([name,value])=>!allowed.includes(name)||typeof value!=='boolean'))throw Error('LOUNGE_FLAGS_INVALID');
   const query=(sql,args)=>db.query(sql,args);
   const auth=createLoungeAuthBroker({origin,key:authKey,store:createAuthStore({query}),upstream:authUpstream,enabled:flags.auth===true});
@@ -54,7 +56,9 @@ export function createLoungeApplication({db,origin,authKey,authUpstream,required
   const stage=createStageRuntime({store:createStageStore({query,allowPilot:flags.pilot===true,allowSubscription:flags.subscription===true}),
     broker:auth,enabled:flags.stage===true,ownerControl,readObject,sendPrivateReply,heartbeatMs,obsAccess,
     generationChat:flags.generationChat===true?event=>generationChat.handleChat(event):undefined});
-  const stageHttp=createStageHandler({runtime:stage,eventSubSecret,openingsEnabled:flags.booking===true});
+  const stageHttp=createStageHandler({runtime:stage,eventSubSecret,openingsEnabled:flags.booking===true,deliveryOperationsEnabled:flags.deliveryOperations===true});
+  const deliveryOperations=flags.deliveryOperations===true?createDeliveryOperationsHandler({broker:auth,origin,ownerControl,enabled:true,
+    store:createDeliveryOperationsStore({query,requiredRulesVersion,ownerTwitchId:ownerControl?.enabled===true?ownerControl.twitchId:null})}):null;
   let delivery=null,deliveryMail=null;
   if(flags.delivery===true){
     if(!deliveryConfig?.from||typeof deliveryConfig.send!=='function')throw Error('DELIVERY_CONFIG_REQUIRED');
@@ -64,6 +68,7 @@ export function createLoungeApplication({db,origin,authKey,authUpstream,required
   }
   async function handle(request){
     const path=new URL(request.url).pathname;
+    if(path===DELIVERY_OPERATIONS_BASE||path.startsWith(DELIVERY_OPERATIONS_BASE+'/'))return deliveryOperations?deliveryOperations.handle(request):new Response(JSON.stringify({error:'DELIVERY_OPERATIONS_DISABLED'}),{status:503,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
     if(path==='/lounge/delivery'&&delivery){if(request.method!=='GET'||new URL(request.url).search)return new Response(null,{status:404});return deliveryPage();}
     if(path==='/api/lounge/v2/deliveries')return delivery?delivery.handle(request):new Response(JSON.stringify({error:'DELIVERY_DISABLED'}),{status:503,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
     if(path.startsWith('/api/lounge/auth/'))return auth.handle(request);
@@ -76,6 +81,6 @@ export function createLoungeApplication({db,origin,authKey,authUpstream,required
     if(path==='/stage'||path.startsWith('/stage/')||path==='/api/lounge/v2/stage'||path.startsWith('/api/lounge/v2/stage/'))return stageHttp(request);
     return new Response(JSON.stringify({error:'NOT_FOUND'}),{status:404,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
   }
-  return Object.freeze({handle,start:()=>{delivery?.start();deliveryMail?.start();chain.start();booking.start();openings.start();generationChat.start();return stage.start();},
-    stop:()=>{delivery?.stop();deliveryMail?.stop();chain.stop();booking.stop();openings.stop();stage.stop();generationChat.stop();return stageBridge.stop();},delivery,deliveryMail,auth,eligibility,booking,openings,stage,generationChat,stageBridge,chain});
+  return Object.freeze({handle,start:()=>{deliveryOperations?.start();delivery?.start();deliveryMail?.start();chain.start();booking.start();openings.start();generationChat.start();return stage.start();},
+    stop:()=>{deliveryOperations?.stop();delivery?.stop();deliveryMail?.stop();chain.stop();booking.stop();openings.stop();stage.stop();generationChat.stop();return stageBridge.stop();},delivery,deliveryMail,auth,eligibility,booking,openings,stage,generationChat,stageBridge,chain});
 }

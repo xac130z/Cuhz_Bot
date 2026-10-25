@@ -51,6 +51,8 @@ export function hostConfig(env = {}) {
   const ownerId = ownerEnabled ? required(env, 'LOUNGE_OWNER_TWITCH_ID') : null;
   if (ownerEnabled && !/^[1-9][0-9]{0,19}$/.test(ownerId)) fail();
   const ownerControl = Object.freeze({ enabled: ownerEnabled, twitchId: ownerId });
+  const deliveryOperations = flag(env, 'LOUNGE_DELIVERY_OPERATIONS_ENABLED');
+  if (deliveryOperations && !ownerEnabled) fail();
   const chainProjects = flag(env, 'LOUNGE_CHAIN_PROJECTS_ENABLED');
   if (chainProjects && !ownerEnabled) fail();
   const stageBridge = flag(env, 'LOUNGE_STAGE_BRIDGE_ENABLED');
@@ -66,7 +68,7 @@ export function hostConfig(env = {}) {
     bucket, storageKey, deliveryFrom, resendKey, deliveryEvidence, deliveryWebhookSecret, flags: Object.freeze({ auth: true, eligibility: true,
       pilot: false, subscription: false,
       pilotManagement: false,
-      delivery, chainProjects, booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),
+      delivery, deliveryOperations, chainProjects, booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),
       stage: flag(env, 'LOUNGE_STAGE_ENABLED'), stageBridge, ownerCurated, generationChat: false }) });
 }
 

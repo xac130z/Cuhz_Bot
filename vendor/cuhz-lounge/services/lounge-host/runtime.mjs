@@ -128,6 +128,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
             and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null
             and to_regprocedure('public.lounge_delivery_mail_bind(uuid,uuid,text)') is not null as delivery_ready,
           to_regprocedure('public.lounge_delivery_mail_reconcile(jsonb)') is not null as delivery_evidence_ready,
+          to_regprocedure('public.lounge_delivery_operations(uuid,integer,timestamp with time zone,text,text,jsonb)') is not null as delivery_operations_ready,
           to_regclass('public.lounge_owner_curated_items') is not null
             and to_regclass('public.lounge_owner_curated_consents') is not null
             and to_regprocedure('public.lounge_owner_curated_actor(uuid,integer,integer,text,text)') is not null
@@ -152,6 +153,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         if (config.flags.stage && row.stage_chat_ready !== true) throw Error('LOUNGE_STAGE_CHAT_SCHEMA_REQUIRED');
         if (config.flags.delivery && row.delivery_ready !== true) throw Error('LOUNGE_DELIVERY_SCHEMA_REQUIRED');
         if (config.deliveryEvidence && (row.delivery_ready !== true || row.delivery_evidence_ready !== true)) throw Error('LOUNGE_DELIVERY_EVIDENCE_SCHEMA_REQUIRED');
+        if (config.flags.deliveryOperations && row.delivery_operations_ready !== true) throw Error('LOUNGE_DELIVERY_OPERATIONS_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated && row.curated_ready !== true) throw Error('LOUNGE_CURATED_SCHEMA_REQUIRED');
         if (config.flags.chainProjects && row.chain_ready !== true) throw Error('LOUNGE_CHAIN_SCHEMA_REQUIRED');
