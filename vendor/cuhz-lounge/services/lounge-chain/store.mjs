@@ -12,7 +12,7 @@ export function createChainStore({ query, ownerTwitchId, rulesVersion } = {}) {
   };
   return Object.freeze({
     async command(context, input) {
-      const result = await query('select public.lounge_chain_command($1,$2,$3,$4,$5,$6::jsonb) result',
+      const result = await query('select public.lounge_chain_execute($1,$2,$3,$4,$5,$6::jsonb) result',
         [...actor(context), ownerTwitchId, rulesVersion, JSON.stringify(input)]);
       return result.rows?.[0]?.result;
     },

@@ -52,7 +52,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   const bookingCleanup = createBookingHousekeeping({ query, enabled: config.flags.booking === true,
     allowSubscription: config.flags.subscription, allowPilot: config.flags.pilot });
   const bookingNotices = createBookingNotices({ query, enabled: config.flags.booking === true });
-  const chainCleanup = createChainCleanup({query});
+  const chainCleanup = createChainCleanup({query,enabled:config.chainRetention});
   const twitchCleanup = createTwitchCleanup({ query, enabled: config.twitchCleanup });
   const retiredBookings = createRetiredBookingLifecycle({ query, enabled: config.twitchCleanup });
   const commandRetention = createCommandRetention({ query, enabled: config.commandRetention });
@@ -130,6 +130,9 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
             and to_regprocedure('public.lounge_chain_asset_put(uuid,integer,timestamp with time zone,text,text,jsonb,bytea)') is not null
             and to_regprocedure('public.lounge_chain_asset_read(uuid,integer,timestamp with time zone,text)') is not null
             and to_regprocedure('public.lounge_chain_cleanup(integer)') is not null as chain_ready,
+          to_regclass('public.lounge_chain_request_retention_state') is not null
+            and to_regprocedure('public.lounge_chain_execute(uuid,integer,timestamp with time zone,text,text,jsonb)') is not null
+            and to_regprocedure('public.lounge_chain_retention_cleanup(integer)') is not null as chain_retention_ready,
           to_regprocedure('public.lounge_delivery_command(uuid,integer,timestamp with time zone,text,jsonb,text,jsonb)') is not null
             and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null
             and to_regprocedure('public.lounge_delivery_mail_bind(uuid,uuid,text)') is not null as delivery_ready,
@@ -171,7 +174,8 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         if (config.commandRetention && row.command_retention_ready !== true) throw Error('LOUNGE_COMMAND_RETENTION_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated && row.curated_ready !== true) throw Error('LOUNGE_CURATED_SCHEMA_REQUIRED');
-        if (config.flags.chainProjects && row.chain_ready !== true) throw Error('LOUNGE_CHAIN_SCHEMA_REQUIRED');
+        if (config.chainRetention && row.chain_retention_ready !== true) throw Error('LOUNGE_CHAIN_RETENTION_SCHEMA_REQUIRED');
+        if (config.flags.chainProjects && (row.chain_ready !== true || row.chain_retention_ready !== true)) throw Error('LOUNGE_CHAIN_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated) {
           // Canonical originals precede publication consent. A syntactically
           // valid bucket name is insufficient: require verified private storage
@@ -180,7 +184,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           if (bucket?.id !== config.bucket || bucket.public !== false) throw Error('LOUNGE_PRIVATE_STORAGE_REQUIRED');
         }
         if (stopped || turn !== epoch) return { started: false };
-        app.start(); bookingCleanup.start(); bookingNotices.start(); chainCleanup.start(row.chain_ready===true);
+        app.start(); bookingCleanup.start(); bookingNotices.start(); chainCleanup.start(row.chain_retention_ready===true);
         twitchCleanup.start(row.twitch_cleanup_ready === true); retiredBookings.start(row.twitch_cleanup_ready === true);
         commandRetention.start(row.command_retention_ready === true); running = true;
         timer = schedule(() => {

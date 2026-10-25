@@ -797,3 +797,32 @@ See the website retention README and
 exact scope. This is not deployment or live acceptance and does not change
 the separately frozen owner-stage release. First live controller remains only
 freshly authenticated `planetcuhz`; no additional grants are authorized.
+
+
+## Chain request retirement candidate (October25,2026)
+
+The80-file runtime now matches website `f8110d850fc58a64c3d658b24f731f681b35be98` and calls only the guarded
+Chain execute/retention protocol from source-only migration800. Expired raw
+or purged known request UUIDs cannot become fresh save/link/age operations;
+live exact replay remains inert and a never-observed UUID stays distinct.
+Minimal scoped hashes survive response erasure, with a private1M cap that
+leaves saved work readable. Terminal first admissions spend their key;
+one-use receipt guards roll back retained/loaded old-body writes without
+permission. No stage HOLD coupling or new grant is added.
+
+New strict `LOUNGE_CHAIN_RETENTION_ENABLED` and durable
+`retention.chain.enabled` gates both default off. Configured Chain/retention
+requires the complete800 schema; auth/stage with Chain off remains usable on
+older schemas without running old cleanup. Existing minute scheduling and
+physical-query fences remain. At most64 combined receipts/orphan assets are
+erased with elapsed720h and pin-aware checks; saved history/session originals
+remain intact. The website recovery journal additionally pauses retired
+operations and preserves restored original photos across definite failures.
+
+Hosted cadence/backlog/backup and offline browser pending TTL remain open.
+Pre800 erased keys cannot be reconstructed. Coordinate old-caller drain and
+frontier reconciliation before rollout or restore. This draft is separate
+from the frozen owner-stage release; first live control remains only freshly
+authenticated `planetcuhz`, with no additional grants. No live schema/flags,
+credentials, spending/provider/mail, deployment, voice or OBS changes.
+Exact ecosystem evidence: `recovery-2026-10-25/chain-command-retention/checkpoint.json`.
