@@ -22,10 +22,14 @@ export function createStageBridgeStore({query,allowSubscription=false,allowPilot
   output:(c,id)=>one(`select id,output_path,output_sha256,input->>'size' size from lounge_studio_generations where user_id=$1 and id=$2 and status='succeeded' and provider_started_at is not null`,[c.userId,id]),
   write:async(c,requestId,action,payload)=>(await one('select public.lounge_bridge_write($1,$2,$3,$4,$5,$6,$7) result',[c.sessionId,c.sessionRevision,requestId,action,JSON.stringify(payload),allowSubscription,allowPilot]))?.result,
   activity:async(c,command)=>(await one('select public.lounge_stage_apply($1,$2,$3,$4,$5,$6) result',[c.sessionId,c.sessionRevision,c.connectionRevision,JSON.stringify(command),allowSubscription,allowPilot]))?.result,
-  member:async c=>{
+  member:async(c,{reviewFeedback=false}={})=>{
    const batches=(await query(`select id,status from lounge_studio_generations where user_id=$1 and execution_mode='batch' and batch_size=3 and exists(select 1 from lounge_image_usage u where u.batch_id=lounge_studio_generations.id) order by created_at desc,id limit 20`,[c.userId])).rows;
    for(const batch of batches)batch.outputs=(await query('select id,status from lounge_studio_generations where user_id=$1 and batch_id=$2 order by batch_index limit 5',[c.userId,batch.id])).rows;
-   const items=(await query(`select i.id,i.generation_id as "generationId",i.status,i.public_title title,i.public_creator_name as "displayName",(select id from lounge_review_requests r where r.item_id=i.id order by created_at desc,id limit 1) as "reviewId" from lounge_library_items i where i.user_id=$1 order by i.created_at desc,i.id limit 60`,[c.userId])).rows;
+   // Feedback is an opt-in extension: legacy strict clients keep their exact DTO.
+   // Select a single latest own review so its ID and category cannot disagree.
+   // private_notes is deliberately outside this query and every member response.
+   const feedback=reviewFeedback===true?`,case when i.status='rejected' and latest_review.decision='rejected' and latest_review.reason_category ~ '^[a-z][a-z_]{1,63}$' then latest_review.reason_category else null end as "rejectionReason"`:'';
+   const items=(await query(`select i.id,i.generation_id as "generationId",i.status,i.public_title title,i.public_creator_name as "displayName",latest_review.id as "reviewId"${feedback} from lounge_library_items i left join lateral (select r.id,r.decision,r.reason_category from lounge_review_requests r where r.item_id=i.id and r.user_id=i.user_id order by r.created_at desc,r.id limit 1) latest_review on true where i.user_id=$1 order by i.created_at desc,i.id limit 60`,[c.userId])).rows;
    const stage=(await one('select lounge_stage_public($1,$2) result',[allowSubscription,allowPilot])).result;
    const activity=await one('select batch_id as "batchId",phase,display_name as "displayName" from lounge_stage_activity where user_id=$1 and revoked_at is null',[c.userId]);
    return {enabled:await (one("select enabled from lounge_feature_flags where key='library.review.enabled'")).then(r=>Boolean(r?.enabled)),stage:{version:stage.version,mode:stage.mode,endsAt:stage.endsAt},batches,items,activity:stage.activity&&activity?activity:null};

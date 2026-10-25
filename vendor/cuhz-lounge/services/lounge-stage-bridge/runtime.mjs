@@ -35,7 +35,7 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,ow
   const result=commandPreflightResult(value);if(!result)throw failure('BRIDGE_UNAVAILABLE');
   if(!result.ok)throw failure(result.code);return result.state;
  }
- async function member(req){const run=epoch,c=await authenticate(req),r=await bound(()=>store.member(c));await checked(c,run);return r;}
+ async function member(req){const run=epoch,c=await authenticate(req),r=await bound(()=>store.member(c,{reviewFeedback:req.headers.get('X-Lounge-Review-Feedback')==='categories-v1'}));await checked(c,run);return r;}
  const reviewIdentity=c=>({ownerKey:hash(Buffer.from(`artwork-review-identity-v1|${c.userId}|${c.twitchId}`)),sessionKey:hash(Buffer.from(`artwork-review-session-v1|${c.userId}|${c.sessionId}|${c.sessionRevision}`))});
  async function consoleContext(req){const c=await authenticate(req,{operator:true});return {csrfToken:c.csrfToken,...reviewIdentity(c)};}
  async function reviews(req){const run=epoch,c=await authenticate(req,{operator:true});if(!await bound(()=>store.enabled()))throw failure('LIBRARY_BRIDGE_DISABLED');const rows=await bound(()=>store.reviews());await checked(c,run,true);return {...reviewIdentity(c),reviews:rows.map(r=>({...r,imageUrl:`/api/lounge/v2/stage-bridge/reviews/${r.id}/image`}))};}
