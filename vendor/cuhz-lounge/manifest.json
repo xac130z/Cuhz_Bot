@@ -24,7 +24,7 @@
     "services/lounge-booking/transport-store.mjs": "94578a902c5475e24ed6b4b99d6101d8466c01e755e20a4dcfa23b5ee4d4fecd",
     "services/lounge-chain/asset.mjs": "edcc64616a89645c76bda0aa3d5d6ca6a7fbc6366bfff5751649903cae76e57e",
     "services/lounge-chain/cleanup.mjs": "7439900fb70f4296f388e3fc86bf0d2be944bac7a56524708e12e8e8385e24f8",
-    "services/lounge-chain/http.mjs": "07dc53173cbc519964ca379ecae8bb5214c59bf1d8302b31667bc17d655aafce",
+    "services/lounge-chain/http.mjs": "ac9a51a8ff7285041a4c95ad68695c6fb2dfd348d077bdf128aa377d9d00e5d2",
     "services/lounge-chain/image-header.mjs": "1dbe926083acf884a35230b20f067c914a225f0ccfe01c6616c4b406a8b5d791",
     "services/lounge-chain/store.mjs": "3f72507d9ad02829af8aa59f03fd14c91f33e082761f0a23ec57711f1d1ed42d",
     "services/lounge-chat-inbox/runtime.mjs": "05f4ed50173cf4b18a07813b443e05de66c80ecca0c25c4c4573c7447617c5eb",

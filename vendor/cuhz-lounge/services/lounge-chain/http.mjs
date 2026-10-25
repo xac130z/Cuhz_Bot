@@ -56,7 +56,7 @@ export function createChainHandler({ broker, store, origin, enabled = false, tim
     }
     if (!/^application\/json(?:\s*;|$)/i.test(req.headers.get('content-type') || '')) throw fail('INVALID_CONTENT_TYPE',415);
     let value; try { value = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)); } catch { throw fail('INVALID_REQUEST'); }
-    if (!value || typeof value !== 'object' || Array.isArray(value) || !['save','link'].includes(value.action)
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !['save','link','attest_age'].includes(value.action)
       || !UUID.test(value.requestId || '') || !UUID.test(value.projectId || '')) throw fail('INVALID_REQUEST');
     return value;
   }
