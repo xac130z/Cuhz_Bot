@@ -4,9 +4,9 @@
 //  CUHZ Bot — Clips & Community Promo Service (!clip)
 //
 //  Enables viewers and moderators to type !clip (or !clip <title>) in Twitch chat.
-//  Captures the live stream moment, stores metadata in the community_clips vault,
-//  awards loyalty points (+10 CUHZ Points) to the clipper, and queues the clip
-//  for automated community compilation highlight reels posted to Discord #cuhz-clips.
+//  Requests a native clip or provides the manual clip tool, stores pending
+//  metadata and attempts the existing +10 loyalty award. Report each outcome
+//  separately: a pending row is not proof of capture or Discord delivery.
 // ============================================================================
 
 const axios = require('axios');
@@ -55,7 +55,7 @@ class ClipsService {
             try {
                 // Attempt Helix clip creation if broadcaster/bot authorization permits
                 const res = await axios.post(
-                    `${config.twitchApiBase}/clips?broadcaster_id=${cleanChannel}`,
+                    `${config.twitchApiBase}/clips?broadcaster_id=${encodeURIComponent(cleanChannel)}`,
                     {},
                     {
                         headers: {
@@ -66,8 +66,9 @@ class ClipsService {
                     }
                 ).catch(() => null);
 
-                if (res && res.data && res.data.data && res.data.data[0]) {
-                    clipId = res.data.data[0].id;
+                const id = res?.data?.data?.[0]?.id;
+                if (res?.status === 202 && typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+                    clipId = id;
                     clipUrl = `https://clips.twitch.tv/${clipId}`;
                 }
             } catch (err) {
@@ -77,30 +78,45 @@ class ClipsService {
 
         // Fallback clip URL if direct creation requires manual cut
         if (!clipUrl) {
-            clipUrl = `https://www.twitch.tv/${cleanChannel}/clip`;
+            clipUrl = `https://www.twitch.tv/${encodeURIComponent(cleanChannel)}/clip`;
         }
 
         // 2. Persist clip record in community_clips table
+        let recorded = false;
         try {
-            await db.prepare(`
+            const result = await db.prepare(`
                 INSERT INTO community_clips (channel, clipped_by, title, clip_url, clip_id, timecode, status)
                 VALUES (?, ?, ?, ?, ?, ?, 'pending')
             `).run(cleanChannel, usernameL, title, clipUrl, clipId, timecode);
+            recorded = result?.changes === 1;
         } catch (dbErr) {
             logger.error(`Failed to save community clip: ${dbErr.message}`);
         }
 
         // 3. Award community member loyalty points for clipping
+        let awarded = false;
         try {
-            await pointsService.addPoints(usernameL, CLIP_REWARD_POINTS, 'community_clip', channel);
+            awarded = await pointsService.addPoints(usernameL, CLIP_REWARD_POINTS, 'community_clip', channel) === true;
         } catch (ptsErr) {
             logger.warn(`Points award for clip failed: ${ptsErr.message}`);
         }
 
-        const announcement = `🎬 @${username} clipped that moment: "${title}"! 💎 +${CLIP_REWARD_POINTS} CUHZ Points awarded! Queued for the community promo in Discord #cuhz-clips! 🌌`;
+        // Twitch's 202 starts asynchronous creation; it does not prove the
+        // clip is published. Do not infer a failed write from a lost reply.
+        const capture = clipId ? 'accepted' : 'unconfirmed';
+        const captureText = clipId ? 'Twitch accepted your clip request; creation is not verified.' : 'Clip creation is unconfirmed; open the manual clip tool.';
+        const recordText = recorded ? 'Request saved for community review.' : 'Request save is unconfirmed.';
+        const pointsText = awarded ? `+${CLIP_REWARD_POINTS} CUHZ Points confirmed.` : 'Points status is unconfirmed; do not retry for points.';
+        const chatUrl = clipId ? `https://www.twitch.tv/${encodeURIComponent(cleanChannel)}/clip/${clipId}` : clipUrl;
+        // Keep the complete user title in metadata, not in an acknowledgement:
+        // its length or embedded links must not erase/block outcome qualifiers.
+        const announcement = `🎬 @${username.slice(0, 25)} ${captureText} ${recordText} 💎 ${pointsText} ${chatUrl}`;
 
         return {
-            success: true,
+            success: recorded,
+            capture,
+            record: recorded ? 'confirmed' : 'unconfirmed',
+            points: awarded ? 'confirmed' : 'unconfirmed',
             title,
             clipUrl,
             announcement
