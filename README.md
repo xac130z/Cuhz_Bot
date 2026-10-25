@@ -705,3 +705,33 @@ All paid, provider and generation gates remain off. The frozen approved
 planetcuhz-only first-stream release is separate. The ecosystem retention
 checkpoint records exact source, independent review, synthetic SQL/native proof
 and remaining historical-identity/log cleanup; this is not paid/live acceptance.
+
+### Canonical booking identity cleanup candidate — October 25, 2026
+
+The candidate includes the private bounded cleanup worker for source migration
+`20261025050000_lounge_twitch_cleanup.sql`. Host
+`LOUNGE_TWITCH_CLEANUP_ENABLED` and durable `retention.twitch.enabled` both
+default off. Older schemas refuse configured cleanup startup. The existing
+minute timer claims one original disconnect task and steps at most64 combined
+booking/receipt rows, with physical-flight fencing and stable claim recovery
+after unknown transport outcomes. The permanent claim registry refuses fresh
+IDs at one million entries without evicting known recovery keys.
+
+Cleanup removes only historical booking Twitch identity and the two proven
+legacy receipt fields, tied to the original disconnect cutoff/revision. It
+preserves booking history/business state, later fresh connections, saved work,
+Points, financial evidence, quotas, pilot dates and spent-event replay keys.
+Retired requests are a definite refusal; the website clears only their local
+pending-command journal. Private wrappers and insert guards prevent fresh
+authority or session bindings from a retired booking.
+
+This is scoped source-only cleanup, not an approved full retention rollout.
+Older unbound bookings still lack reliable scheduled deadline transitions;
+their retained reservations need a separate lifecycle correction before
+activation. General command retention, legacy/external identity mapping and
+backup deletion remain unverified. The original policy/outbox/disconnect
+records remain intact; scoped completion does not mark those full tasks done.
+See the website `services/lounge-retention/README.md` and the ecosystem
+`recovery-2026-10-24/twitch-retention/cleanup-checkpoint.json` for exact source
+and limits. The approved frozen owner-stage release remains separate, and only
+freshly authenticated `planetcuhz` may control its first live test.
