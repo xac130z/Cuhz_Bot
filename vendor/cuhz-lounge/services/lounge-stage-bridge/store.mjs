@@ -1,12 +1,15 @@
+import { createCommandRetentionPort } from '../lounge-retention/port.mjs';
 /** Bot-side service connection only; no provider key or network client created. */
 export function createStageBridgeStore({query,allowSubscription=false,allowPilot=false}={}){
  if(typeof query!=='function')throw Error('BRIDGE_CONFIG_INVALID');
  const one=async(sql,args=[])=>(await query(sql,args)).rows?.[0];
+ const commands=createCommandRetentionPort({query});
  const actor=async(c,permission=null)=>(await one('select public.lounge_bridge_actor($1,$2,$3) result',[c.sessionId,c.sessionRevision,permission]))?.result;
  const curatedColumns=`i.id,i.status,i.public_title title,i.public_creator_name as "displayName",p.revision,p.catalog_key as "catalogKey",p.catalog_revision as "catalogRevision",p.source_sha256 as "canonicalHash",v.public_sha256 as "derivativeHash",i.storage_path_canonical as "canonicalPath",v.public_path as "publicPath",(select r.id from lounge_review_requests r where r.item_id=i.id order by r.created_at desc,r.id limit 1) as "reviewId"`;
  const curatedFrom='from lounge_owner_curated_items p join lounge_library_items i on i.id=p.item_id and i.user_id=p.user_id join lounge_library_verifications v on v.item_id=i.id and v.canonical_sha256=i.sha256';
  return Object.freeze({
   actor,
+  commandPreflight:commands.preflight,
   enabled:async()=>Boolean((await one("select enabled from lounge_feature_flags where key='library.review.enabled'"))?.enabled),
   connection:async c=>(await one('select connection_revision from lounge_members where user_id=$1',[c.userId]))?.connection_revision,
   curatedActor:async(c,connection,ownerId,rules)=>(await one('select public.lounge_owner_curated_actor($1,$2,$3,$4,$5) result',[c.sessionId,c.sessionRevision,connection,ownerId,rules]))?.result,

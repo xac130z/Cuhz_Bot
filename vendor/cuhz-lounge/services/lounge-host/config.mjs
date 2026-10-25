@@ -54,6 +54,7 @@ export function hostConfig(env = {}) {
   const deliveryOperations = flag(env, 'LOUNGE_DELIVERY_OPERATIONS_ENABLED');
   if (deliveryOperations && !ownerEnabled) fail();
   const twitchCleanup = flag(env, 'LOUNGE_TWITCH_CLEANUP_ENABLED');
+  const commandRetention = flag(env, 'LOUNGE_COMMAND_RETENTION_ENABLED');
   const chainProjects = flag(env, 'LOUNGE_CHAIN_PROJECTS_ENABLED');
   if (chainProjects && !ownerEnabled) fail();
   const stageBridge = flag(env, 'LOUNGE_STAGE_BRIDGE_ENABLED');
@@ -66,7 +67,7 @@ export function hostConfig(env = {}) {
     supabaseUrl: origin(required(env, 'LOUNGE_SUPABASE_URL')),
     publishableKey: required(env, 'LOUNGE_SUPABASE_PUBLISHABLE_KEY'),
     databaseUrl: env.LOUNGE_DATABASE_URL || null, ownerControl, authKey, obsKey, eventSubSecret, subscriptionId, rulesVersion,
-    bucket, storageKey, deliveryFrom, resendKey, deliveryEvidence, deliveryWebhookSecret, twitchCleanup, flags: Object.freeze({ auth: true, eligibility: true,
+    bucket, storageKey, deliveryFrom, resendKey, deliveryEvidence, deliveryWebhookSecret, twitchCleanup, commandRetention, flags: Object.freeze({ auth: true, eligibility: true,
       pilot: false, subscription: false,
       pilotManagement: false,
       delivery, deliveryOperations, chainProjects, booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),

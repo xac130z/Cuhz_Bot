@@ -2,6 +2,7 @@ import {isTrustedAuthContext} from '../lounge-auth/runtime.mjs';
 import {createOwnerControlGate} from '../lounge-stage/owner-control.mjs';
 import {hash} from './image.mjs';
 import {curatedCatalog as catalog,curatedItemId,readCuratedSource} from './curated-catalog.mjs';
+import {commandPreflightResult} from '../lounge-retention/port.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const failure=code=>Object.assign(Error(code),{code});
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&Object.keys(value).every(key=>keys.includes(key));
@@ -59,11 +60,21 @@ export function createOwnerCuratedRuntime({store,broker,verifier,readObject,writ
   await checked(state);return {bytes:object.bytes,contentType:'image/png'};
  }
  async function holdRequired(state){if(!await bound(()=>store.curatedHeld()))throw failure('STAGE_HOLD_REQUIRED');fence(state.run);}
- async function persist(state,path,bytes,expectedHash){
+ async function preflight(state,action,requestId){
+  if(typeof store.commandPreflight!=='function')throw failure('BRIDGE_UNAVAILABLE');
+  const value=await bound(()=>store.commandPreflight({context:state.context,connectionRevision:state.connectionRevision,
+   ownerId,rulesVersion,requestId,port:`curated.${action}`}));fence(state.run);
+  if(value===null)return 'legacy';
+  const result=commandPreflightResult(value);if(!result)throw failure('BRIDGE_UNAVAILABLE');
+  if(!result.ok)throw failure(result.code);return result.state;
+ }
+ async function persist(state,path,bytes,expectedHash,requestId){
   await checked(state);await holdRequired(state);const upload=new AbortController();
+  await preflight(state,'import',requestId);
   try{await uncertain(()=>writeObject(path,{bytes,contentType:'image/png',ifAbsent:true,signal:upload.signal}));}finally{upload.abort();}
   if(stopped||state.run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');
   let saved;const readback=new AbortController();
+  await preflight(state,'import',requestId);
   try{saved=await uncertain(()=>readObject(path,{signal:readback.signal,maxBytes:10*1024*1024}));}finally{readback.abort();}
   if(stopped||state.run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');
   if(!Buffer.isBuffer(saved?.bytes)||saved.contentType!=='image/png'||saved.bytes.length!==bytes.length||hash(saved.bytes)!==expectedHash)throw failure('OUTPUT_NOT_VERIFIED');
@@ -72,20 +83,22 @@ export function createOwnerCuratedRuntime({store,broker,verifier,readObject,writ
   if(!uuid.test(input?.requestId||''))throw failure('INVALID_REQUEST');const state=await authenticate(req,{mutation:true});let payload;
   if(action==='import'){
    if(!exact(input,['requestId','catalogKey'])||input.catalogKey!==catalog.key)throw failure('INVALID_REQUEST');
+   const disposition=await preflight(state,action,input.requestId);
    const itemId=curatedItemId(state.context.userId);
    payload={catalogKey:catalog.key,catalogRevision:catalog.revision,itemId,canonicalHash:catalog.sha256,canonicalBytes:catalog.bytes,
     width:catalog.width,height:catalog.height,publicHash:catalog.derivativeHash,publicBytes:catalog.derivativeBytes,verifierVersion:'png-v1'};
    // A historical receipt is recovered through the same SQL authority and
    // fingerprint checks. It does not require re-uploading or a new hold.
-   if(await bound(()=>store.curatedReceiptExists(state.context,input.requestId))){await checked(state);
+   if(disposition==='replay'||(disposition==='legacy'&&await bound(()=>store.curatedReceiptExists(state.context,input.requestId)))){await checked(state);
     const prior=await uncertain(()=>store.curatedWrite(state.context,state.connectionRevision,ownerId,rulesVersion,input.requestId,action,payload));
     if(stopped||state.run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');return prior;}
-   await holdRequired(state);const original=await bound(readCuratedSource,'CURATED_SOURCE_UNAVAILABLE');await checked(state);
+   await holdRequired(state);await preflight(state,action,input.requestId);const original=await bound(readCuratedSource,'CURATED_SOURCE_UNAVAILABLE');await checked(state);
+   await preflight(state,action,input.requestId);
    let verified;try{verified=await verifier.verify(original,{sha256:catalog.sha256,size:`${catalog.width}x${catalog.height}`});}catch(error){throw failure(error?.code==='OUTPUT_NOT_VERIFIED'?'OUTPUT_NOT_VERIFIED':error?.code==='IMAGE_VERIFIER_BUSY'?'BRIDGE_BUSY':'OUTPUT_VERIFICATION_UNAVAILABLE');}
    fence(state.run);const d=verified.descriptor;
    if(d.publicHash!==catalog.derivativeHash||d.publicBytes!==catalog.derivativeBytes||d.canonicalHash!==catalog.sha256||d.canonicalBytes!==catalog.bytes)throw failure('OUTPUT_NOT_VERIFIED');
-   await persist(state,`${state.context.userId}/curated/${itemId}/original.png`,original,catalog.sha256);
-   await persist(state,`${state.context.userId}/stage/${itemId}/${d.publicHash}.png`,verified.bytes,d.publicHash);
+   await persist(state,`${state.context.userId}/curated/${itemId}/original.png`,original,catalog.sha256,input.requestId);
+   await persist(state,`${state.context.userId}/stage/${itemId}/${d.publicHash}.png`,verified.bytes,d.publicHash,input.requestId);
    payload={catalogKey:catalog.key,catalogRevision:catalog.revision,itemId,...d};
   }else if(action==='review'){
    if(!exact(input,['requestId','itemId','expectedRevision','title','displayName','consent','adultConfirmed','rightsConfirmed'])||!uuid.test(input.itemId||'')
@@ -93,9 +106,11 @@ export function createOwnerCuratedRuntime({store,broker,verifier,readObject,writ
     ||input.consent!==true||input.adultConfirmed!==true||input.rightsConfirmed!==true)throw failure('INVALID_REQUEST');
    if(input.itemId!==curatedItemId(state.context.userId))throw failure('CURATED_ITEM_UNAVAILABLE');
    const {requestId,...review}=input;void requestId;payload=review;
-   if(!await bound(()=>store.curatedReceiptExists(state.context,input.requestId)))await holdRequired(state);
+   const disposition=await preflight(state,action,input.requestId);
+   if(disposition==='fresh'||(disposition==='legacy'&&!await bound(()=>store.curatedReceiptExists(state.context,input.requestId))))await holdRequired(state);
   }else throw failure('INVALID_REQUEST');
   await checked(state);
+  await preflight(state,action,input.requestId);
   const result=await uncertain(()=>store.curatedWrite(state.context,state.connectionRevision,ownerId,rulesVersion,input.requestId,action,payload));
   if(stopped||state.run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');return result;
  }

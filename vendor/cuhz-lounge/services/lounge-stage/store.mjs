@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { createCommandRetentionPort } from '../lounge-retention/port.mjs';
 /** Existing Supabase database only; prepared query port, no secrets/env/network. */
 export function createStageStore({query,allowSubscription=false,allowPilot=false}={}) {
   if(typeof query!=='function')throw Error('STAGE_STORE_CONFIG_INVALID');
   const one=async(sql,args=[])=>(await query(sql,args)).rows?.[0]??null;
+  const commands=createCommandRetentionPort({query,unavailableCode:'ASSET_UNAVAILABLE'});
   const apply=async(context,command)=>(await one('select public.lounge_stage_apply($1,$2,$3,$4::jsonb,$5,$6) result',
     [context?.sessionId??null,context?.sessionRevision??null,context?.connectionRevision??null,JSON.stringify(command),allowSubscription===true,allowPilot===true]))?.result;
   return Object.freeze({
@@ -18,7 +20,7 @@ export function createStageStore({query,allowSubscription=false,allowPilot=false
           JSON.stringify(payload),ownerControl?.enabled===true,ownerControl?.twitchId??null,allowSubscription===true,allowPilot===true]))?.result;},
     // Delivery/expiry only: maintenance never replays a stage command.
     expireChat:async()=>one('select public.lounge_stage_chat_maintain() result'),
-    async asset(hash){return one(`select v.public_path as storage_path_canonical,v.public_sha256 as sha256 from public.lounge_library_items i
+    async asset(hash){if(!await commands.frontierOpen())return null;return one(`select v.public_path as storage_path_canonical,v.public_sha256 as sha256 from public.lounge_library_items i
       join public.lounge_library_verifications v on v.item_id=i.id and v.canonical_sha256=i.sha256
       where v.public_sha256=$1 and i.status='approved' and i.publish_consent_at is not null and i.published_at is not null
       and exists(select 1 from public.lounge_feature_flags where key='stage.enabled' and enabled)

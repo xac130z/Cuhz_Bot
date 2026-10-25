@@ -771,3 +771,29 @@ and freshly authenticated `planetcuhz` alone is authorized. General command
 retention, external/legacy identity mapping and backup/deletion reconciliation
 remain unfinished. Exact evidence is in the ecosystem
 `recovery-2026-10-25/retired-booking-lifecycle/checkpoint.json`.
+
+
+## Core command retention candidate (October25,2026)
+
+The companion source-only700 migration adds bounded cleanup for audit, stage
+and shared bridge response logs while retaining opaque permanent replay keys.
+The80-file bundle includes the requestless command worker and authenticated
+preflight/asset frontier checks. Its independent host switch
+`LOUNGE_COMMAND_RETENTION_ENABLED` and durable `retention.commands.enabled`
+both default off. Configured startup requires the complete700 protocol. The
+existing minute timer runs at most64 combined deletions; timeout/stop cannot
+overlap the physical SQL call. No new bot/chat/public maintenance route exists.
+
+The1M key registry holds public output and fresh commands at999998 keys;
+known expired requests return definite409 and consoles clear only that local
+pending operation. Unknown outcomes retain exact recovery. Saved art, account,
+Points, history, quotas, pilot and financial/provider evidence are preserved.
+Other command families and strict hosted deletion cadence/backlog, external
+copies and restore reconciliation remain open. Noncurated live import replay
+retains its original-output I/O dependency; a positive preflight can race a
+later retirement and leave a private immutable object after SQL rollback.
+See the website retention README and
+`recovery-2026-10-25/command-retention/checkpoint.json` for reviewed source and
+exact scope. This is not deployment or live acceptance and does not change
+the separately frozen owner-stage release. First live controller remains only
+freshly authenticated `planetcuhz`; no additional grants are authorized.

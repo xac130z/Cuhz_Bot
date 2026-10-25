@@ -3,6 +3,7 @@ import {hash} from './image.mjs';
 import {createOwnerControlGate} from '../lounge-stage/owner-control.mjs';
 import {createImageVerifier} from './image-verifier.mjs';
 import {createOwnerCuratedRuntime} from './curated.mjs';
+import {commandPreflightResult} from '../lounge-retention/port.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const failure=code=>Object.assign(Error(code),{code});
 const keys=(value,allowed)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));
@@ -26,6 +27,14 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,ow
  }
  async function checked(c,run,operator=false){fence(run);if(Date.now()-c.verifiedAt>60000||c.verifiedAt>Date.now())throw failure('AUTH_REQUIRED');const a=await bound(()=>store.actor(c,operator?'review:decide':null));fence(run);if(!a?.ok||a.user_id!==c.userId)throw failure(a?.code||'AUTH_REQUIRED');}
  async function enabledNow(run){fence(run);if(!await bound(()=>store.enabled()))throw failure('LIBRARY_BRIDGE_DISABLED');fence(run);}
+ async function preflight(c,action,requestId,run){
+  if(typeof store.commandPreflight!=='function')throw failure('BRIDGE_UNAVAILABLE');
+  const value=await bound(()=>store.commandPreflight({context:c,requestId,port:`bridge.${action}`,
+   ownerId:ownerControl?.twitchId??null,rulesVersion:requiredRulesVersion??null}));fence(run);
+  if(value===null)return 'legacy';
+  const result=commandPreflightResult(value);if(!result)throw failure('BRIDGE_UNAVAILABLE');
+  if(!result.ok)throw failure(result.code);return result.state;
+ }
  async function member(req){const run=epoch,c=await authenticate(req),r=await bound(()=>store.member(c));await checked(c,run);return r;}
  const reviewIdentity=c=>({ownerKey:hash(Buffer.from(`artwork-review-identity-v1|${c.userId}|${c.twitchId}`)),sessionKey:hash(Buffer.from(`artwork-review-session-v1|${c.userId}|${c.sessionId}|${c.sessionRevision}`))});
  async function consoleContext(req){const c=await authenticate(req,{operator:true});return {csrfToken:c.csrfToken,...reviewIdentity(c)};}
@@ -47,15 +56,19 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,ow
   }
   if(action==='import'){
    if(!keys(input,['requestId','generationId'])||!uuid.test(input.generationId||'')||typeof readObject!=='function'||typeof writeObject!=='function')throw failure('INVALID_REQUEST');
+   await preflight(c,action,input.requestId,run);
    await enabledNow(run);const g=await bound(()=>store.output(c,input.generationId));fence(run);
    await enabledNow(run);const expected=`${c.userId}/${input.generationId}/output.png`;if(!g||g.output_path!==expected||!g.output_sha256)throw failure('OUTPUT_NOT_VERIFIED');
+   await preflight(c,action,input.requestId,run);
    let object;const controller=new AbortController();try{object=await bound(()=>readObject(expected,{signal:controller.signal,maxBytes:16*1024*1024}),'ASSET_UNAVAILABLE');}finally{controller.abort();}
-   await enabledNow(run);if(object?.contentType!=='image/png')throw failure('OUTPUT_NOT_VERIFIED');let verified;try{verified=await verifier.verify(object.bytes,{sha256:g.output_sha256,size:g.size});}catch(error){throw failure(error?.code==='OUTPUT_NOT_VERIFIED'?'OUTPUT_NOT_VERIFIED':error?.code==='IMAGE_VERIFIER_BUSY'?'BRIDGE_BUSY':'OUTPUT_VERIFICATION_UNAVAILABLE');}fence(run);
+   await enabledNow(run);if(object?.contentType!=='image/png')throw failure('OUTPUT_NOT_VERIFIED');await preflight(c,action,input.requestId,run);let verified;try{verified=await verifier.verify(object.bytes,{sha256:g.output_sha256,size:g.size});}catch(error){throw failure(error?.code==='OUTPUT_NOT_VERIFIED'?'OUTPUT_NOT_VERIFIED':error?.code==='IMAGE_VERIFIER_BUSY'?'BRIDGE_BUSY':'OUTPUT_VERIFICATION_UNAVAILABLE');}fence(run);
    await checked(c,run);await enabledNow(run);const path=`${c.userId}/stage/${g.id}/${verified.descriptor.publicHash}.png`,upload=new AbortController();
+   await preflight(c,action,input.requestId,run);
    try{await uncertain(()=>writeObject(path,{bytes:verified.bytes,contentType:'image/png',ifAbsent:true,signal:upload.signal}));}finally{upload.abort();}
    if(stopped||run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');
    // Immutable writes may return "already exists". Read back exact bytes rather
    // than trusting storage metadata or silently overwriting a foreign object.
+   await preflight(c,action,input.requestId,run);
    let saved;const confirm=new AbortController();try{saved=await uncertain(()=>readObject(path,{signal:confirm.signal,maxBytes:10*1024*1024}));}finally{confirm.abort();}
    if(stopped||run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');
    if(!Buffer.isBuffer(saved?.bytes)||saved.contentType!=='image/png'||saved.bytes.length!==verified.bytes.length||hash(saved.bytes)!==verified.descriptor.publicHash)throw failure('OUTPUT_NOT_VERIFIED');
@@ -69,6 +82,7 @@ export function createStageBridgeRuntime({store,broker,readObject,writeObject,ow
   }else if(action==='revoke'){
    if(!keys(input,['requestId','itemId'])||!uuid.test(input.itemId||''))throw failure('INVALID_REQUEST');payload={itemId:input.itemId};
   }else throw failure('INVALID_REQUEST');
+  await preflight(c,action,input.requestId,run);
   await checked(c,run,action==='decide');
   const result=await uncertain(()=>store.write(c,input.requestId,action,payload));if(stopped||run!==epoch)throw failure('BRIDGE_OUTCOME_UNKNOWN');return result;
  }
