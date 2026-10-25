@@ -712,7 +712,7 @@ The candidate includes the private bounded cleanup worker for source migration
 `20261025050000_lounge_twitch_cleanup.sql`. Host
 `LOUNGE_TWITCH_CLEANUP_ENABLED` and durable `retention.twitch.enabled` both
 default off. Older schemas refuse configured cleanup startup. The existing
-minute timer claims one original disconnect task and steps at most64 combined
+minute timer claims one original disconnect task and steps at most 64 combined
 booking/receipt rows, with physical-flight fencing and stable claim recovery
 after unknown transport outcomes. The permanent claim registry refuses fresh
 IDs at one million entries without evicting known recovery keys.
@@ -726,12 +726,48 @@ pending-command journal. Private wrappers and insert guards prevent fresh
 authority or session bindings from a retired booking.
 
 This is scoped source-only cleanup, not an approved full retention rollout.
-Older unbound bookings still lack reliable scheduled deadline transitions;
-their retained reservations need a separate lifecycle correction before
-activation. General command retention, legacy/external identity mapping and
+The identity-only 500 migration does not supply deadline transitions; pair it
+with the lifecycle correction described below before enabling cleanup.
+General command retention, legacy/external identity mapping and
 backup deletion remain unverified. The original policy/outbox/disconnect
 records remain intact; scoped completion does not mark those full tasks done.
 See the website `services/lounge-retention/README.md` and the ecosystem
 `recovery-2026-10-24/twitch-retention/cleanup-checkpoint.json` for exact source
 and limits. The approved frozen owner-stage release remains separate, and only
 freshly authenticated `planetcuhz` may control its first live test.
+
+### Retired booking deadlines and reconnect fencing — October 25, 2026
+
+The candidate now requires source migration
+`20261025060000_lounge_retired_booking_lifecycle.sql` alongside 500 before the
+existing cleanup host flag may start either retention worker. Both host and
+durable gates remain off by default. A separate single-query worker uses the
+existing minute timer to select at most 64 retired booking targets. Only due
+unbound holds/confirmed/active bookings become expired/no-show/completed using
+database time and original legacy deadlines. It preserves reservation fields,
+appends lifecycle history and caps the terminal revision at 100. Lease-only
+targets can include already-terminal or policy-bound retired bookings; their
+booking state stays intact while only the attached stale lease is revoked or
+disassociated. Existing revocation timestamps are retained. Unknown responses
+keep the same request ID/physical flight; immutable receipts preserve known
+empty outcomes and remain recoverable at the fixed one-million-entry ceiling.
+
+A fresh login with the same Twitch ID cannot adopt a booking from before an
+original recorded disconnect. Booking/lease/Chain entry, stage commands,
+public reads and activity validation reject that old association before
+delayed cleanup. Preexisting resumed old leases become inert; retirement and
+bounded maintenance reconcile their metadata without clearing fresh sessions,
+members or truly newer bookings. Tick can blank an invalid old stage through
+its sole writer without prematurely cancelling its reservation. The deadline
+RPC does not mutate stage state. The revised lease guard leaves revocation
+lock-free and keeps renewal in global/member order; the sweep relies on the
+existing global resource-write fence without adding a reverse resource-row
+wait.
+
+This is source-only hardening and maintenance, pending exact hosted rollout
+and live acceptance. It does not activate cleanup, paid work, grants, new
+controllers, voice or OBS. The frozen first-stream release remains separate
+and freshly authenticated `planetcuhz` alone is authorized. General command
+retention, external/legacy identity mapping and backup/deletion reconciliation
+remain unfinished. Exact evidence is in the ecosystem
+`recovery-2026-10-25/retired-booking-lifecycle/checkpoint.json`.

@@ -12,6 +12,7 @@ import { createBookingHousekeeping } from '../lounge-booking/housekeeping.mjs';
 import { createBookingNotices } from '../lounge-booking/notices.mjs';
 import { createChainCleanup } from '../lounge-chain/cleanup.mjs';
 import { createTwitchCleanup } from '../lounge-retention/cleanup.mjs';
+import { createRetiredBookingLifecycle } from '../lounge-retention/bookings.mjs';
 
 const unavailable = code => new Response(JSON.stringify({ error: code }), { status: 503,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -52,6 +53,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   const bookingNotices = createBookingNotices({ query, enabled: config.flags.booking === true });
   const chainCleanup = createChainCleanup({query});
   const twitchCleanup = createTwitchCleanup({ query, enabled: config.twitchCleanup });
+  const retiredBookings = createRetiredBookingLifecycle({ query, enabled: config.twitchCleanup });
   const guardedFetch = async (url, options = {}) => {
     if (stopped || options.signal?.aborted) throw Error('LOUNGE_UNAVAILABLE');
     const controller = new AbortController(), abort = () => controller.abort();
@@ -132,7 +134,8 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           to_regprocedure('public.lounge_delivery_mail_reconcile(jsonb)') is not null as delivery_evidence_ready,
           to_regprocedure('public.lounge_delivery_operations(uuid,integer,timestamp with time zone,text,text,jsonb)') is not null as delivery_operations_ready,
           to_regprocedure('public.lounge_twitch_cleanup_claim(uuid)') is not null
-            and to_regprocedure('public.lounge_twitch_cleanup_step(uuid,uuid,integer)') is not null as twitch_cleanup_ready,
+            and to_regprocedure('public.lounge_twitch_cleanup_step(uuid,uuid,integer)') is not null
+            and to_regprocedure('public.lounge_twitch_cleanup_expire(uuid,integer)') is not null as twitch_cleanup_ready,
           to_regclass('public.lounge_owner_curated_items') is not null
             and to_regclass('public.lounge_owner_curated_consents') is not null
             and to_regprocedure('public.lounge_owner_curated_actor(uuid,integer,integer,text,text)') is not null
@@ -171,7 +174,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         }
         if (stopped || turn !== epoch) return { started: false };
         app.start(); bookingCleanup.start(); bookingNotices.start(); chainCleanup.start(row.chain_ready===true);
-        twitchCleanup.start(row.twitch_cleanup_ready === true); running = true;
+        twitchCleanup.start(row.twitch_cleanup_ready === true); retiredBookings.start(row.twitch_cleanup_ready === true); running = true;
         timer = schedule(() => {
           if (!running || stopped || turn !== epoch) return;
           // Bounded SQL routines own cleanup; this never retries a paid job.
@@ -183,7 +186,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
             // Finish any due booking transitions before publishing reminders.
             // A failed cleanup cannot make a notice assert live authority: the
             // notice transaction independently checks state/time/publication.
-            bookingCleanup.run().then(() => bookingNotices.run()),chainCleanup.run(),twitchCleanup.run()]);
+            bookingCleanup.run().then(() => bookingNotices.run()),chainCleanup.run(),twitchCleanup.run(),retiredBookings.run()]);
         }, 60000);
         timer?.unref?.();
         return { started: true, generationEnabled: false };
@@ -195,7 +198,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   async function stop() {
     if (stopped) return;
     stopped = true; running = false; epoch++;
-    bookingCleanup.stop(); bookingNotices.stop(); chainCleanup.stop(); twitchCleanup.stop();
+    bookingCleanup.stop(); bookingNotices.stop(); chainCleanup.stop(); twitchCleanup.stop(); retiredBookings.stop();
     if (timer !== undefined) cancel(timer);
     for (const controller of upstreams) controller.abort();
     await app.stop();
