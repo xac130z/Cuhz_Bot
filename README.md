@@ -680,3 +680,28 @@ the page. Private DOM clears on hiding, exit, expired authentication, failed
 reads and explicit clear. The source checkpoint records actual browser/native
 proof and the exact runtime closure. Hosted acceptance and the approved
 planetcuhz-only first-stream release remain separate.
+
+
+### Generation-command replay cutover — October 25, 2026
+
+The candidate runtime now calls only `lounge_generation_chat_execute`. It fails
+closed on an older schema rather than falling back to legacy admission. The
+source-only `20261025040000_lounge_generation_chat_replay.sql` preserves unlinked
+spent event keys after disconnect and receipt cleanup. Missing or expired
+mappings cannot consume a later brief or reserve another request. Valid linked
+receipts retain their original result; known legacy-protocol denials also spend
+their keys. The fixed one-million-key cap refuses fresh work and never evicts
+old keys automatically.
+
+A one-use current-transaction receipt permit also fences cached old function
+bodies: unauthorized legacy inserts roll back the entire queue/reservation
+transaction. The legacy public RPC cannot admit new work. Keep generation off
+while cutting over, stop/drain old workers and reconcile available history.
+Previously erased keys and messages rejected before SQL cannot be reconstructed
+by this guard. Preserve the security keys through backups and reconcile any
+post-snapshot gaps before resuming. No quota, budget or pilot reset follows.
+
+All paid, provider and generation gates remain off. The frozen approved
+planetcuhz-only first-stream release is separate. The ecosystem retention
+checkpoint records exact source, independent review, synthetic SQL/native proof
+and remaining historical-identity/log cleanup; this is not paid/live acceptance.
