@@ -57,8 +57,8 @@ try {
         exec(sql) { return this.db.exec(sql); }
         close() { return this.db.close(); }
         transaction(callback) {
-            return () => {
-                this.db.exec('BEGIN');
+            const run = begin => () => {
+                this.db.exec(begin);
                 try {
                     const result = callback();
                     this.db.exec('COMMIT');
@@ -68,6 +68,9 @@ try {
                     throw error;
                 }
             };
+            const transaction = run('BEGIN');
+            transaction.immediate = run('BEGIN IMMEDIATE');
+            return transaction;
         }
     };
 }

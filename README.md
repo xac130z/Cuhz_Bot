@@ -9,6 +9,25 @@
 
 ---
 
+## One-time Points claim source correction — October25,2026
+
+`claimBonus` now checks existing exact username/reason history, credits the
+existing wallet and writes its ledger row in one transaction. PostgreSQL takes
+a namespaced claim lock before the history read, on the same leased client;
+SQLite uses an immediate transaction. Existing consumed reasons remain spent
+even if a retry proposes a different amount. Recurring chat/paycheck awards,
+existing balances/history, reward amounts and ordinary guarded debits retain
+their current contracts. Run `npm run test:points:safety` for isolated coverage.
+
+This is not immutable identity or full durable Points cutover. Drain old claim
+writers before rollout: older check-then-credit callers do not honor the new
+lock. A lost COMMIT reply is still ambiguous; there is no automatic retry or
+success claim, and a later same-claim attempt cannot credit the same history
+again through the corrected path. Generic credits and privileged manual SQL
+are outside this claim-only protocol. Stable custody, spend/fulfillment
+receipts, all-writer fencing and reconciliation remain separate release gates.
+No new migration, live wallet change, reward, role, grant or activation follows.
+
 ## 📖 Overview
 
 The **Antigravity Agent** is a Twitch bot fully integrated with the Planet CUHZ ecosystem. It serves as a community engagement tool, automated marketing assistant, and bridge to the Anything.com dashboard.
