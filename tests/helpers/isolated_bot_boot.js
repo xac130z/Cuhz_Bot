@@ -67,7 +67,7 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             evidence.requiredModules.push(name);
             // Runtime tests may provide inert DB/service implementations; file,
             // environment, network and lifecycle capabilities remain forbidden.
-            const injectable = new Set(['./database', './points_service', './user_memory', './loyalty', './logger', './duration']);
+            const injectable = new Set(['./database', './points_service', './user_memory', './loyalty', './logger', './duration', './clips_service', './shared_chat_guard']);
             if (injectable.has(name) && Object.hasOwn(fixtures, name)) return fixtures[name];
             if (name === 'express') return express;
             if (name === 'cors') return () => () => {};

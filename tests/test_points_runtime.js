@@ -123,6 +123,7 @@ function fixture(options = {}) {
     };
     const messages = [];
     const watchMinutes = [];
+    const clipCalls = [];
     const errors = [];
     const logger = { ...quietLogger, error: (...args) => errors.push(args.join(' ')) };
     const pointsService = serviceFor(adapter, logger);
@@ -131,6 +132,8 @@ function fixture(options = {}) {
         './database': adapter,
         './points_service': pointsService,
         './duration': require('../src/duration'),
+        './shared_chat_guard': require('../src/shared_chat_guard'),
+        './clips_service': { async handleClipCommand(...args) { clipCalls.push(args); return { announcement: 'Clip fixture acknowledgement.' }; } },
         './logger': logger,
         './user_memory': {
             recordMessage() {},
@@ -143,9 +146,9 @@ function fixture(options = {}) {
     evidence.runtime.configure(channel, { commands: {}, settings: { auto_welcome: false } },
         (target, message) => { messages.push({ channel: target, text: message }); });
     return {
-        evidence, messages, watchMinutes, errors, sqlEvents, watchQueries, pointsService,
-        async message(text = '!ping', username = 'alice', self = false) {
-            await evidence.runtime.handleMessage(channel, { username, badges: {}, mod: options.mod || false }, text, self);
+        evidence, messages, watchMinutes, clipCalls, errors, sqlEvents, watchQueries, pointsService,
+        async message(text = '!ping', username = 'alice', self = false, tags = {}) {
+            await evidence.runtime.handleMessage(channel, { username, badges: {}, mod: options.mod || false, ...tags }, text, self);
             assert.deepEqual(evidence.forbiddenAttempts, [], 'no forbidden runtime side effects');
         },
         user: () => sqlite.prepare('SELECT * FROM users WHERE username = ?').get('alice'),
@@ -401,6 +404,22 @@ async function getPoints(f, username) {
             assert.doesNotMatch(f.messages.at(-1).text, /since you (arrived|joined)/i);
         });
     }
+    await isolated('clip handler forwards only TMI room context, never title digits', async f => {
+        await f.message('!clip broadcaster_id=999999', 'alice', false, { 'room-id': '123456' });
+        assert.deepEqual(f.clipCalls[0], ['#fixture_channel', 'alice', 'broadcaster_id=999999', '123456']);
+        assert.equal(f.clipCalls.length, 1); assert.match(f.messages.at(-1).text, /Clip fixture/);
+    });
+    await isolated('clip handler does not invent missing room context', async f => {
+        await f.message('!clip 999999'); assert.equal(f.clipCalls[0][3], undefined);
+    });
+    await isolated('shared-chat mirror cannot reach clip or message ledger paths', async f => {
+        const before = f.ledger().length;
+        await f.message('!clip', 'alice', false, { 'room-id': '123456', 'source-room-id': '999999', id: 'mirror' });
+        assert.equal(f.clipCalls.length, 0); assert.equal(f.ledger().length, before); assert.equal(f.sqlEvents.length, 0);
+    });
+    await isolated('self clip messages never reach clip service', async f => {
+        await f.message('!clip', 'alice', true, { 'room-id': '123456' }); assert.equal(f.clipCalls.length, 0);
+    });
     console.log(`✅ test_points_runtime: ${checks} checks passed (actual handlers/services; isolated SQLite fixtures)`);
 })().catch(error => {
     console.error(error);

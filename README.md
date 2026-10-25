@@ -9,6 +9,18 @@
 
 ---
 
+## Native clip room binding — October 25, 2026
+
+`!clip` takes its numeric broadcaster ID only from the originating TMI
+`room-id`. Missing context, token or configured `TWITCH_CLIENT_ID` keeps the
+manual clip tool available; no public application-ID fallback is used. A valid
+202 receipt means accepted creation. One bounded Get Clips request can verify
+only the exact clip ID and broadcaster; empty, lost or mismatched reads leave
+creation unverified. Neither native request is retried. Record acknowledgement
+and the existing single +10 Points attempt remain separate outcomes. This is
+source-tested only; live token scopes/client association and Twitch acceptance
+still require the attended owner test. This adds no Lounge controller grants.
+
 ## One-time Points claim source correction — October25,2026
 
 `claimBonus` now checks existing exact username/reason history, credits the

@@ -31,7 +31,7 @@ class ClipsService {
     /**
      * Record a new community clip from Twitch chat
      */
-    async handleClipCommand(channel, username, rawTitle = '') {
+    async handleClipCommand(channel, username, rawTitle = '', broadcasterId = null) {
         const usernameL = username.toLowerCase();
         const cleanChannel = channel.replace('#', '').toLowerCase();
 
@@ -49,30 +49,47 @@ class ClipsService {
         let clipUrl = null;
         let clipId = null;
         let timecode = null;
+        let verified = false;
 
-        // 1. Check if Twitch API can generate native clip
-        if (config.oauthToken && !config.useMockApi) {
+        // This private context comes from TMI's room-id, never the login/title.
+        const roomId = typeof broadcasterId === 'string' && /^[1-9][0-9]{0,127}$/.test(broadcasterId) ? broadcasterId : null;
+        const configuredClient = process.env.TWITCH_CLIENT_ID;
+        const clientId = typeof configuredClient === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(configuredClient) ? configuredClient : '';
+        const token = typeof config.oauthToken === 'string' ? config.oauthToken.replace(/^oauth:/, '').trim() : '';
+        // Missing native authorization/context keeps the manual tool available.
+        if (roomId && clientId && token && !config.useMockApi) {
+            const headers = { 'Authorization': `Bearer ${token}`, 'Client-ID': clientId };
             try {
-                // Attempt Helix clip creation if broadcaster/bot authorization permits
                 const res = await axios.post(
-                    `${config.twitchApiBase}/clips?broadcaster_id=${encodeURIComponent(cleanChannel)}`,
+                    `${config.twitchApiBase}/clips`,
                     {},
                     {
-                        headers: {
-                            'Authorization': `Bearer ${config.oauthToken.replace('oauth:', '')}`,
-                            'Client-ID': process.env.TWITCH_CLIENT_ID || 'kimne78kx3ncx6brgo4mv6wki5h1ko'
-                        },
-                        timeout: 3000
+                        headers,
+                        params: { broadcaster_id: roomId },
+                        timeout: 3000,
+                        maxContentLength: 65536, maxRedirects: 0
                     }
-                ).catch(() => null);
+                );
 
-                const id = res?.data?.data?.[0]?.id;
+                const id = Array.isArray(res?.data?.data) ? res.data.data[0]?.id : null;
                 if (res?.status === 202 && typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id)) {
                     clipId = id;
                     clipUrl = `https://clips.twitch.tv/${clipId}`;
+                    // One bounded read, no polling or repeated creation. Empty,
+                    // lost or mismatched reads leave asynchronous acceptance intact.
+                    try {
+                        const check = await axios.get(`${config.twitchApiBase}/clips`, {
+                            headers, params: { id: clipId }, timeout: 3000, maxContentLength: 65536, maxRedirects: 0
+                        });
+                        verified = check?.status === 200 && Array.isArray(check?.data?.data) &&
+                            check.data.data.some(clip => clip?.id === clipId && clip?.broadcaster_id === roomId);
+                    } catch {
+                        // Acceptance is known; completion remains unverified.
+                    }
                 }
-            } catch (err) {
-                logger.warn(`Twitch Helix clip generation skipped: ${err.message}`);
+            } catch {
+                // Do not log provider error payloads or repeat an uncertain POST.
+                logger.warn('Twitch Helix clip creation is unconfirmed.');
             }
         }
 
@@ -103,8 +120,8 @@ class ClipsService {
 
         // Twitch's 202 starts asynchronous creation; it does not prove the
         // clip is published. Do not infer a failed write from a lost reply.
-        const capture = clipId ? 'accepted' : 'unconfirmed';
-        const captureText = clipId ? 'Twitch accepted your clip request; creation is not verified.' : 'Clip creation is unconfirmed; open the manual clip tool.';
+        const capture = verified ? 'verified' : clipId ? 'accepted' : 'unconfirmed';
+        const captureText = verified ? 'Twitch clip verified.' : clipId ? 'Twitch accepted your clip request; creation is not verified.' : 'Clip creation is unconfirmed; open the manual clip tool.';
         const recordText = recorded ? 'Request saved for community review.' : 'Request save is unconfirmed.';
         const pointsText = awarded ? `+${CLIP_REWARD_POINTS} CUHZ Points confirmed.` : 'Points status is unconfirmed; do not retry for points.';
         const chatUrl = clipId ? `https://www.twitch.tv/${encodeURIComponent(cleanChannel)}/clip/${clipId}` : clipUrl;

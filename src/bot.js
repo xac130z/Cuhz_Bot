@@ -4125,7 +4125,7 @@ async function handleMessage(channel, tags, message, self) {
     // --- Community Clips & Free Promo Engine (!clip) ---
     if (msg === '!clip' || msg.startsWith('!clip ')) {
         const rawTitle = message.substring(5).trim();
-        const clipRes = await clipsService.handleClipCommand(channel, tags.username, rawTitle);
+        const clipRes = await clipsService.handleClipCommand(channel, tags.username, rawTitle, tags['room-id']);
         sendMessage(channel, clipRes.announcement || clipRes.message);
         return;
     }
