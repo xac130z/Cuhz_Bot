@@ -629,3 +629,30 @@ This C08 branch is separate from the reviewed owner-stage release. Frontend
 cloud synchronization, age-attestation UI, HTTPS proxy/body-limit acceptance,
 capacity/backup review, native contention and independent review remain required
 before C08 rollout. The owner-only first-test restriction is unchanged.
+
+
+### Signed private-mail evidence candidate — October 24, 2026
+
+The separate candidate runtime adds the receive-only raw JSON route
+`POST /api/lounge/v2/deliveries/provider-evidence`. It stays off unless
+`LOUNGE_DELIVERY_EVIDENCE_ENABLED=true` and a dedicated
+`LOUNGE_RESEND_WEBHOOK_SECRET` are configured with the additive
+`20261025020000_lounge_delivery_evidence.sql` schema. The existing raw-body
+gateway preserves the signed bytes; the inner verifier caps them at16KiB.
+This gate can receive evidence while the send gate is off, without a sending
+API key or storage credentials. Nothing registers a webhook or sends mail.
+
+New sends commit a mail/claim/envelope-digest binding before HTTP and carry
+server-owned opaque tags. Verified Resend `email.sent` evidence can settle only
+that original attempted message, including an unknown outcome. Exact replay is
+idempotent; contradictory or unbound evidence stays unresolved. Revoked/expired
+links stay closed. Evidence does not verify an address or prove inbox delivery.
+No raw webhook body, destination, subject, text or token is kept in the evidence
+tables. Operator review/retrieval and live account/signature/tag acceptance remain
+open. See the website delivery README and ecosystem delivery-evidence checkpoint
+for current runtime count, source hashes, independent review and native SQL proof.
+
+This candidate remains separate from the frozen approved first-stream release.
+Only freshly authenticated `planetcuhz` may control that first test; no additional
+controller, member, pilot, mail, provider or financial activation follows from
+this source increment.

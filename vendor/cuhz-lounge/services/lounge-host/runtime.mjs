@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createResendSender } from '../lounge-delivery/resend.mjs';
+import {createResendWebhook,DELIVERY_EVIDENCE_PATH} from '../lounge-delivery/resend-webhook.mjs';
 import { createLoungeApplication } from '../lounge-goal2/runtime.mjs';
 import { createSupabaseAuthPort } from '../lounge-auth/supabase.mjs';
 import { createPrivateChatInbox } from '../lounge-chat-inbox/runtime.mjs';
@@ -77,6 +78,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   const inbox = createPrivateChatInbox({ query, origin: config.origin, enabled: true,
     bookingNoticesEnabled: config.flags.booking === true,
     authenticate: request => app.auth.authenticate(request) });
+  const deliveryEvidence = createResendWebhook({query,key:config.authKey,secret:config.deliveryWebhookSecret,enabled:config.deliveryEvidence});
   const storage = config.bucket && config.storageKey
     ? createStoragePort({ url: config.supabaseUrl, bucket: config.bucket, serviceKey: config.storageKey, fetchImpl: guardedFetch }) : {};
   app = createLoungeApplication({ db: { query }, origin: config.origin, authKey: config.authKey,
@@ -123,7 +125,9 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
             and to_regprocedure('public.lounge_chain_asset_read(uuid,integer,timestamp with time zone,text)') is not null
             and to_regprocedure('public.lounge_chain_cleanup(integer)') is not null as chain_ready,
           to_regprocedure('public.lounge_delivery_command(uuid,integer,timestamp with time zone,text,jsonb,text,jsonb)') is not null
-            and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null as delivery_ready,
+            and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null
+            and to_regprocedure('public.lounge_delivery_mail_bind(uuid,uuid,text)') is not null as delivery_ready,
+          to_regprocedure('public.lounge_delivery_mail_reconcile(jsonb)') is not null as delivery_evidence_ready,
           to_regclass('public.lounge_owner_curated_items') is not null
             and to_regclass('public.lounge_owner_curated_consents') is not null
             and to_regprocedure('public.lounge_owner_curated_actor(uuid,integer,integer,text,text)') is not null
@@ -147,6 +151,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         if (!row || !['privileged', 'isolation_ok', 'auth_ready', 'stage_ready', 'members_ready', 'inbox_ready', 'eventsub_ready', 'inbox_rpc_ready', 'stage_rpc_ready'].every(key => row[key] === true)) throw Error('LOUNGE_SCHEMA_REVIEW_REQUIRED');
         if (config.flags.stage && row.stage_chat_ready !== true) throw Error('LOUNGE_STAGE_CHAT_SCHEMA_REQUIRED');
         if (config.flags.delivery && row.delivery_ready !== true) throw Error('LOUNGE_DELIVERY_SCHEMA_REQUIRED');
+        if (config.deliveryEvidence && (row.delivery_ready !== true || row.delivery_evidence_ready !== true)) throw Error('LOUNGE_DELIVERY_EVIDENCE_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated && row.curated_ready !== true) throw Error('LOUNGE_CURATED_SCHEMA_REQUIRED');
         if (config.flags.chainProjects && row.chain_ready !== true) throw Error('LOUNGE_CHAIN_SCHEMA_REQUIRED');
@@ -195,7 +200,8 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
       const url = new URL(request.url);
       if (url.origin !== config.origin) return new Response(null, { status: 403 });
       let response;
-      if (url.pathname.startsWith('/api/lounge/v2/chat/')) response = await inbox.handle(request);
+      if (url.pathname === DELIVERY_EVIDENCE_PATH) response = await deliveryEvidence(request);
+      else if (url.pathname.startsWith('/api/lounge/v2/chat/')) response = await inbox.handle(request);
       else if (url.pathname === '/api/lounge/v2/stage/chat') {
         if (url.search) return new Response(null, { status: 404 });
         response = await webhook(request);

@@ -1,3 +1,4 @@
+import {decodeWebhookSecret} from '../lounge-delivery/resend-webhook.mjs';
 const fail = () => { throw Error('LOUNGE_HOST_CONFIG_INVALID'); };
 const flag = (env, name) => {
   if (env[name] !== undefined && !['true', 'false', ''].includes(env[name])) fail();
@@ -38,6 +39,9 @@ export function hostConfig(env = {}) {
   if (flag(env, 'LOUNGE_PILOT_ENABLED')) throw Error('LOUNGE_OWNER_ONLY_PILOT_DISABLED');
   if (flag(env, 'LOUNGE_PILOT_MANAGEMENT_ENABLED')) throw Error('LOUNGE_OWNER_ONLY_MANAGEMENT_DISABLED');
   const delivery = flag(env, 'LOUNGE_DELIVERY_ENABLED');
+  const deliveryEvidence = flag(env, 'LOUNGE_DELIVERY_EVIDENCE_ENABLED');
+  const deliveryWebhookSecret = deliveryEvidence ? required(env, 'LOUNGE_RESEND_WEBHOOK_SECRET') : null;
+  if(deliveryEvidence){try{if(decodeWebhookSecret(deliveryWebhookSecret).equals(authKey))fail();}catch{fail();}}
   const deliveryFrom = delivery ? required(env, 'LOUNGE_DELIVERY_FROM') : null;
   const resendKey = delivery ? required(env, 'LOUNGE_RESEND_API_KEY') : null;
   if (delivery && (!/^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+){2,}$/.test(deliveryFrom) || deliveryFrom.length > 254)) fail();
@@ -59,7 +63,7 @@ export function hostConfig(env = {}) {
     supabaseUrl: origin(required(env, 'LOUNGE_SUPABASE_URL')),
     publishableKey: required(env, 'LOUNGE_SUPABASE_PUBLISHABLE_KEY'),
     databaseUrl: env.LOUNGE_DATABASE_URL || null, ownerControl, authKey, obsKey, eventSubSecret, subscriptionId, rulesVersion,
-    bucket, storageKey, deliveryFrom, resendKey, flags: Object.freeze({ auth: true, eligibility: true,
+    bucket, storageKey, deliveryFrom, resendKey, deliveryEvidence, deliveryWebhookSecret, flags: Object.freeze({ auth: true, eligibility: true,
       pilot: false, subscription: false,
       pilotManagement: false,
       delivery, chainProjects, booking: flag(env, 'LOUNGE_BOOKING_ENABLED'),
