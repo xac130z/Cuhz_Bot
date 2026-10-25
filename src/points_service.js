@@ -116,18 +116,15 @@ class PointsService {
      * Checks ledger to ensuring no prior claim of this type
      */
     async claimBonus(username, bonusType, amount) {
+        if (!Number.isSafeInteger(amount) || amount <= 0) return false;
         try {
             const safeUser = username.toLowerCase().replace('@', '');
-
-            // 1. Check if already claimed
-            const existingClaim = await db.prepare('SELECT id FROM points_ledger WHERE username = ? AND reason = ?').get(safeUser, bonusType);
-
-            if (existingClaim) {
-                return false; // Already claimed
-            }
-
-            // 2. Award points
-            return await this.addPoints(safeUser, amount, bonusType);
+            // History check, credit and ledger insertion share the adapter's
+            // transaction. A preflight read here races another bot worker.
+            const changed = await db.mutatePoints({ username: safeUser, amount, reason: bonusType, claimOnce: true });
+            if (!changed) return false;
+            logger.info(`💰 Added ${amount} ${amount === 1 ? 'point' : 'points'} to ${safeUser} (${bonusType})`);
+            return true;
         } catch (err) {
             logger.error(`❌ Failed to claim bonus for ${username}: ${err.message}`);
             return false;

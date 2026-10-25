@@ -7,10 +7,11 @@ const object=v=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const keys=(v,list)=>Object.keys(v).length===list.length&&list.every(k=>Object.hasOwn(v,k));
 const integer=v=>Number.isSafeInteger(v)&&v>=0&&v<1e15;
 const copy=v=>v===null?null:JSON.parse(JSON.stringify(v));
+const terminalDenials=new Set(['COMMAND_RETIRED','COMMAND_CAPACITY_REVIEW_REQUIRED']);
 const knownDenials=new Set(['STAGE_CONTROL_DISABLED','STAGE_OWNER_UNCONFIGURED','STAGE_OWNER_REQUIRED','INVALID_REQUEST','INVALID_COMMAND','INVALID_VERSION','VERSION_REQUIRED','INVALID_ITEM','REASON_REQUIRED',
  'AUTH_DISABLED','AUTH_REQUIRED','AUTH_ORIGIN_DENIED','AUTH_CSRF_DENIED','AUTH_IDENTITY_CHANGED','AUTH_UNAVAILABLE','AUTH_REFRESH_PENDING',
  'SIGN_IN_REQUIRED','AUTHENTICATION_UNAVAILABLE','OPERATOR_REQUIRED','EMERGENCY_PERMISSION_REQUIRED','SESSION_INVALID','CONNECTION_CHANGED',
- 'STAGE_DISABLED','STAGE_ON_HOLD','STAGE_NOT_ON_HOLD','SESSION_ACTIVE','ITEM_UNAVAILABLE','VERSION_CONFLICT','IDEMPOTENCY_CONFLICT']);
+ 'STAGE_DISABLED','STAGE_ON_HOLD','STAGE_NOT_ON_HOLD','SESSION_ACTIVE','ITEM_UNAVAILABLE','VERSION_CONFLICT','IDEMPOTENCY_CONFLICT','COMMAND_RETIRED','COMMAND_CAPACITY_REVIEW_REQUIRED']);
 const denialText={STAGE_OWNER_REQUIRED:'Live Lounge control is restricted to the owner during this test.',
  STAGE_CONTROL_DISABLED:'Owner test controls are not enabled.',
  STAGE_OWNER_UNCONFIGURED:'Owner test controls are waiting for verified account configuration.',
@@ -20,7 +21,9 @@ const denialText={STAGE_OWNER_REQUIRED:'Live Lounge control is restricted to the
  AUTH_REQUIRED:'Sign in again, then recover the same request.',
  STAGE_ON_HOLD:'The stage is on hold. Use Resume only when it is safe to continue.',
  STAGE_DISABLED:'The stage is not enabled.',ITEM_UNAVAILABLE:'That item is not available for public display.',
- IDEMPOTENCY_CONFLICT:'This request needs review. Keep its receipt ID and contact team@vqnclabs.com.'};
+ IDEMPOTENCY_CONFLICT:'This request needs review. Keep its receipt ID and contact team@vqnclabs.com.',
+ COMMAND_RETIRED:'This older request has expired. Refresh the current stage before choosing a new action.',
+ COMMAND_CAPACITY_REVIEW_REQUIRED:'Stage controls need owner review. Public output is held; no new action was recorded.'};
 
 function validCommand(v,emergency=false){
  if(!object(v)||!UUID.test(v.request_id||''))return false;
@@ -76,7 +79,8 @@ export function createOperatorConsole({owner,csrf,storage,fetcher=fetch,randomId
    }text+=decoder.decode();}finally{void reader.cancel().catch(()=>{});}
    const value=JSON.parse(text);
    if(!r.ok||value?.ok===false){const code=object(value)?value.error||value.code:null;
-    throw new Outcome(knownDenials.has(code)?code:'OUTCOME_UNKNOWN',!!input&&!knownDenials.has(code));}
+    const known=knownDenials.has(code)&&(!terminalDenials.has(code)||r.status===409);
+    throw new Outcome(known?code:'OUTCOME_UNKNOWN',!!input&&!known);}
    return value;
   };
   try{return await Promise.race([work(),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Outcome('OUTCOME_UNKNOWN',!!input));},timeoutMs);})]);}
@@ -113,7 +117,7 @@ export function createOperatorConsole({owner,csrf,storage,fetcher=fetch,randomId
    return true;
   }catch(error){
    if(stopped)return false;
-   const unknown=!(error instanceof Outcome)||error.unknown||recover;
+   const unknown=!(error instanceof Outcome)||error.unknown||(recover&&!terminalDenials.has(error.code));
    if(!unknown){pending[lane]=null;if(!persist()){pending[lane]=command;storageBlocked=true;}}
    notice=(denialText[error?.code]||'The result could not be verified.')+(pending[lane]?` Keep request ${command.request_id}; recover that same request before another ordinary action.`:' No action was confirmed.');
    if(lane==='emergency'&&volatileHold&&pending.emergency)notice+=' Recovery storage is unavailable. Keep this tab open and use Recover emergency hold.';

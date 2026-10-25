@@ -20,6 +20,6 @@ export function createGenerationChatStore({ query } = {}) {
     prepare: async ({ context, requestId, projectId, revision, inputText, fingerprint }) => (await one(
       'select public.lounge_generation_chat_prepare($1,$2,$3,$4,$5,$6,$7) result',
       [context.sessionId, context.sessionRevision, requestId, projectId, revision, inputText, fingerprint]))?.result,
-    admit: async event => (await one('select public.lounge_generation_chat_admit($1,$2) result', [event.twitchId, event.operationKey]))?.result,
+    admit: async event => (await one('select public.lounge_generation_chat_execute($1,$2) result', [event.twitchId, event.operationKey]))?.result,
   });
 }

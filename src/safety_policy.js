@@ -81,6 +81,8 @@ const DISALLOWED_AI_OUTPUT = [
 ];
 
 const URL_PATTERN = /https?:\/\/[^\s<>()]+|(?:^|\s)(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<>()]*)?/gi;
+// Deliberate C0/DEL range: remove control characters from user-facing text.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 function cleanText(value, maxLength = 450) {

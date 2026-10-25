@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createResendSender } from '../lounge-delivery/resend.mjs';
+import {createResendWebhook,DELIVERY_EVIDENCE_PATH} from '../lounge-delivery/resend-webhook.mjs';
 import { createLoungeApplication } from '../lounge-goal2/runtime.mjs';
 import { createSupabaseAuthPort } from '../lounge-auth/supabase.mjs';
 import { createPrivateChatInbox } from '../lounge-chat-inbox/runtime.mjs';
@@ -9,6 +10,10 @@ import { createEventSubIngress } from './eventsub.mjs';
 import { createObsStreamAccess } from '../lounge-stage/obs-access.mjs';
 import { createBookingHousekeeping } from '../lounge-booking/housekeeping.mjs';
 import { createBookingNotices } from '../lounge-booking/notices.mjs';
+import { createChainCleanup } from '../lounge-chain/cleanup.mjs';
+import { createTwitchCleanup } from '../lounge-retention/cleanup.mjs';
+import { createRetiredBookingLifecycle } from '../lounge-retention/bookings.mjs';
+import { createCommandRetention } from '../lounge-retention/commands.mjs';
 
 const unavailable = code => new Response(JSON.stringify({ error: code }), { status: 503,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -17,10 +22,14 @@ const unavailable = code => new Response(JSON.stringify({ error: code }), { stat
  * Import/factory construction never migrates, changes a flag, grants a role,
  * starts generation, registers EventSub, or speaks on stream. */
 export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetchImpl = globalThis.fetch,
-  schedule = setInterval, cancel = clearInterval } = {}) {
+  schedule = setInterval, cancel = clearInterval, chainBinaryTransport = false } = {}) {
   const config = hostConfig(env);
   if (!config.enabled) return Object.freeze({ start: async () => ({ started: false }), stop: async () => {},
     handle: async () => unavailable('LOUNGE_DISABLED') });
+  // Existing packaged bot ingress caps raw bodies at32KiB. Only an adapter
+  // implementing authenticated, bounded binary streaming may opt into C08.
+  // Environment configuration alone cannot assert this transport capability.
+  if (config.flags.chainProjects && chainBinaryTransport !== true) throw Error('LOUNGE_CHAIN_BINARY_TRANSPORT_REQUIRED');
   let pool, stopped = false, running = false, epoch = 0, pending, timer;
   if (!db) {
     const connection = databaseOptions(config.databaseUrl);
@@ -43,6 +52,10 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   const bookingCleanup = createBookingHousekeeping({ query, enabled: config.flags.booking === true,
     allowSubscription: config.flags.subscription, allowPilot: config.flags.pilot });
   const bookingNotices = createBookingNotices({ query, enabled: config.flags.booking === true });
+  const chainCleanup = createChainCleanup({query,enabled:config.chainRetention});
+  const twitchCleanup = createTwitchCleanup({ query, enabled: config.twitchCleanup });
+  const retiredBookings = createRetiredBookingLifecycle({ query, enabled: config.twitchCleanup });
+  const commandRetention = createCommandRetention({ query, enabled: config.commandRetention });
   const guardedFetch = async (url, options = {}) => {
     if (stopped || options.signal?.aborted) throw Error('LOUNGE_UNAVAILABLE');
     const controller = new AbortController(), abort = () => controller.abort();
@@ -71,6 +84,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   const inbox = createPrivateChatInbox({ query, origin: config.origin, enabled: true,
     bookingNoticesEnabled: config.flags.booking === true,
     authenticate: request => app.auth.authenticate(request) });
+  const deliveryEvidence = createResendWebhook({query,key:config.authKey,secret:config.deliveryWebhookSecret,enabled:config.deliveryEvidence});
   const storage = config.bucket && config.storageKey
     ? createStoragePort({ url: config.supabaseUrl, bucket: config.bucket, serviceKey: config.storageKey, fetchImpl: guardedFetch }) : {};
   app = createLoungeApplication({ db: { query }, origin: config.origin, authKey: config.authKey,
@@ -110,8 +124,27 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           to_regclass('public.lounge_members') is not null as members_ready,
           to_regclass('public.lounge_chat_inbox') is not null as inbox_ready,
           to_regclass('public.lounge_eventsub_revocations') is not null as eventsub_ready,
+          to_regclass('public.lounge_chain_projects') is not null
+            and to_regclass('public.lounge_chain_session_saves') is not null
+            and to_regprocedure('public.lounge_chain_command(uuid,integer,timestamp with time zone,text,text,jsonb)') is not null
+            and to_regprocedure('public.lounge_chain_asset_put(uuid,integer,timestamp with time zone,text,text,jsonb,bytea)') is not null
+            and to_regprocedure('public.lounge_chain_asset_read(uuid,integer,timestamp with time zone,text)') is not null
+            and to_regprocedure('public.lounge_chain_cleanup(integer)') is not null as chain_ready,
+          to_regclass('public.lounge_chain_request_retention_state') is not null
+            and to_regprocedure('public.lounge_chain_execute(uuid,integer,timestamp with time zone,text,text,jsonb)') is not null
+            and to_regprocedure('public.lounge_chain_retention_cleanup(integer)') is not null as chain_retention_ready,
           to_regprocedure('public.lounge_delivery_command(uuid,integer,timestamp with time zone,text,jsonb,text,jsonb)') is not null
-            and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null as delivery_ready,
+            and to_regprocedure('public.lounge_delivery_mail_step(text,uuid,text,text)') is not null
+            and to_regprocedure('public.lounge_delivery_mail_bind(uuid,uuid,text)') is not null as delivery_ready,
+          to_regprocedure('public.lounge_delivery_mail_reconcile(jsonb)') is not null as delivery_evidence_ready,
+          to_regprocedure('public.lounge_delivery_operations(uuid,integer,timestamp with time zone,text,text,jsonb)') is not null as delivery_operations_ready,
+          to_regprocedure('public.lounge_twitch_cleanup_claim(uuid)') is not null
+            and to_regprocedure('public.lounge_twitch_cleanup_step(uuid,uuid,integer)') is not null
+            and to_regprocedure('public.lounge_twitch_cleanup_expire(uuid,integer)') is not null as twitch_cleanup_ready,
+          to_regclass('public.lounge_command_retention_state') is not null
+            and to_regprocedure('public.lounge_command_retention_sweep(integer)') is not null
+            and to_regprocedure('public.lounge_command_preflight(uuid,integer,integer,text,text,uuid,text)') is not null
+            and to_regprocedure('public.lounge_command_frontier_open()') is not null as command_retention_ready,
           to_regclass('public.lounge_owner_curated_items') is not null
             and to_regclass('public.lounge_owner_curated_consents') is not null
             and to_regprocedure('public.lounge_owner_curated_actor(uuid,integer,integer,text,text)') is not null
@@ -135,8 +168,14 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
         if (!row || !['privileged', 'isolation_ok', 'auth_ready', 'stage_ready', 'members_ready', 'inbox_ready', 'eventsub_ready', 'inbox_rpc_ready', 'stage_rpc_ready'].every(key => row[key] === true)) throw Error('LOUNGE_SCHEMA_REVIEW_REQUIRED');
         if (config.flags.stage && row.stage_chat_ready !== true) throw Error('LOUNGE_STAGE_CHAT_SCHEMA_REQUIRED');
         if (config.flags.delivery && row.delivery_ready !== true) throw Error('LOUNGE_DELIVERY_SCHEMA_REQUIRED');
+        if (config.deliveryEvidence && (row.delivery_ready !== true || row.delivery_evidence_ready !== true)) throw Error('LOUNGE_DELIVERY_EVIDENCE_SCHEMA_REQUIRED');
+        if (config.flags.deliveryOperations && row.delivery_operations_ready !== true) throw Error('LOUNGE_DELIVERY_OPERATIONS_SCHEMA_REQUIRED');
+        if (config.twitchCleanup && row.twitch_cleanup_ready !== true) throw Error('LOUNGE_TWITCH_CLEANUP_SCHEMA_REQUIRED');
+        if (config.commandRetention && row.command_retention_ready !== true) throw Error('LOUNGE_COMMAND_RETENTION_SCHEMA_REQUIRED');
         if (config.flags.booking && row.booking_ready !== true) throw Error('LOUNGE_BOOKING_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated && row.curated_ready !== true) throw Error('LOUNGE_CURATED_SCHEMA_REQUIRED');
+        if (config.chainRetention && row.chain_retention_ready !== true) throw Error('LOUNGE_CHAIN_RETENTION_SCHEMA_REQUIRED');
+        if (config.flags.chainProjects && (row.chain_ready !== true || row.chain_retention_ready !== true)) throw Error('LOUNGE_CHAIN_SCHEMA_REQUIRED');
         if (config.flags.ownerCurated) {
           // Canonical originals precede publication consent. A syntactically
           // valid bucket name is insufficient: require verified private storage
@@ -145,7 +184,9 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
           if (bucket?.id !== config.bucket || bucket.public !== false) throw Error('LOUNGE_PRIVATE_STORAGE_REQUIRED');
         }
         if (stopped || turn !== epoch) return { started: false };
-        app.start(); bookingCleanup.start(); bookingNotices.start(); running = true;
+        app.start(); bookingCleanup.start(); bookingNotices.start(); chainCleanup.start(row.chain_retention_ready===true);
+        twitchCleanup.start(row.twitch_cleanup_ready === true); retiredBookings.start(row.twitch_cleanup_ready === true);
+        commandRetention.start(row.command_retention_ready === true); running = true;
         timer = schedule(() => {
           if (!running || stopped || turn !== epoch) return;
           // Bounded SQL routines own cleanup; this never retries a paid job.
@@ -157,7 +198,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
             // Finish any due booking transitions before publishing reminders.
             // A failed cleanup cannot make a notice assert live authority: the
             // notice transaction independently checks state/time/publication.
-            bookingCleanup.run().then(() => bookingNotices.run())]);
+            bookingCleanup.run().then(() => bookingNotices.run()),chainCleanup.run(),twitchCleanup.run(),retiredBookings.run(),commandRetention.run()]);
         }, 60000);
         timer?.unref?.();
         return { started: true, generationEnabled: false };
@@ -169,7 +210,7 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
   async function stop() {
     if (stopped) return;
     stopped = true; running = false; epoch++;
-    bookingCleanup.stop(); bookingNotices.stop();
+    bookingCleanup.stop(); bookingNotices.stop(); chainCleanup.stop(); twitchCleanup.stop(); retiredBookings.stop(); commandRetention.stop();
     if (timer !== undefined) cancel(timer);
     for (const controller of upstreams) controller.abort();
     await app.stop();
@@ -182,7 +223,8 @@ export async function createHostedLounge({ env = {}, db, sendPrivateReply, fetch
       const url = new URL(request.url);
       if (url.origin !== config.origin) return new Response(null, { status: 403 });
       let response;
-      if (url.pathname.startsWith('/api/lounge/v2/chat/')) response = await inbox.handle(request);
+      if (url.pathname === DELIVERY_EVIDENCE_PATH) response = await deliveryEvidence(request);
+      else if (url.pathname.startsWith('/api/lounge/v2/chat/')) response = await inbox.handle(request);
       else if (url.pathname === '/api/lounge/v2/stage/chat') {
         if (url.search) return new Response(null, { status: 404 });
         response = await webhook(request);

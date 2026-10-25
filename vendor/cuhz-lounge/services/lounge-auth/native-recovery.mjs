@@ -1,5 +1,5 @@
 const paths=new Set(['/api/lounge/v2/stage/ops','/api/lounge/v2/stage/ops/emergency',
- '/api/lounge/v2/stage-bridge/ops','/api/lounge/v2/stage-bridge/curated/ops','/api/lounge/v2/bookings/ops']);
+ '/api/lounge/v2/stage-bridge/ops','/api/lounge/v2/stage-bridge/curated/ops','/api/lounge/v2/bookings/ops','/api/lounge/v2/deliveries/ops']);
 const expired=new Set(['AUTH_REQUIRED','SIGN_IN_REQUIRED','AUTH_IDENTITY_CHANGED','SESSION_RECHECK_REQUIRED','SESSION_INVALID']);
 
 /** A denied document can offer sign-in without changing its status or authority.

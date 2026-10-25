@@ -72,7 +72,10 @@ function postgresFixture(options = {}) {
         async query(sql, args = []) {
           assert.equal(released, false, 'no query after client release');
           const compact = sql.trim().replace(/\s+/g, ' ');
-          const stage = compact.startsWith('INSERT INTO points_ledger') ? 'ledger'
+          const stage = compact.startsWith('BEGIN') ? 'BEGIN'
+            : compact.startsWith('SELECT pg_advisory_xact_lock') ? 'claim_lock'
+            : compact.startsWith('SELECT 1 FROM points_ledger') ? 'claim_read'
+            : compact.startsWith('INSERT INTO points_ledger') ? 'ledger'
             : /^(INSERT INTO users|UPDATE users)/.test(compact) ? 'balance' : compact;
           events.push({ stage, sql: compact, args });
           if (faults.has(stage)) throw failure;
@@ -83,6 +86,8 @@ function postgresFixture(options = {}) {
           }
           if (stage === 'ROLLBACK') { txUsers = txLedger = undefined; return { rowCount: null }; }
           assert.ok(txUsers, 'all points statements require an active transaction');
+          if (stage === 'claim_lock') return { rows: [{}] };
+          if (stage === 'claim_read') return { rows: txLedger.some(row => row.username === args[0] && row.reason === args[1]) ? [{}] : [] };
           if (stage === 'COMMIT') {
             users = txUsers; ledger = txLedger; txUsers = txLedger = undefined;
             if (options.commitAcknowledgementLost) throw failure;
@@ -225,6 +230,41 @@ async function commonCases(label, fixture) {
     assert.deepEqual(f.snapshot(), before);
     assert.equal(f.events.length, 0);
   });
+  await isolated('one-time claims serialize normalized callers and retain consumed reason history', async f => {
+    const outcomes = await Promise.all([
+      f.service.claimBonus('@Alice', 'follower_bonus', 300),
+      f.service.claimBonus('ALICE', 'follower_bonus', 300),
+    ]);
+    assert.equal(outcomes.filter(Boolean).length, 1);
+    assert.equal(f.snapshot().users.alice, 400);
+    assert.equal(f.snapshot().ledger.filter(row => row.reason === 'follower_bonus').length, 1);
+    const before = f.snapshot();
+    assert.equal(await f.service.claimBonus('alice', 'follower_bonus', 900), false);
+    assert.deepEqual(f.snapshot(), before, 'new amount does not reset an existing claim');
+  });
+  await isolated('historical ledger consumption is respected without a new receipt table', async f => {
+    const before = f.snapshot();
+    assert.equal(await f.service.claimBonus('alice', 'opening', 300), false);
+    assert.deepEqual(f.snapshot(), before);
+    assert.equal(await f.service.claimBonus('alice', 'OPENING', 5), true, 'reason bytes are not renamed');
+  });
+  await isolated('independent claims and recurring awards retain existing behavior', async f => {
+    assert.equal(await f.service.claimBonus('bob', 'follower_bonus', 300), true);
+    assert.equal(await f.service.claimBonus('alice', 'other_bonus', 10), true);
+    assert.equal(await f.service.addPoints('alice', 1, 'chat_message'), true);
+    assert.equal(await f.service.addPoints('alice', 1, 'chat_message'), true);
+    assert.equal(f.snapshot().users.alice, 112);
+    assert.equal(f.snapshot().users.bob, 300);
+  });
+  await isolated('invalid one-time claims perform no SQL or account creation', async f => {
+    const before = f.snapshot();
+    for (const amount of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '300']) {
+      assert.equal(await f.service.claimBonus('bob', 'follower_bonus', amount), false);
+    }
+    assert.equal(await f.adapter.mutatePoints({ username: 'bob', amount: 300, reason: '', claimOnce: true }), false);
+    assert.deepEqual(f.snapshot(), before);
+    assert.equal(f.events.length, 0);
+  });
 }
 
 (async () => {
@@ -286,6 +326,25 @@ async function commonCases(label, fixture) {
     assert.equal(f.events.filter(event => event.stage === 'balance').length, 1);
     assert.equal(f.events.at(-1).error, f.failure);
   });
+  for (const stage of ['claim_lock', 'claim_read', 'balance', 'ledger', 'COMMIT']) {
+    await test(`Postgres claim ${stage} failure rolls back without consuming a bonus`, async () => {
+      const f = postgresFixture({ failAt: [stage] });
+      const before = f.snapshot();
+      assert.equal(await f.service.claimBonus('alice', 'follower_bonus', 300), false);
+      assert.deepEqual(f.snapshot(), before);
+      assert.equal(f.events.at(-1).error, f.failure);
+    });
+  }
+  await test('Postgres lost claim COMMIT acknowledgement cannot award again on same-claim retry', async () => {
+    const f = postgresFixture({ commitAcknowledgementLost: true });
+    assert.equal(await f.service.claimBonus('alice', 'follower_bonus', 300), false);
+    assert.equal(f.snapshot().users.alice, 400);
+    assert.equal(await f.service.claimBonus('alice', 'follower_bonus', 300), false);
+    assert.equal(f.snapshot().users.alice, 400);
+    assert.equal(f.snapshot().ledger.filter(row => row.reason === 'follower_bonus').length, 1);
+    assert.equal(f.events.filter(event => event.stage === 'balance').length, 1);
+    assert.ok(f.events.findIndex(e => e.stage === 'claim_lock') < f.events.findIndex(e => e.stage === 'claim_read'));
+  });
 
   let Database;
   try {
@@ -303,8 +362,8 @@ async function commonCases(label, fixture) {
         exec(sql) { return this.db.exec(sql); }
         close() { return this.db.close(); }
         transaction(callback) {
-          return () => {
-            this.db.exec('BEGIN');
+          const run = begin => () => {
+            this.db.exec(begin);
             try {
               const result = callback();
               this.db.exec('COMMIT');
@@ -314,6 +373,9 @@ async function commonCases(label, fixture) {
               throw failure;
             }
           };
+          const transaction = run('BEGIN');
+          transaction.immediate = run('BEGIN IMMEDIATE');
+          return transaction;
         }
       };
       console.log('  SQLite engine: node:sqlite (:memory:; test-only transaction bridge)');
@@ -339,6 +401,17 @@ async function commonCases(label, fixture) {
           } finally { f.close(); }
         });
       }
+    }
+    for (const mode of ['rejectLedger', 'ignoreLedger']) {
+      await test(`SQLite one-time claim ${mode} preserves balance and unconsumed history`, async () => {
+        const f = sqliteFixture(Database, { [mode]: true });
+        try {
+          const before = f.snapshot();
+          assert.equal(await f.service.claimBonus('alice', 'follower_bonus', 300), false);
+          assert.equal(await f.service.claimBonus('newuser', 'follower_bonus', 300), false);
+          assert.deepEqual(f.snapshot(), before);
+        } finally { f.close(); }
+      });
     }
     await test('SQLite completes the transaction before yielding to another caller', async () => {
       const f = sqliteFixture(Database);

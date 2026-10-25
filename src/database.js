@@ -174,8 +174,9 @@ class DBAdapter {
    * This deliberately bypasses prepare(), whose compatibility behavior swallows
    * unique violations: a failed ledger insert must roll the balance back.
    */
-  async mutatePoints({ username, amount, reason }) {
+  async mutatePoints({ username, amount, reason, claimOnce = false }) {
     if (!Number.isSafeInteger(amount)) return false;
+    if (typeof claimOnce !== 'boolean' || claimOnce && (amount <= 0 || typeof username !== 'string' || !username || typeof reason !== 'string' || !reason)) return false;
     if (amount === 0) return true;
 
     const credit = amount > 0;
@@ -193,7 +194,8 @@ class DBAdapter {
     if (this.type === 'sqlite') {
       // No await inside this callback: every statement runs before JavaScript
       // yields, so unrelated users of this SQLite connection cannot interleave.
-      return this.sqlite.transaction(() => {
+      const transaction = this.sqlite.transaction(() => {
+        if (claimOnce && this.sqlite.prepare('SELECT 1 FROM points_ledger WHERE username = ? AND reason = ? LIMIT 1').get(username, reason)) return false;
         const result = this.sqlite.prepare(balanceSql).run(...balanceArgs);
         if (result.changes === 0) return false;
         if (result.changes !== 1) throw new Error('Points mutation did not affect exactly one user');
@@ -202,7 +204,10 @@ class DBAdapter {
         const ledger = this.sqlite.prepare(ledgerSql).run(...ledgerArgs);
         if (ledger.changes !== 1) throw new Error('Points ledger insert did not create a row');
         return true;
-      })();
+      });
+      // Acquire the SQLite writer slot before reading a one-time claim, also
+      // across separate connections. A consumed ledger reason is never reset.
+      return claimOnce ? transaction.immediate() : transaction();
     }
 
     const pgSql = sql => {
@@ -212,7 +217,18 @@ class DBAdapter {
     const client = await this.pgPool.connect();
     let failure;
     try {
-      await client.query('BEGIN');
+      await client.query(claimOnce ? 'BEGIN ISOLATION LEVEL READ COMMITTED' : 'BEGIN');
+      if (claimOnce) {
+        // Same claim, same transaction: serialize before observing history.
+        // Hash collisions only serialize unrelated claims; exact reason bytes
+        // still decide consumption. Ordinary recurring awards remain allowed.
+        await client.query('SELECT pg_advisory_xact_lock(1129662544, hashtext($1::text))', [JSON.stringify([username, reason])]);
+        const existing = await client.query('SELECT 1 FROM points_ledger WHERE username = $1 AND reason = $2 LIMIT 1', [username, reason]);
+        if (existing.rows.length) {
+          await client.query('COMMIT');
+          return false;
+        }
+      }
       const result = await client.query(pgSql(balanceSql), balanceArgs);
       if (result.rowCount !== 0 && result.rowCount !== 1) {
         throw new Error('Points mutation did not affect exactly one user');

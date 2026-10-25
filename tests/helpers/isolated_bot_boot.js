@@ -67,7 +67,7 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             evidence.requiredModules.push(name);
             // Runtime tests may provide inert DB/service implementations; file,
             // environment, network and lifecycle capabilities remain forbidden.
-            const injectable = new Set(['./database', './points_service', './user_memory', './loyalty', './logger']);
+            const injectable = new Set(['./database', './points_service', './user_memory', './loyalty', './logger', './duration', './clips_service', './shared_chat_guard']);
             if (injectable.has(name) && Object.hasOwn(fixtures, name)) return fixtures[name];
             if (name === 'express') return express;
             if (name === 'cors') return () => () => {};
@@ -183,6 +183,9 @@ function evaluateBotBoot(source = readBotSource(), fixtures = {}) {
             verifiedFollowerFixture() {
                 getTwitchUser = async name => ({ id: 'fixture-' + name });
                 getFollowData = async () => ({ followed_at: '2026-01-01T00:00:00Z' });
+            },
+            watchStreamFixture(channel, startedAt) {
+                streamStates.set(streamKey(channel), { isLive: true, startedAt });
             },
             gambleFixture(win) {
                 Math.random = () => win ? 0 : 1;

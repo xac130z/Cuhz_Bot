@@ -9,6 +9,45 @@
 
 ---
 
+## Native clip room binding — October 25, 2026
+
+`!clip` takes its numeric broadcaster ID only from the originating TMI
+`room-id`. Missing context, token or configured `TWITCH_CLIENT_ID` keeps the
+manual clip tool available; no public application-ID fallback is used. A valid
+202 receipt means accepted creation. One bounded Get Clips request can verify
+only the exact clip ID and broadcaster; empty, lost or mismatched reads leave
+creation unverified. Neither native request is retried. Record acknowledgement
+and the existing single +10 Points attempt remain separate outcomes. This is
+source-tested only; live token scopes/client association and Twitch acceptance
+still require the attended owner test. This adds no Lounge controller grants.
+
+## One-time Points claim source correction — October25,2026
+
+`claimBonus` now checks existing exact username/reason history, credits the
+existing wallet and writes its ledger row in one transaction. PostgreSQL takes
+a namespaced claim lock before the history read, on the same leased client;
+SQLite uses an immediate transaction. Existing consumed reasons remain spent
+even if a retry proposes a different amount. Recurring chat/paycheck awards,
+existing balances/history, reward amounts and ordinary guarded debits retain
+their current contracts. Run `npm run test:points:safety` for isolated coverage.
+
+This is not immutable identity or full durable Points cutover. Drain old claim
+writers before rollout: older check-then-credit callers do not honor the new
+lock. A lost COMMIT reply is still ambiguous; there is no automatic retry or
+success claim, and a later same-claim attempt cannot credit the same history
+again through the corrected path. Generic credits and privileged manual SQL
+are outside this claim-only protocol. Stable custody, spend/fulfillment
+receipts, all-writer fencing and reconciliation remain separate release gates.
+No new migration, live wallet change, reward, role, grant or activation follows.
+
+## Static checks
+
+`npm run lint` checks every `src/**/*.js` file with the installed ESLint9
+CommonJS/Node configuration. Recommended correctness rules remain errors.
+Existing unused bindings and unnecessary regex escapes remain visible warnings;
+they are cleanup work, not a zero-warning claim. The deliberate C0/DEL text
+sanitizer has one explained rule exception. No application source is ignored.
+
 ## 📖 Overview
 
 The **Antigravity Agent** is a Twitch bot fully integrated with the Planet CUHZ ecosystem. It serves as a community engagement tool, automated marketing assistant, and bridge to the Anything.com dashboard.
@@ -595,3 +634,234 @@ additive schema plus replay protection. Rolling back to an older package does
 not restore its retired chat protocol. Never restore legacy prepare or erase
 security digests as a compatibility workaround. Verify hosted denial, fresh
 command, duplicate, disconnect and attended Twitch-to-OBS outcomes separately.
+
+### Chain binary upload gateway — isolated C08 branch
+
+This source checkpoint adds the exact `PUT /api/lounge/v2/chain/assets/<sha256>`
+route for private photo originals. `LOUNGE_CHAIN_PROJECTS_ENABLED` defaults off.
+The ordinary JSON/signed EventSub body limit stays32KiB. The binary route is
+limited to15MiB, two in-flight gateway requests and the host's two physical
+upload slots. It passes a paused zero-buffer Web stream to the existing host;
+the broker authenticates and checks CSRF before application body reads begin.
+Host/SQL owner, rules, recorded age-attestation and session checks still apply.
+The adapter supplies the internal `chainBinaryTransport: true` capability; no
+environment value can stand in for that implementation.
+
+Body pulls consume available partial chunks with backpressure. Timeout, client
+disconnect and process stop cancel them. Unread refused bodies close their
+connection; Node may discard a socket chunk after the response is final, but
+those bytes never reach the authenticated application reader or storage port.
+A client still writing after refusal can observe a closed socket. A dispatched
+upload with unknown outcome retains its original digest for explicit recovery;
+the gateway never retries a write. Other routes cannot obtain the larger limit,
+including normalized aliases or query variants. Earlier body parsing fails closed.
+
+The companion website branch provides the69-file runtime closure, canonical
+broker, private scene/assets, explicit session links and bounded cleanup. The
+new schema `20261024010000_lounge_chain_projects.sql` remains source-only and
+enables no flags or roles. `npm run test:lounge-v2` includes real Express binary
+boundary tests. The ecosystem recovery folder contains a separate packaged
+Express + actual broker + actual SQL rehearsal with synthetic identities and
+PNG data; it is not production or independent native PostgreSQL evidence.
+
+This C08 branch is separate from the reviewed owner-stage release. Frontend
+cloud synchronization, age-attestation UI, HTTPS proxy/body-limit acceptance,
+capacity/backup review, native contention and independent review remain required
+before C08 rollout. The owner-only first-test restriction is unchanged.
+
+
+### Signed private-mail evidence candidate — October 24, 2026
+
+The separate candidate runtime adds the receive-only raw JSON route
+`POST /api/lounge/v2/deliveries/provider-evidence`. It stays off unless
+`LOUNGE_DELIVERY_EVIDENCE_ENABLED=true` and a dedicated
+`LOUNGE_RESEND_WEBHOOK_SECRET` are configured with the additive
+`20261025020000_lounge_delivery_evidence.sql` schema. The existing raw-body
+gateway preserves the signed bytes; the inner verifier caps them at16KiB.
+This gate can receive evidence while the send gate is off, without a sending
+API key or storage credentials. Nothing registers a webhook or sends mail.
+
+New sends commit a mail/claim/envelope-digest binding before HTTP and carry
+server-owned opaque tags. Verified Resend `email.sent` evidence can settle only
+that original attempted message, including an unknown outcome. Exact replay is
+idempotent; contradictory or unbound evidence stays unresolved. Revoked/expired
+links stay closed. Evidence does not verify an address or prove inbox delivery.
+No raw webhook body, destination, subject, text or token is kept in the evidence
+tables. Operator review/retrieval and live account/signature/tag acceptance remain
+open. See the website delivery README and ecosystem delivery-evidence checkpoint
+for current runtime count, source hashes, independent review and native SQL proof.
+
+This candidate remains separate from the frozen approved first-stream release.
+Only freshly authenticated `planetcuhz` may control that first test; no additional
+controller, member, pilot, mail, provider or financial activation follows from
+this source increment.
+
+
+### Private delivery review candidate — October 24, 2026
+
+The existing stage operator console can link to
+`/api/lounge/v2/deliveries/ops` when the independent
+`LOUNGE_DELIVERY_OPERATIONS_ENABLED` gate is enabled. It requires the configured
+owner binding and the additive operations schema, whose durable
+`delivery.operations.enabled` flag installs off. Both gates stay off here.
+Every resource and data request uses fresh online owner authentication plus
+SQL checks after lock waits. No extra controller or role is granted.
+
+This read-only administrative view shows bounded metadata for unresolved or
+recent mail attempts and verified acceptance records. It can run with sending
+and webhooks disabled, without sending, webhook or storage keys. It exposes no
+recipient, subject, text, token, private path, account identity or raw evidence
+payload. Unknown outcomes remain unresolved until original-attempt evidence
+settles them. There are no send, retry, settlement or provider actions.
+
+Each page holds at most 25 attempts; precise timestamp/UUID pagination replaces
+the page. Private DOM clears on hiding, exit, expired authentication, failed
+reads and explicit clear. The source checkpoint records actual browser/native
+proof and the exact runtime closure. Hosted acceptance and the approved
+planetcuhz-only first-stream release remain separate.
+
+
+### Generation-command replay cutover — October 25, 2026
+
+The candidate runtime now calls only `lounge_generation_chat_execute`. It fails
+closed on an older schema rather than falling back to legacy admission. The
+source-only `20261025040000_lounge_generation_chat_replay.sql` preserves unlinked
+spent event keys after disconnect and receipt cleanup. Missing or expired
+mappings cannot consume a later brief or reserve another request. Valid linked
+receipts retain their original result; known legacy-protocol denials also spend
+their keys. The fixed one-million-key cap refuses fresh work and never evicts
+old keys automatically.
+
+A one-use current-transaction receipt permit also fences cached old function
+bodies: unauthorized legacy inserts roll back the entire queue/reservation
+transaction. The legacy public RPC cannot admit new work. Keep generation off
+while cutting over, stop/drain old workers and reconcile available history.
+Previously erased keys and messages rejected before SQL cannot be reconstructed
+by this guard. Preserve the security keys through backups and reconcile any
+post-snapshot gaps before resuming. No quota, budget or pilot reset follows.
+
+All paid, provider and generation gates remain off. The frozen approved
+planetcuhz-only first-stream release is separate. The ecosystem retention
+checkpoint records exact source, independent review, synthetic SQL/native proof
+and remaining historical-identity/log cleanup; this is not paid/live acceptance.
+
+### Canonical booking identity cleanup candidate — October 25, 2026
+
+The candidate includes the private bounded cleanup worker for source migration
+`20261025050000_lounge_twitch_cleanup.sql`. Host
+`LOUNGE_TWITCH_CLEANUP_ENABLED` and durable `retention.twitch.enabled` both
+default off. Older schemas refuse configured cleanup startup. The existing
+minute timer claims one original disconnect task and steps at most 64 combined
+booking/receipt rows, with physical-flight fencing and stable claim recovery
+after unknown transport outcomes. The permanent claim registry refuses fresh
+IDs at one million entries without evicting known recovery keys.
+
+Cleanup removes only historical booking Twitch identity and the two proven
+legacy receipt fields, tied to the original disconnect cutoff/revision. It
+preserves booking history/business state, later fresh connections, saved work,
+Points, financial evidence, quotas, pilot dates and spent-event replay keys.
+Retired requests are a definite refusal; the website clears only their local
+pending-command journal. Private wrappers and insert guards prevent fresh
+authority or session bindings from a retired booking.
+
+This is scoped source-only cleanup, not an approved full retention rollout.
+The identity-only 500 migration does not supply deadline transitions; pair it
+with the lifecycle correction described below before enabling cleanup.
+General command retention, legacy/external identity mapping and
+backup deletion remain unverified. The original policy/outbox/disconnect
+records remain intact; scoped completion does not mark those full tasks done.
+See the website `services/lounge-retention/README.md` and the ecosystem
+`recovery-2026-10-24/twitch-retention/cleanup-checkpoint.json` for exact source
+and limits. The approved frozen owner-stage release remains separate, and only
+freshly authenticated `planetcuhz` may control its first live test.
+
+### Retired booking deadlines and reconnect fencing — October 25, 2026
+
+The candidate now requires source migration
+`20261025060000_lounge_retired_booking_lifecycle.sql` alongside 500 before the
+existing cleanup host flag may start either retention worker. Both host and
+durable gates remain off by default. A separate single-query worker uses the
+existing minute timer to select at most 64 retired booking targets. Only due
+unbound holds/confirmed/active bookings become expired/no-show/completed using
+database time and original legacy deadlines. It preserves reservation fields,
+appends lifecycle history and caps the terminal revision at 100. Lease-only
+targets can include already-terminal or policy-bound retired bookings; their
+booking state stays intact while only the attached stale lease is revoked or
+disassociated. Existing revocation timestamps are retained. Unknown responses
+keep the same request ID/physical flight; immutable receipts preserve known
+empty outcomes and remain recoverable at the fixed one-million-entry ceiling.
+
+A fresh login with the same Twitch ID cannot adopt a booking from before an
+original recorded disconnect. Booking/lease/Chain entry, stage commands,
+public reads and activity validation reject that old association before
+delayed cleanup. Preexisting resumed old leases become inert; retirement and
+bounded maintenance reconcile their metadata without clearing fresh sessions,
+members or truly newer bookings. Tick can blank an invalid old stage through
+its sole writer without prematurely cancelling its reservation. The deadline
+RPC does not mutate stage state. The revised lease guard leaves revocation
+lock-free and keeps renewal in global/member order; the sweep relies on the
+existing global resource-write fence without adding a reverse resource-row
+wait.
+
+This is source-only hardening and maintenance, pending exact hosted rollout
+and live acceptance. It does not activate cleanup, paid work, grants, new
+controllers, voice or OBS. The frozen first-stream release remains separate
+and freshly authenticated `planetcuhz` alone is authorized. General command
+retention, external/legacy identity mapping and backup/deletion reconciliation
+remain unfinished. Exact evidence is in the ecosystem
+`recovery-2026-10-25/retired-booking-lifecycle/checkpoint.json`.
+
+
+## Core command retention candidate (October25,2026)
+
+The companion source-only700 migration adds bounded cleanup for audit, stage
+and shared bridge response logs while retaining opaque permanent replay keys.
+The80-file bundle includes the requestless command worker and authenticated
+preflight/asset frontier checks. Its independent host switch
+`LOUNGE_COMMAND_RETENTION_ENABLED` and durable `retention.commands.enabled`
+both default off. Configured startup requires the complete700 protocol. The
+existing minute timer runs at most64 combined deletions; timeout/stop cannot
+overlap the physical SQL call. No new bot/chat/public maintenance route exists.
+
+The1M key registry holds public output and fresh commands at999998 keys;
+known expired requests return definite409 and consoles clear only that local
+pending operation. Unknown outcomes retain exact recovery. Saved art, account,
+Points, history, quotas, pilot and financial/provider evidence are preserved.
+Other command families and strict hosted deletion cadence/backlog, external
+copies and restore reconciliation remain open. Noncurated live import replay
+retains its original-output I/O dependency; a positive preflight can race a
+later retirement and leave a private immutable object after SQL rollback.
+See the website retention README and
+`recovery-2026-10-25/command-retention/checkpoint.json` for reviewed source and
+exact scope. This is not deployment or live acceptance and does not change
+the separately frozen owner-stage release. First live controller remains only
+freshly authenticated `planetcuhz`; no additional grants are authorized.
+
+
+## Chain request retirement candidate (October25,2026)
+
+The80-file runtime now matches website `f8110d850fc58a64c3d658b24f731f681b35be98` and calls only the guarded
+Chain execute/retention protocol from source-only migration800. Expired raw
+or purged known request UUIDs cannot become fresh save/link/age operations;
+live exact replay remains inert and a never-observed UUID stays distinct.
+Minimal scoped hashes survive response erasure, with a private1M cap that
+leaves saved work readable. Terminal first admissions spend their key;
+one-use receipt guards roll back retained/loaded old-body writes without
+permission. No stage HOLD coupling or new grant is added.
+
+New strict `LOUNGE_CHAIN_RETENTION_ENABLED` and durable
+`retention.chain.enabled` gates both default off. Configured Chain/retention
+requires the complete800 schema; auth/stage with Chain off remains usable on
+older schemas without running old cleanup. Existing minute scheduling and
+physical-query fences remain. At most64 combined receipts/orphan assets are
+erased with elapsed720h and pin-aware checks; saved history/session originals
+remain intact. The website recovery journal additionally pauses retired
+operations and preserves restored original photos across definite failures.
+
+Hosted cadence/backlog/backup and offline browser pending TTL remain open.
+Pre800 erased keys cannot be reconstructed. Coordinate old-caller drain and
+frontier reconciliation before rollout or restore. This draft is separate
+from the frozen owner-stage release; first live control remains only freshly
+authenticated `planetcuhz`, with no additional grants. No live schema/flags,
+credentials, spending/provider/mail, deployment, voice or OBS changes.
+Exact ecosystem evidence: `recovery-2026-10-25/chain-command-retention/checkpoint.json`.

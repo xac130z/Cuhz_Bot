@@ -131,6 +131,21 @@ body.stage{margin:0;width:1920px;height:1080px;overflow:hidden;background:transp
 .stage[data-layout="presentation"] [data-motion="off"] .stage-portal::before{animation:none!important}
 @media(prefers-reduced-motion:reduce){.stage-portal::before{animation:none!important}}
 
+/* A short camera arrival gives way to a quiet living world. Only the backdrop
+   and decorative light move: titles, controls and the approved card stay fixed.
+   The renderer cancels this cue before every non-idle presentation state. */
+.stage[data-layout="presentation"] .stage-world{transform-origin:34% 56%}
+.stage[data-layout="presentation"] .stage-world::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 28% 30%,rgb(var(--cyan-rgb)/.12),transparent 45%),radial-gradient(ellipse at 48% 82%,rgb(var(--purple-rgb)/.12),transparent 42%);opacity:0}
+.stage[data-layout="presentation"] [data-view="idle"][data-motion="on"][data-world-cue="arriving"] .stage-world{animation:cuhz-world-arrive 4200ms cubic-bezier(.16,1,.3,1) both}
+.stage[data-layout="presentation"] [data-view="idle"][data-motion="on"][data-world-cue="idle"] .stage-world{animation:cuhz-world-drift 24s ease-in-out infinite alternate}
+.stage[data-layout="presentation"] [data-view="idle"][data-motion="on"][data-world-cue="idle"] .stage-world::after{animation:cuhz-world-light 16s ease-in-out infinite alternate}
+.stage[data-layout="presentation"] [data-view="idle"][data-motion="on"][data-world-cue="idle"] .stage-portal::before{animation:cuhz-world-orbit 60s linear infinite}
+@keyframes cuhz-world-arrive{from{transform:translate3d(-18px,10px,0) scale(1.075);opacity:.76}to{transform:translate3d(0,0,0) scale(1.015);opacity:.92}}
+@keyframes cuhz-world-drift{from{transform:translate3d(0,0,0) scale(1.015)}to{transform:translate3d(8px,-6px,0) scale(1.025)}}
+@keyframes cuhz-world-light{from{opacity:.12}to{opacity:.38}}
+.stage[data-layout="presentation"] [data-motion="off"] .stage-world,.stage[data-layout="presentation"] [data-motion="off"] .stage-world::after{animation:none!important;transform:none!important}
+@media(prefers-reduced-motion:reduce){.stage-world,.stage-world::after{animation:none!important;transform:none!important}}
+
 /* Browser viewer: the 16:9 scene fits the viewport; controls remain touch-sized. */
 body.stage[data-surface="viewer"]{box-sizing:border-box;width:100%;height:auto;min-height:100vh;overflow:auto;background:var(--void);padding:clamp(16px,3vw,48px);color-scheme:dark}
 .stage-viewer-heading,.stage-viewer-frame,.stage-viewer-toolbar{width:100%;max-width:1920px;margin-inline:auto}

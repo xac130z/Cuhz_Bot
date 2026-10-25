@@ -52,6 +52,7 @@ export function createDeliveryStore({query,key,origin,from,requiredRulesVersion}
  }
  return Object.freeze({command,
   claim:claimId=>query("select public.lounge_delivery_mail_step('claim',$1) result",[claimId]).then(r=>r.rows[0].result),
+  bind:(claimId,mailId,envelopeHash)=>query('select public.lounge_delivery_mail_bind($1,$2,$3) result',[claimId,mailId,envelopeHash]).then(r=>r.rows[0].result),
   finish:(claimId,outcome,providerId=null)=>query("select public.lounge_delivery_mail_step('finish',$1,$2,$3) result",[claimId,outcome,providerId]).then(r=>r.rows[0].result),
  });
 }
