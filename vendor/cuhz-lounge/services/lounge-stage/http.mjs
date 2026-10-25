@@ -16,6 +16,7 @@ const stageAssets=new Map([
  ['renderer.js',['./renderer.mjs','text/javascript; charset=utf-8']],
  ['renderer-model.mjs',['./renderer-model.mjs','text/javascript; charset=utf-8']],
  ['renderer-feed.mjs',['./renderer-feed.mjs','text/javascript; charset=utf-8']],
+ ['world-motion.mjs',['./world-motion.mjs','text/javascript; charset=utf-8']],
  ['dto.mjs',['./dto.mjs','text/javascript; charset=utf-8']],
  ['renderer.css',['./renderer.css','text/css; charset=utf-8']],
  ['world.webp',['./assets/world.webp','image/webp']],
